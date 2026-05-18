@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mbox Console</title>
+    <link rel="stylesheet" href="/console/app.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="rail" aria-label="Main navigation">
+        <div class="brand">
+          <span class="brand-mark">m</span>
+          <div>
+            <strong>mbox</strong>
+            <span>control plane</span>
+          </div>
+        </div>
+        <nav class="nav">
+          <a href="#projects">Projects</a>
+          <a href="#templates">Templates</a>
+          <a href="#sandboxes">Sandboxes</a>
+        </nav>
+        <div class="rail-status">
+          <span class="status-dot" id="api-dot"></span>
+          <span id="api-state">Checking API</span>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Kubernetes sandbox operations</p>
+            <h1>Runtime console</h1>
+          </div>
+          <button class="button primary" id="refresh-button" type="button">Refresh</button>
+        </header>
+
+        <section class="summary" aria-label="Resource summary">
+          <div>
+            <span id="project-count">0</span>
+            <p>Projects</p>
+          </div>
+          <div>
+            <span id="template-count">0</span>
+            <p>Templates</p>
+          </div>
+          <div>
+            <span id="sandbox-count">0</span>
+            <p>Sandboxes</p>
+          </div>
+          <div>
+            <span id="running-count">0</span>
+            <p>Running</p>
+          </div>
+        </section>
+
+        <div class="grid">
+          <section class="panel records" id="projects">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Scope</p>
+                <h2>Projects</h2>
+              </div>
+              <button class="button ghost" data-dialog="project-dialog" type="button">New project</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Namespace</th>
+                    <th>Default template</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="projects-body"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel records" id="templates">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Launch shape</p>
+                <h2>Templates</h2>
+              </div>
+              <button class="button ghost" data-dialog="template-dialog" type="button">New template</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Image</th>
+                    <th>Resources</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="templates-body"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel records wide" id="sandboxes">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Execution</p>
+                <h2>Sandboxes</h2>
+              </div>
+              <button class="button primary" data-dialog="sandbox-dialog" type="button">Launch sandbox</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Project</th>
+                    <th>Namespace</th>
+                    <th>Runtime</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="sandboxes-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <aside class="detail" aria-label="Selected resource">
+        <div class="detail-head">
+          <p class="eyebrow">Selection</p>
+          <h2 id="detail-title">No resource selected</h2>
+        </div>
+        <div id="detail-content" class="detail-content"></div>
+      </aside>
+    </div>
+
+    <dialog id="project-dialog">
+      <form id="project-form" method="dialog" class="dialog-form">
+        <div class="dialog-head">
+          <h2>New project</h2>
+          <button class="icon-button" data-close type="button" aria-label="Close">x</button>
+        </div>
+        <label>Name <input name="name" required autocomplete="off" /></label>
+        <label>Slug <input name="slug" required pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" autocomplete="off" /></label>
+        <label>Repository URL <input name="repositoryUrl" autocomplete="off" /></label>
+        <label>Default namespace <input name="defaultNamespace" required autocomplete="off" /></label>
+        <div class="dialog-actions">
+          <button class="button ghost" data-close type="button">Cancel</button>
+          <button class="button primary" type="submit">Create</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="template-dialog">
+      <form id="template-form" method="dialog" class="dialog-form">
+        <div class="dialog-head">
+          <h2>New template</h2>
+          <button class="icon-button" data-close type="button" aria-label="Close">x</button>
+        </div>
+        <label>Project <select name="projectId" data-project-select data-optional-project></select></label>
+        <label>Name <input name="name" required autocomplete="off" /></label>
+        <label>Slug <input name="slug" required pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" autocomplete="off" /></label>
+        <label>Image <input name="image" required value="busybox:1.37" autocomplete="off" /></label>
+        <label>Startup command <input name="startupCommand" value="sh -c 'mkdir -p /workspace && echo mbox sandbox ready && sleep 86400'" autocomplete="off" /></label>
+        <label>Working dir <input name="workingDir" value="/workspace" autocomplete="off" /></label>
+        <div class="field-row">
+          <label>CPU <input name="cpuRequest" value="50m" autocomplete="off" /></label>
+          <label>Memory <input name="memoryRequest" value="64Mi" autocomplete="off" /></label>
+          <label>Storage <input name="storageRequest" value="1Gi" autocomplete="off" /></label>
+        </div>
+        <label class="check"><input name="setDefault" type="checkbox" checked /> Set as project default</label>
+        <div class="dialog-actions">
+          <button class="button ghost" data-close type="button">Cancel</button>
+          <button class="button primary" type="submit">Create</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="sandbox-dialog">
+      <form id="sandbox-form" method="dialog" class="dialog-form">
+        <div class="dialog-head">
+          <h2>Launch sandbox</h2>
+          <button class="icon-button" data-close type="button" aria-label="Close">x</button>
+        </div>
+        <label>Project <select name="projectId" data-project-select required></select></label>
+        <label>Template <select name="templateId" data-template-select></select></label>
+        <label>Name <input name="name" required autocomplete="off" /></label>
+        <label>Slug <input name="slug" required pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" autocomplete="off" /></label>
+        <div class="field-row">
+          <label>Namespace <input name="namespace" autocomplete="off" /></label>
+          <label>ServiceAccount <input name="serviceAccountName" placeholder="mbox-sandbox" autocomplete="off" /></label>
+        </div>
+        <div class="dialog-actions">
+          <button class="button ghost" data-close type="button">Cancel</button>
+          <button class="button primary" type="submit">Launch</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script src="/console/app.js" defer></script>
+  </body>
+</html>

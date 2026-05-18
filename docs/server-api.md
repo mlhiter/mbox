@@ -34,6 +34,10 @@ All responses are JSON unless the route returns `204 No Content`.
 
 | Method | Path | Notes |
 | --- | --- | --- |
+| `GET` | `/` | Serves the embedded web console. |
+| `GET` | `/console` | Serves the embedded web console. |
+| `GET` | `/console/app.css` | Serves console styles. |
+| `GET` | `/console/app.js` | Serves console JavaScript. |
 | `GET` | `/healthz` | Returns `{"status":"ok"}`. |
 | `GET` | `/v1/projects` | Lists projects. |
 | `POST` | `/v1/projects` | Creates a project. |

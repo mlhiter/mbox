@@ -65,6 +65,12 @@ go run ./cmd/mbox-server
 
 The server listens on `127.0.0.1:8080` by default. Override it with `MBOX_LISTEN_ADDR`.
 
+Open the embedded web console:
+
+```sh
+open http://127.0.0.1:8080/console
+```
+
 The runtime controller is disabled by default so local API development does not write to a Kubernetes cluster. Enable it explicitly when you want mbox to reconcile `Sandbox` records into `agent-sandbox` resources:
 
 ```sh

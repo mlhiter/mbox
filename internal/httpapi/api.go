@@ -32,6 +32,9 @@ func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) routes() {
+	api.mux.HandleFunc("GET /", api.serveConsole)
+	api.mux.HandleFunc("GET /console", api.serveConsole)
+	api.mux.HandleFunc("GET /console/", api.serveConsole)
 	api.mux.HandleFunc("GET /healthz", api.healthz)
 	api.mux.HandleFunc("GET /v1/projects", api.listProjects)
 	api.mux.HandleFunc("POST /v1/projects", api.createProject)
