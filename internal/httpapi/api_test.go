@@ -52,26 +52,6 @@ func TestCreateTemplateRejectsInvalidPort(t *testing.T) {
 	}
 }
 
-func TestConsoleRoutes(t *testing.T) {
-	api := New(newFakeStore())
-
-	index := request(api, http.MethodGet, "/console", nil)
-	if index.Code != http.StatusOK {
-		t.Fatalf("expected console status %d, got %d", http.StatusOK, index.Code)
-	}
-	if contentType := index.Header().Get("Content-Type"); contentType != "text/html; charset=utf-8" {
-		t.Fatalf("unexpected console content type %q", contentType)
-	}
-
-	stylesheet := request(api, http.MethodGet, "/console/app.css", nil)
-	if stylesheet.Code != http.StatusOK {
-		t.Fatalf("expected stylesheet status %d, got %d", http.StatusOK, stylesheet.Code)
-	}
-	if contentType := stylesheet.Header().Get("Content-Type"); contentType != "text/css; charset=utf-8" {
-		t.Fatalf("unexpected stylesheet content type %q", contentType)
-	}
-}
-
 func TestSandboxLifecycle(t *testing.T) {
 	store := newFakeStore()
 	api := New(store)

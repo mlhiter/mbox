@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-API_URL="${MBOX_API_URL:-http://127.0.0.1:8080}"
+API_URL="${MBOX_API_URL:-http://127.0.0.1:18080}"
 KUBECONFIG_PATH="${MBOX_KUBECONFIG:-$HOME/.kube/config}"
 KUBE_CONTEXT="${MBOX_KUBE_CONTEXT:-}"
 RUN_ID="${MBOX_SMOKE_RUN_ID:-$(date +%Y%m%d%H%M%S)}"

@@ -14,12 +14,14 @@ The server is a Go HTTP API backed by Postgres. It stores mbox product records f
 
 The runtime controller is disabled by default. When explicitly enabled, it reconciles mbox `Sandbox` records into `agent-sandbox` runtime resources.
 
+The web console is a separate Vite app under `web/`. In development, Vite proxies `/healthz` and `/v1/*` to the Go API server.
+
 ## Configuration
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes | none | Postgres connection string for product state. |
-| `MBOX_LISTEN_ADDR` | no | `127.0.0.1:8080` | HTTP listen address. |
+| `MBOX_LISTEN_ADDR` | no | `127.0.0.1:18080` | HTTP listen address. |
 | `MBOX_RUNTIME_CONTROLLER_ENABLED` | no | `false` | Enables Kubernetes runtime reconciliation when set to true. |
 | `MBOX_RUNTIME_RECONCILE_INTERVAL` | no | `5s` | Sandbox reconciler polling interval. |
 | `MBOX_KUBECONFIG` | no | in-cluster or default client behavior | Kubeconfig path used by the runtime controller. |
@@ -34,10 +36,6 @@ All responses are JSON unless the route returns `204 No Content`.
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| `GET` | `/` | Serves the embedded web console. |
-| `GET` | `/console` | Serves the embedded web console. |
-| `GET` | `/console/app.css` | Serves console styles. |
-| `GET` | `/console/app.js` | Serves console JavaScript. |
 | `GET` | `/healthz` | Returns `{"status":"ok"}`. |
 | `GET` | `/v1/projects` | Lists projects. |
 | `POST` | `/v1/projects` | Creates a project. |
@@ -171,7 +169,7 @@ go test ./...
 Runtime smoke verification against a cluster with `agent-sandbox` installed:
 
 ```sh
-export MBOX_API_URL=http://127.0.0.1:8080
+export MBOX_API_URL=http://127.0.0.1:18080
 export MBOX_KUBECONFIG="$HOME/.kube/config"
 export MBOX_KUBE_CONTEXT=kind-agent-sandbox
 ./scripts/smoke-agent-sandbox.sh

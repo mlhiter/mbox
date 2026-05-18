@@ -59,16 +59,23 @@ docker run --name mbox-postgres \
 Run the API server:
 
 ```sh
-export DATABASE_URL='postgres://mbox:mbox@127.0.0.1:5432/mbox?sslmode=disable'
-go run ./cmd/mbox-server
+DATABASE_URL='postgres://mbox:mbox@127.0.0.1:5432/mbox?sslmode=disable' go run ./cmd/mbox-server
 ```
 
-The server listens on `127.0.0.1:8080` by default. Override it with `MBOX_LISTEN_ADDR`.
+The server listens on `127.0.0.1:18080` by default. Override it with `MBOX_LISTEN_ADDR`.
 
-Open the embedded web console:
+Run the Vite web console in a second shell:
 
 ```sh
-open http://127.0.0.1:8080/console
+cd web
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. During local development, Vite proxies `/healthz` and `/v1/*` to the API server at `127.0.0.1:18080`. If you override `MBOX_LISTEN_ADDR`, set `MBOX_API_PROXY_TARGET` before starting Vite:
+
+```sh
+MBOX_API_PROXY_TARGET=http://127.0.0.1:19080 npm run dev
 ```
 
 The runtime controller is disabled by default so local API development does not write to a Kubernetes cluster. Enable it explicitly when you want mbox to reconcile `Sandbox` records into `agent-sandbox` resources:
@@ -91,6 +98,7 @@ Run tests:
 
 ```sh
 go test ./...
+cd web && npm run build
 ```
 
 Postgres integration tests are opt-in because they write to the configured test database:
@@ -105,7 +113,7 @@ go test ./internal/postgres
 Create a project:
 
 ```sh
-curl -sS -X POST http://127.0.0.1:8080/v1/projects \
+curl -sS -X POST http://127.0.0.1:18080/v1/projects \
   -H 'content-type: application/json' \
   -d '{
     "name": "Demo Project",
@@ -118,7 +126,7 @@ curl -sS -X POST http://127.0.0.1:8080/v1/projects \
 Create a template:
 
 ```sh
-curl -sS -X POST http://127.0.0.1:8080/v1/templates \
+curl -sS -X POST http://127.0.0.1:18080/v1/templates \
   -H 'content-type: application/json' \
   -d '{
     "name": "Ubuntu Terminal",
@@ -137,7 +145,7 @@ curl -sS -X POST http://127.0.0.1:8080/v1/templates \
 Create a sandbox by using the returned project and template IDs:
 
 ```sh
-curl -sS -X POST http://127.0.0.1:8080/v1/sandboxes \
+curl -sS -X POST http://127.0.0.1:18080/v1/sandboxes \
   -H 'content-type: application/json' \
   -d '{
     "projectId": "<project-id>",
@@ -152,11 +160,11 @@ curl -sS -X POST http://127.0.0.1:8080/v1/sandboxes \
 If a project has `defaultTemplateId`, sandbox creation can use project defaults:
 
 ```sh
-curl -sS -X PATCH http://127.0.0.1:8080/v1/projects/<project-id> \
+curl -sS -X PATCH http://127.0.0.1:18080/v1/projects/<project-id> \
   -H 'content-type: application/json' \
   -d '{"defaultTemplateId":"<template-id>"}'
 
-curl -sS -X POST http://127.0.0.1:8080/v1/sandboxes \
+curl -sS -X POST http://127.0.0.1:18080/v1/sandboxes \
   -H 'content-type: application/json' \
   -d '{
     "projectId": "<project-id>",
@@ -170,9 +178,9 @@ In this path, mbox uses the project `defaultNamespace`, the project `defaultTemp
 List resources:
 
 ```sh
-curl -sS http://127.0.0.1:8080/v1/projects
-curl -sS http://127.0.0.1:8080/v1/templates
-curl -sS http://127.0.0.1:8080/v1/sandboxes
+curl -sS http://127.0.0.1:18080/v1/projects
+curl -sS http://127.0.0.1:18080/v1/templates
+curl -sS http://127.0.0.1:18080/v1/sandboxes
 ```
 
 ## Runtime Smoke Test
@@ -180,7 +188,7 @@ curl -sS http://127.0.0.1:8080/v1/sandboxes
 With the server running and `MBOX_RUNTIME_CONTROLLER_ENABLED=true`, run the cluster smoke test against a kubeconfig context that already has `agent-sandbox` installed:
 
 ```sh
-export MBOX_API_URL=http://127.0.0.1:8080
+export MBOX_API_URL=http://127.0.0.1:18080
 export MBOX_KUBECONFIG="$HOME/.kube/config"
 export MBOX_KUBE_CONTEXT=kind-agent-sandbox
 ./scripts/smoke-agent-sandbox.sh

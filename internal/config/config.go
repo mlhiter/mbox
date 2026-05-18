@@ -19,7 +19,7 @@ type Config struct {
 
 func Load() (Config, error) {
 	cfg := Config{
-		ListenAddr:               envDefault("MBOX_LISTEN_ADDR", "127.0.0.1:8080"),
+		ListenAddr:               envDefault("MBOX_LISTEN_ADDR", "127.0.0.1:18080"),
 		DatabaseURL:              os.Getenv("DATABASE_URL"),
 		RuntimeControllerEnabled: envBool("MBOX_RUNTIME_CONTROLLER_ENABLED", false),
 		RuntimeReconcileInterval: envDuration("MBOX_RUNTIME_RECONCILE_INTERVAL", 5*time.Second),
