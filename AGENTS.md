@@ -45,6 +45,7 @@ Keep the product centered on the mbox primitives above. New modules should direc
   - `PRODUCT.md`
   - `ARCHITECTURE.md`
   - `ROADMAP.md`
+  - `docs/server-api.md`
   - `docs/research-agent-sandbox.md`
 - When adding implementation, keep docs current if product or architecture decisions change.
 - Prefer small vertical slices over broad scaffolding.
@@ -52,6 +53,15 @@ Keep the product centered on the mbox primitives above. New modules should direc
 - Do not introduce database write operations against external databases unless the user explicitly asks.
 - For container images that need publishing, build `linux/amd64` by default unless the user asks for ARM.
 - For test-time cloud image pushes, default to `crpi-7jr40k6elhldekqp.cn-hangzhou.personal.cr.aliyuncs.com/mlhiter` unless instructed otherwise.
+
+## Current Implementation Notes
+
+- The current server entrypoint is `cmd/mbox-server`.
+- `DATABASE_URL` is required; startup runs embedded Postgres migrations.
+- The implemented HTTP surface is `GET /healthz` plus CRUD for `/v1/projects`, `/v1/templates`, and `/v1/sandboxes`.
+- The runtime controller is disabled by default. It may write Kubernetes resources only when `MBOX_RUNTIME_CONTROLLER_ENABLED=true`.
+- When enabled, the controller projects mbox sandboxes into `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources and keeps Postgres as the product source of truth.
+- Sandbox ServiceAccounts and generated pod templates disable service account token automount by default.
 
 ## UI Guidance
 

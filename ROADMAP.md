@@ -24,6 +24,14 @@ Exit criteria:
 
 Goal: let a human create, open, inspect, and destroy a Kubernetes-backed sandbox.
 
+Current progress:
+
+- Done: initial Go API server.
+- Done: Postgres-backed Project, EnvironmentTemplate, and Sandbox models.
+- Done: CRUD routes for `/v1/projects`, `/v1/templates`, and `/v1/sandboxes`.
+- Done: opt-in sandbox reconciler that projects Sandbox records to `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources.
+- Done: basic runtime status mapping from `SandboxClaim` Ready condition to mbox sandbox status.
+
 Scope:
 
 - Project model.
@@ -196,12 +204,12 @@ These should be pulled into earlier phases only if they unblock the MVP, not bec
 
 ## Near-term First Slice
 
-Recommended first implementation slice:
+First slice status:
 
-1. API server with Projects, Templates, and Sandboxes.
-2. Controller that creates one sandbox runtime per Sandbox record.
-3. One default template using a simple Linux image with terminal access.
-4. Web console with project list, sandbox list, create sandbox, sandbox detail, logs/events.
-5. Namespace-scoped RBAC and PVC creation.
+1. Done: API server with Projects, Templates, and Sandboxes.
+2. Done: controller that creates one `agent-sandbox` runtime per Sandbox record when explicitly enabled.
+3. Next: one default template using a simple Linux image with terminal access.
+4. Next: web console with project list, sandbox list, create sandbox, sandbox detail, logs/events.
+5. Next: namespace-scoped RBAC, PVC behavior, and real cluster smoke verification.
 
 This slice proves the core product loop before CI/CD expands the surface area.

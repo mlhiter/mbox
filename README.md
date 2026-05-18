@@ -28,6 +28,7 @@ Long term, mbox should have several coordinated technical surfaces:
 - [ARCHITECTURE.md](ARCHITECTURE.md): system layers, runtime design, security boundaries, and Kubernetes integration.
 - [ROADMAP.md](ROADMAP.md): staged execution plan from prototype to production platform.
 - [AGENTS.md](AGENTS.md): instructions for future coding agents working in this repo.
+- [docs/server-api.md](docs/server-api.md): currently implemented server routes, config, data model, and runtime projection.
 - [docs/research-agent-sandbox.md](docs/research-agent-sandbox.md): notes about using `kubernetes-sigs/agent-sandbox` as the interactive sandbox runtime substrate.
 
 ## Current Status
