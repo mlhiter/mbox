@@ -93,6 +93,12 @@ Slugs must match:
 
 `runtimeRef` has the same nullable PATCH semantics: absent keeps the existing value, and `null` clears it.
 
+`POST /v1/sandboxes` accepts `namespace` and `serviceAccountName`, but they are optional on the normal create path:
+
+- If `namespace` is omitted or empty, the project `defaultNamespace` is used.
+- If `serviceAccountName` is omitted or empty, `mbox-sandbox` is used.
+- If `templateId` is omitted, the project must have `defaultTemplateId` set.
+
 Valid sandbox statuses are:
 
 - `pending`
@@ -156,6 +162,15 @@ Default verification:
 
 ```sh
 go test ./...
+```
+
+Runtime smoke verification against a cluster with `agent-sandbox` installed:
+
+```sh
+export MBOX_API_URL=http://127.0.0.1:8080
+export MBOX_KUBECONFIG="$HOME/.kube/config"
+export MBOX_KUBE_CONTEXT=kind-agent-sandbox
+./scripts/smoke-agent-sandbox.sh
 ```
 
 Optional Postgres integration verification:

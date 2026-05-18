@@ -257,6 +257,18 @@ func buildTemplate(namespace string, name string, template domain.EnvironmentTem
 		}
 		container["ports"] = ports
 	}
+	if template.CPURequest != "" || template.MemoryRequest != "" {
+		requests := map[string]any{}
+		if template.CPURequest != "" {
+			requests["cpu"] = template.CPURequest
+		}
+		if template.MemoryRequest != "" {
+			requests["memory"] = template.MemoryRequest
+		}
+		container["resources"] = map[string]any{
+			"requests": requests,
+		}
+	}
 	if template.StorageRequest != "" {
 		container["volumeMounts"] = []any{
 			map[string]any{

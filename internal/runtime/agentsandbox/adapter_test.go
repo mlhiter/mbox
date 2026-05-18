@@ -42,6 +42,8 @@ func TestCreateRuntimeCreatesTemplateAndClaim(t *testing.T) {
 			Slug:           "ubuntu-terminal",
 			Image:          "ubuntu:24.04",
 			WorkingDir:     "/workspace",
+			CPURequest:     "250m",
+			MemoryRequest:  "256Mi",
 			StorageRequest: "10Gi",
 			ExposedPorts: []domain.TemplatePort{{
 				Name:     "web",
@@ -87,6 +89,11 @@ func TestCreateRuntimeCreatesTemplateAndClaim(t *testing.T) {
 	container := containers[0].(map[string]any)
 	if container["image"] != "ubuntu:24.04" {
 		t.Fatalf("unexpected container image: %+v", container)
+	}
+	resources := container["resources"].(map[string]any)
+	requests := resources["requests"].(map[string]any)
+	if requests["cpu"] != "250m" || requests["memory"] != "256Mi" {
+		t.Fatalf("unexpected resource requests: %+v", requests)
 	}
 	if _, ok, _ := unstructured.NestedSlice(template.Object, "spec", "volumeClaimTemplates"); !ok {
 		t.Fatal("expected volumeClaimTemplates")

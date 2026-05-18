@@ -119,6 +119,50 @@ func TestSandboxLifecycle(t *testing.T) {
 	}
 }
 
+func TestCreateSandboxUsesProjectDefaults(t *testing.T) {
+	store := newFakeStore()
+	api := New(store)
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+	project.DefaultTemplateID = &template.ID
+	store.projects[project.ID] = project
+
+	res := request(api, http.MethodPost, "/v1/sandboxes", map[string]any{
+		"projectId": project.ID,
+		"name":      "Defaulted Dev",
+		"slug":      "defaulted-dev",
+	})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, res.Code, res.Body.String())
+	}
+	var sandbox domain.Sandbox
+	decodeResponse(t, res, &sandbox)
+	if sandbox.TemplateID != template.ID {
+		t.Fatalf("expected template %s, got %s", template.ID, sandbox.TemplateID)
+	}
+	if sandbox.Namespace != project.DefaultNamespace {
+		t.Fatalf("expected namespace %q, got %q", project.DefaultNamespace, sandbox.Namespace)
+	}
+	if sandbox.ServiceAccountName != defaultSandboxServiceAccountName {
+		t.Fatalf("expected service account %q, got %q", defaultSandboxServiceAccountName, sandbox.ServiceAccountName)
+	}
+}
+
+func TestCreateSandboxRequiresTemplateWithoutProjectDefault(t *testing.T) {
+	store := newFakeStore()
+	api := New(store)
+	project := store.mustProject(t)
+
+	res := request(api, http.MethodPost, "/v1/sandboxes", map[string]any{
+		"projectId": project.ID,
+		"name":      "Defaulted Dev",
+		"slug":      "defaulted-dev",
+	})
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, res.Code, res.Body.String())
+	}
+}
+
 func request(handler http.Handler, method, path string, body any) *httptest.ResponseRecorder {
 	var buf bytes.Buffer
 	if body != nil {

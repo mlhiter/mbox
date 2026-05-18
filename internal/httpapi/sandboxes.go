@@ -19,6 +19,8 @@ type createSandboxRequest struct {
 	Metadata           json.RawMessage `json:"metadata"`
 }
 
+const defaultSandboxServiceAccountName = "mbox-sandbox"
+
 type updateSandboxRequest struct {
 	Name               *string               `json:"name"`
 	Status             *domain.SandboxStatus `json:"status"`
@@ -103,22 +105,45 @@ func (api *API) createSandbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON request body")
 		return
 	}
-	if req.ProjectID == uuid.Nil || req.TemplateID == uuid.Nil || !validateRequired(req.Name) || !validateSlug(req.Slug) {
-		writeError(w, http.StatusBadRequest, "projectId, templateId, name, and valid slug are required")
+	if req.ProjectID == uuid.Nil || !validateRequired(req.Name) || !validateSlug(req.Slug) {
+		writeError(w, http.StatusBadRequest, "projectId, name, and valid slug are required")
 		return
 	}
-	if !validateRequired(req.Namespace) || !validateRequired(req.ServiceAccountName) {
+
+	project, err := api.store.GetProject(r.Context(), req.ProjectID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+
+	templateID := req.TemplateID
+	if templateID == uuid.Nil {
+		if project.DefaultTemplateID == nil {
+			writeError(w, http.StatusBadRequest, "templateId is required unless project has defaultTemplateId")
+			return
+		}
+		templateID = *project.DefaultTemplateID
+	}
+	namespace := req.Namespace
+	if !validateRequired(namespace) {
+		namespace = project.DefaultNamespace
+	}
+	serviceAccountName := req.ServiceAccountName
+	if !validateRequired(serviceAccountName) {
+		serviceAccountName = defaultSandboxServiceAccountName
+	}
+	if !validateRequired(namespace) || !validateRequired(serviceAccountName) {
 		writeError(w, http.StatusBadRequest, "namespace and serviceAccountName are required")
 		return
 	}
 
 	sandbox, err := api.store.CreateSandbox(r.Context(), domain.SandboxCreate{
 		ProjectID:          req.ProjectID,
-		TemplateID:         req.TemplateID,
+		TemplateID:         templateID,
 		Name:               req.Name,
 		Slug:               req.Slug,
-		Namespace:          req.Namespace,
-		ServiceAccountName: req.ServiceAccountName,
+		Namespace:          namespace,
+		ServiceAccountName: serviceAccountName,
 		Metadata:           req.Metadata,
 	})
 	if err != nil {

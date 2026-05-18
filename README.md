@@ -143,6 +143,24 @@ curl -sS -X POST http://127.0.0.1:8080/v1/sandboxes \
   }'
 ```
 
+If a project has `defaultTemplateId`, sandbox creation can use project defaults:
+
+```sh
+curl -sS -X PATCH http://127.0.0.1:8080/v1/projects/<project-id> \
+  -H 'content-type: application/json' \
+  -d '{"defaultTemplateId":"<template-id>"}'
+
+curl -sS -X POST http://127.0.0.1:8080/v1/sandboxes \
+  -H 'content-type: application/json' \
+  -d '{
+    "projectId": "<project-id>",
+    "name": "Demo Sandbox",
+    "slug": "demo-sandbox"
+  }'
+```
+
+In this path, mbox uses the project `defaultNamespace`, the project `defaultTemplateId`, and the default sandbox ServiceAccount `mbox-sandbox`.
+
 List resources:
 
 ```sh
@@ -150,3 +168,16 @@ curl -sS http://127.0.0.1:8080/v1/projects
 curl -sS http://127.0.0.1:8080/v1/templates
 curl -sS http://127.0.0.1:8080/v1/sandboxes
 ```
+
+## Runtime Smoke Test
+
+With the server running and `MBOX_RUNTIME_CONTROLLER_ENABLED=true`, run the cluster smoke test against a kubeconfig context that already has `agent-sandbox` installed:
+
+```sh
+export MBOX_API_URL=http://127.0.0.1:8080
+export MBOX_KUBECONFIG="$HOME/.kube/config"
+export MBOX_KUBE_CONTEXT=kind-agent-sandbox
+./scripts/smoke-agent-sandbox.sh
+```
+
+The smoke test creates a project, a BusyBox terminal template, and a sandbox through the mbox API. It then verifies the generated `SandboxClaim`, resolved `Sandbox`, ready Pod, disabled ServiceAccount token automount, pod logs, workspace exec, API status mapping, and delete cleanup path.
