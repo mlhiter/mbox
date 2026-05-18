@@ -46,6 +46,7 @@ Keep the product centered on the mbox primitives above. New modules should direc
   - `ARCHITECTURE.md`
   - `ROADMAP.md`
   - `docs/server-api.md`
+  - `docs/web-console.md`
   - `docs/research-agent-sandbox.md`
 - When adding implementation, keep docs current if product or architecture decisions change.
 - Prefer small vertical slices over broad scaffolding.
@@ -59,6 +60,8 @@ Keep the product centered on the mbox primitives above. New modules should direc
 - The current server entrypoint is `cmd/mbox-server`.
 - `DATABASE_URL` is required; startup runs embedded Postgres migrations.
 - The implemented HTTP surface is `GET /healthz` plus CRUD for `/v1/projects`, `/v1/templates`, and `/v1/sandboxes`.
+- The web console is a separate Vite app under `web/`; it is not embedded in the Go server.
+- The API server defaults to `127.0.0.1:18080`; the Vite dev server defaults to `127.0.0.1:5174` and proxies `/healthz` and `/v1/*` to the API target.
 - The runtime controller is disabled by default. It may write Kubernetes resources only when `MBOX_RUNTIME_CONTROLLER_ENABLED=true`.
 - When enabled, the controller projects mbox sandboxes into `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources and keeps Postgres as the product source of truth.
 - Sandbox ServiceAccounts and generated pod templates disable service account token automount by default.
@@ -85,6 +88,13 @@ Core UI areas:
 - Policies
 - Credentials
 - Admin / Settings
+
+Current UI implementation:
+
+- `web/src/app.tsx` owns the current single-page resource console.
+- `web/src/app.css` owns app-level layout and design tokens.
+- shadcn source components live in `web/src/components/ui/`.
+- Keep the Notion-adjacent operational style documented in `DESIGN.md`.
 
 ## Security Expectations
 

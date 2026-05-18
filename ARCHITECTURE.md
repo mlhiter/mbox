@@ -9,12 +9,13 @@ The selected interactive sandbox runtime is `kubernetes-sigs/agent-sandbox`. mbo
 Current implementation status:
 
 - Go server entrypoint: `cmd/mbox-server`.
+- Web console: separate Vite React app under `web/`.
 - Product state: Postgres through `pgx`.
 - Implemented product resources: projects, environment templates, and sandboxes.
 - Implemented API surface: `GET /healthz` plus CRUD routes under `/v1/projects`, `/v1/templates`, and `/v1/sandboxes`.
 - Runtime projection: opt-in `agent-sandbox` adapter and sandbox reconciler.
 
-See `docs/server-api.md` for the current concrete API and configuration contract.
+See `docs/server-api.md` for the current concrete API and configuration contract, and `docs/web-console.md` for the current frontend structure.
 
 ## High-level Layers
 
@@ -59,6 +60,8 @@ The web app is the human-facing console for daily operation:
 - dense operational workflows for repeated use
 
 The web app should consume the same product APIs as the CLI and SDK. It should not depend on private controller behavior or raw Kubernetes objects as its main contract.
+
+The current web app is a Vite React app in `web/`. In local development it runs separately from the Go API server and proxies `/healthz` plus `/v1/*` to the configured API target. The default local split is API on `127.0.0.1:18080` and Vite on `127.0.0.1:5174`.
 
 ### CLI
 
@@ -144,6 +147,8 @@ Human-facing console for:
 - managing resource and security policies
 
 The UI should be operational and dense enough for repeated use. Avoid landing-page style composition in the app surface.
+
+Current implemented console scope is intentionally narrower: list and create projects, templates, and sandboxes; inspect selected resource IDs and runtime state; show API health and request errors. Terminal access, logs, events, pipelines, deployments, and policy screens are still roadmap work.
 
 ### Controller / Reconciler
 

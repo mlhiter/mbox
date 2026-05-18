@@ -14,7 +14,7 @@ The server is a Go HTTP API backed by Postgres. It stores mbox product records f
 
 The runtime controller is disabled by default. When explicitly enabled, it reconciles mbox `Sandbox` records into `agent-sandbox` runtime resources.
 
-The web console is a separate Vite app under `web/`. In development, Vite proxies `/healthz` and `/v1/*` to the Go API server.
+The web console is a separate Vite app under `web/`. In development, Vite proxies `/healthz` and `/v1/*` to the Go API server. See `docs/web-console.md` for frontend structure and verification.
 
 ## Configuration
 
@@ -29,6 +29,13 @@ The web console is a separate Vite app under `web/`. In development, Vite proxie
 | `MBOX_AGENT_SANDBOX_WARM_POOL` | no | empty | Optional `agent-sandbox` warm pool policy value placed on `SandboxClaim.spec.warmpool`. |
 
 Postgres integration tests are opt-in through `MBOX_TEST_DATABASE_URL`.
+
+Frontend development variables live in `web/vite.config.ts`:
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `MBOX_API_PROXY_TARGET` | no | `http://127.0.0.1:18080` | API target used by Vite dev proxy. |
+| `MBOX_WEB_PORT` | no | `5174` | Vite dev server port. |
 
 ## Routes
 
@@ -164,6 +171,7 @@ Default verification:
 
 ```sh
 go test ./...
+cd web && npm run build
 ```
 
 Runtime smoke verification against a cluster with `agent-sandbox` installed:

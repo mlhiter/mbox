@@ -31,6 +31,8 @@ Current progress:
 - Done: CRUD routes for `/v1/projects`, `/v1/templates`, and `/v1/sandboxes`.
 - Done: opt-in sandbox reconciler that projects Sandbox records to `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources.
 - Done: basic runtime status mapping from `SandboxClaim` Ready condition to mbox sandbox status.
+- Done: separate Vite web console with project, template, and sandbox list/create/inspect workflows.
+- Done: Notion-adjacent console design system captured in `DESIGN.md`.
 
 Scope:
 
@@ -208,8 +210,9 @@ First slice status:
 
 1. Done: API server with Projects, Templates, and Sandboxes.
 2. Done: controller that creates one `agent-sandbox` runtime per Sandbox record when explicitly enabled.
-3. Next: one default template using a simple Linux image with terminal access.
-4. Next: web console with project list, sandbox list, create sandbox, sandbox detail, logs/events.
-5. Next: namespace-scoped RBAC, PVC behavior, and real cluster smoke verification.
+3. Done: Vite web console with project list, template list, sandbox list, create dialogs, and resource inspection.
+4. Next: one default template using a simple Linux image with terminal access.
+5. Next: terminal access plus logs/events in the web console.
+6. Next: namespace-scoped RBAC, PVC behavior, and real cluster smoke verification.
 
 This slice proves the core product loop before CI/CD expands the surface area.

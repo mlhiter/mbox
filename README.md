@@ -29,17 +29,19 @@ Long term, mbox should have several coordinated technical surfaces:
 - [ROADMAP.md](ROADMAP.md): staged execution plan from prototype to production platform.
 - [AGENTS.md](AGENTS.md): instructions for future coding agents working in this repo.
 - [docs/server-api.md](docs/server-api.md): currently implemented server routes, config, data model, and runtime projection.
+- [docs/web-console.md](docs/web-console.md): Vite console structure, local proxy behavior, UI scope, and verification.
 - [docs/research-agent-sandbox.md](docs/research-agent-sandbox.md): notes about using `kubernetes-sigs/agent-sandbox` as the interactive sandbox runtime substrate.
 
 ## Current Status
 
-This repository now contains the first server slice: a Go API server backed by Postgres for mbox product records.
+This repository now contains the first vertical slice: a Go API server backed by Postgres for mbox product records plus a separate Vite web console.
 
 Implemented resources:
 
 - `Project`
 - `EnvironmentTemplate`
 - `Sandbox`
+- Vite console views for listing and creating projects, templates, and sandboxes
 
 This slice persists mbox product state in Postgres. When the runtime controller is explicitly enabled, it reconciles `Sandbox` records into `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources.
 
@@ -72,11 +74,13 @@ npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. During local development, Vite proxies `/healthz` and `/v1/*` to the API server at `127.0.0.1:18080`. If you override `MBOX_LISTEN_ADDR`, set `MBOX_API_PROXY_TARGET` before starting Vite:
+Open `http://127.0.0.1:5174`. During local development, Vite proxies `/healthz` and `/v1/*` to the API server at `127.0.0.1:18080`. If you override `MBOX_LISTEN_ADDR`, set `MBOX_API_PROXY_TARGET` before starting Vite:
 
 ```sh
 MBOX_API_PROXY_TARGET=http://127.0.0.1:19080 npm run dev
 ```
+
+The web dev port defaults to `5174` to avoid colliding with other local Vite projects. Override it with `MBOX_WEB_PORT`.
 
 The runtime controller is disabled by default so local API development does not write to a Kubernetes cluster. Enable it explicitly when you want mbox to reconcile `Sandbox` records into `agent-sandbox` resources:
 
