@@ -32,4 +32,120 @@ Long term, mbox should have several coordinated technical surfaces:
 
 ## Current Status
 
-This repository currently contains planning documents only. Implementation should follow the selected `agent-sandbox` direction for interactive sandboxes and the product boundaries described in the product and architecture documents.
+This repository now contains the first server slice: a Go API server backed by Postgres for mbox product records.
+
+Implemented resources:
+
+- `Project`
+- `EnvironmentTemplate`
+- `Sandbox`
+
+This slice persists mbox product state in Postgres. When the runtime controller is explicitly enabled, it reconciles `Sandbox` records into `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources.
+
+## Local Development
+
+Start a local Postgres:
+
+```sh
+docker run --name mbox-postgres \
+  -e POSTGRES_USER=mbox \
+  -e POSTGRES_PASSWORD=mbox \
+  -e POSTGRES_DB=mbox \
+  -p 5432:5432 \
+  -d postgres:17
+```
+
+Run the API server:
+
+```sh
+export DATABASE_URL='postgres://mbox:mbox@127.0.0.1:5432/mbox?sslmode=disable'
+go run ./cmd/mbox-server
+```
+
+The server listens on `127.0.0.1:8080` by default. Override it with `MBOX_LISTEN_ADDR`.
+
+The runtime controller is disabled by default so local API development does not write to a Kubernetes cluster. Enable it explicitly when you want mbox to reconcile `Sandbox` records into `agent-sandbox` resources:
+
+```sh
+export MBOX_RUNTIME_CONTROLLER_ENABLED=true
+export MBOX_KUBECONFIG="$HOME/.kube/config"
+export MBOX_KUBE_CONTEXT="<context-name>"
+go run ./cmd/mbox-server
+```
+
+Optional runtime settings:
+
+- `MBOX_RUNTIME_RECONCILE_INTERVAL`: reconcile loop interval, for example `5s`.
+- `MBOX_AGENT_SANDBOX_WARM_POOL`: `agent-sandbox` warm pool policy, for example `none` or `default`.
+
+When enabled, mbox ensures the sandbox namespace exists, creates a scoped sandbox ServiceAccount with token automount disabled, creates or updates a `SandboxTemplate`, and creates a `SandboxClaim` in that namespace. The generated pod template uses the configured sandbox ServiceAccount and also disables token automount. The mbox Postgres record remains the product source of truth; Kubernetes resources are the runtime projection.
+
+Run tests:
+
+```sh
+go test ./...
+```
+
+Postgres integration tests are opt-in because they write to the configured test database:
+
+```sh
+export MBOX_TEST_DATABASE_URL='postgres://mbox:mbox@127.0.0.1:5432/mbox_test?sslmode=disable'
+go test ./internal/postgres
+```
+
+## API Smoke Test
+
+Create a project:
+
+```sh
+curl -sS -X POST http://127.0.0.1:8080/v1/projects \
+  -H 'content-type: application/json' \
+  -d '{
+    "name": "Demo Project",
+    "slug": "demo-project",
+    "repositoryUrl": "https://github.com/example/demo",
+    "defaultNamespace": "mbox-demo"
+  }'
+```
+
+Create a template:
+
+```sh
+curl -sS -X POST http://127.0.0.1:8080/v1/templates \
+  -H 'content-type: application/json' \
+  -d '{
+    "name": "Ubuntu Terminal",
+    "slug": "ubuntu-terminal",
+    "image": "ubuntu:24.04",
+    "workingDir": "/workspace",
+    "cpuRequest": "500m",
+    "memoryRequest": "1Gi",
+    "storageRequest": "10Gi",
+    "exposedPorts": [
+      {"name": "web", "port": 3000, "protocol": "TCP"}
+    ]
+  }'
+```
+
+Create a sandbox by using the returned project and template IDs:
+
+```sh
+curl -sS -X POST http://127.0.0.1:8080/v1/sandboxes \
+  -H 'content-type: application/json' \
+  -d '{
+    "projectId": "<project-id>",
+    "templateId": "<template-id>",
+    "name": "Demo Sandbox",
+    "slug": "demo-sandbox",
+    "namespace": "mbox-demo",
+    "serviceAccountName": "mbox-sandbox"
+  }'
+```
+
+List resources:
+
+```sh
+curl -sS http://127.0.0.1:8080/v1/projects
+curl -sS http://127.0.0.1:8080/v1/templates
+curl -sS http://127.0.0.1:8080/v1/sandboxes
+```
