@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -98,6 +99,20 @@ func TestCreateRuntimeCreatesTemplateAndClaim(t *testing.T) {
 	}
 	if _, ok, _ := unstructured.NestedSlice(template.Object, "spec", "volumeClaimTemplates"); !ok {
 		t.Fatal("expected volumeClaimTemplates")
+	}
+	volumeMounts := container["volumeMounts"].([]any)
+	if len(volumeMounts) != 1 {
+		t.Fatalf("expected workspace volume mount, got %+v", volumeMounts)
+	}
+	mount := volumeMounts[0].(map[string]any)
+	if mount["name"] != "workspace" || mount["mountPath"] != "/workspace" {
+		t.Fatalf("unexpected workspace volume mount: %+v", mount)
+	}
+	volumeClaimTemplates, _, _ := unstructured.NestedSlice(template.Object, "spec", "volumeClaimTemplates")
+	claimTemplate := volumeClaimTemplates[0].(map[string]any)
+	request, _, _ := unstructured.NestedString(claimTemplate, "spec", "resources", "requests", "storage")
+	if request != "10Gi" {
+		t.Fatalf("expected storage request 10Gi, got %q", request)
 	}
 
 	claim, err := client.Resource(claimsGVR).Namespace("mbox-demo").Get(context.Background(), ref.Name, metav1.GetOptions{})
@@ -206,12 +221,38 @@ func TestResolveRuntimeFindsPodFromClaimSandboxSelector(t *testing.T) {
 			},
 		},
 		Spec: corev1.PodSpec{
+			Volumes: []corev1.Volume{{
+				Name: "workspace",
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: "workspace-resolved-sandbox",
+					},
+				},
+			}},
 			Containers: []corev1.Container{{
 				Name: "workspace",
+				VolumeMounts: []corev1.VolumeMount{{
+					Name:      "workspace",
+					MountPath: "/workspace",
+				}},
 			}},
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodRunning,
+		},
+	}, &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "workspace-resolved-sandbox",
+			Namespace: "mbox-demo",
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			StorageClassName: stringPtr("standard"),
+		},
+		Status: corev1.PersistentVolumeClaimStatus{
+			Phase: corev1.ClaimBound,
+			Capacity: corev1.ResourceList{
+				corev1.ResourceStorage: resource.MustParse("10Gi"),
+			},
 		},
 	})
 	adapter := NewWithClients(client, coreClient, Config{})
@@ -228,4 +269,15 @@ func TestResolveRuntimeFindsPodFromClaimSandboxSelector(t *testing.T) {
 	if target.PodName != "runtime-pod" || target.Container != "workspace" || target.Phase != "Running" {
 		t.Fatalf("unexpected runtime target: %+v", target)
 	}
+	if len(target.Storage) != 1 {
+		t.Fatalf("expected one storage mount, got %+v", target.Storage)
+	}
+	storage := target.Storage[0]
+	if storage.MountPath != "/workspace" || storage.ClaimName != "workspace-resolved-sandbox" || storage.Phase != "Bound" || storage.Capacity != "10Gi" {
+		t.Fatalf("unexpected runtime storage: %+v", storage)
+	}
+}
+
+func stringPtr(value string) *string {
+	return &value
 }

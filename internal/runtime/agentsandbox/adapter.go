@@ -228,6 +228,7 @@ func (a *Adapter) ResolveRuntime(ctx context.Context, ref domain.RuntimeRef) (mb
 		Phase:     string(pod.Status.Phase),
 		Selector:  selector,
 		Commands:  []string{"/bin/bash", "/bin/sh", "sh"},
+		Storage:   a.runtimeStorage(ctx, pod, container),
 	}, nil
 }
 
@@ -605,6 +606,56 @@ func pickRuntimePod(pods []corev1.Pod) corev1.Pod {
 		}
 	}
 	return pods[0]
+}
+
+func (a *Adapter) runtimeStorage(ctx context.Context, pod corev1.Pod, containerName string) []mboxruntime.RuntimeStorage {
+	container, ok := findContainer(pod, containerName)
+	if !ok {
+		return nil
+	}
+
+	volumes := map[string]corev1.Volume{}
+	for _, volume := range pod.Spec.Volumes {
+		volumes[volume.Name] = volume
+	}
+
+	items := make([]mboxruntime.RuntimeStorage, 0, len(container.VolumeMounts))
+	for _, mount := range container.VolumeMounts {
+		volume, ok := volumes[mount.Name]
+		if !ok || volume.PersistentVolumeClaim == nil {
+			continue
+		}
+		item := mboxruntime.RuntimeStorage{
+			Name:      mount.Name,
+			MountPath: mount.MountPath,
+			ClaimName: volume.PersistentVolumeClaim.ClaimName,
+		}
+		if a.coreClient != nil {
+			pvc, err := a.coreClient.CoreV1().PersistentVolumeClaims(pod.Namespace).Get(ctx, item.ClaimName, metav1.GetOptions{})
+			if err == nil {
+				item.Phase = string(pvc.Status.Phase)
+				if storage := pvc.Status.Capacity.Storage(); storage != nil {
+					item.Capacity = storage.String()
+				}
+				if pvc.Spec.StorageClassName != nil {
+					item.StorageClassName = *pvc.Spec.StorageClassName
+				}
+			} else if !apierrors.IsNotFound(err) {
+				item.Message = err.Error()
+			}
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+func findContainer(pod corev1.Pod, name string) (corev1.Container, bool) {
+	for _, container := range pod.Spec.Containers {
+		if container.Name == name {
+			return container, true
+		}
+	}
+	return corev1.Container{}, false
 }
 
 func runtimePorts(claim *unstructured.Unstructured) []domain.SandboxPort {

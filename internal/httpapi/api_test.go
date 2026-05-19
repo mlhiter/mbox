@@ -252,6 +252,9 @@ func TestRuntimeRoutesReturnTargetLogsAndEvents(t *testing.T) {
 	if target.PodName != "pod-dev" {
 		t.Fatalf("unexpected target: %+v", target)
 	}
+	if len(target.Storage) != 1 || target.Storage[0].MountPath != "/workspace" || target.Storage[0].Phase != "Bound" {
+		t.Fatalf("unexpected target storage: %+v", target.Storage)
+	}
 
 	logsRes := request(api, http.MethodGet, "/v1/sandboxes/"+sandbox.ID.String()+"/logs?tailLines=12", nil)
 	if logsRes.Code != http.StatusOK {
@@ -841,6 +844,13 @@ func (f *fakeRuntimeAccess) ResolveRuntime(context.Context, domain.RuntimeRef) (
 		Container: "workspace",
 		Phase:     "Running",
 		Selector:  "app=pod-dev",
+		Storage: []mboxruntime.RuntimeStorage{{
+			Name:      "workspace",
+			MountPath: "/workspace",
+			ClaimName: "workspace-dev",
+			Phase:     "Bound",
+			Capacity:  "1Gi",
+		}},
 	}, nil
 }
 

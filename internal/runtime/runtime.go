@@ -30,12 +30,23 @@ type Status struct {
 }
 
 type RuntimeTarget struct {
-	Namespace string   `json:"namespace"`
-	PodName   string   `json:"podName"`
-	Container string   `json:"container"`
-	Phase     string   `json:"phase"`
-	Selector  string   `json:"selector"`
-	Commands  []string `json:"commands,omitempty"`
+	Namespace string           `json:"namespace"`
+	PodName   string           `json:"podName"`
+	Container string           `json:"container"`
+	Phase     string           `json:"phase"`
+	Selector  string           `json:"selector"`
+	Commands  []string         `json:"commands,omitempty"`
+	Storage   []RuntimeStorage `json:"storage,omitempty"`
+}
+
+type RuntimeStorage struct {
+	Name             string `json:"name"`
+	MountPath        string `json:"mountPath"`
+	ClaimName        string `json:"claimName,omitempty"`
+	Phase            string `json:"phase,omitempty"`
+	Capacity         string `json:"capacity,omitempty"`
+	StorageClassName string `json:"storageClassName,omitempty"`
+	Message          string `json:"message,omitempty"`
 }
 
 type PreviewPort struct {
