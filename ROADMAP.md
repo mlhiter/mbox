@@ -33,6 +33,9 @@ Current progress:
 - Done: basic runtime status mapping from `SandboxClaim` Ready condition to mbox sandbox status.
 - Done: separate Vite web console with project, template, and sandbox list/create/inspect workflows.
 - Done: Notion-adjacent console design system captured in `DESIGN.md`.
+- Done: browser terminal for running sandboxes through Kubernetes `pods/exec`.
+- Done: runtime target, logs, and Kubernetes events API routes plus web-console detail panel.
+- Done: real `agent-sandbox` cluster smoke verification against `kind-agent-sandbox`.
 
 Scope:
 
@@ -211,8 +214,9 @@ First slice status:
 1. Done: API server with Projects, Templates, and Sandboxes.
 2. Done: controller that creates one `agent-sandbox` runtime per Sandbox record when explicitly enabled.
 3. Done: Vite web console with project list, template list, sandbox list, create dialogs, and resource inspection.
-4. Next: one default template using a simple Linux image with terminal access.
-5. Next: terminal access plus logs/events in the web console.
-6. Next: namespace-scoped RBAC, PVC behavior, and real cluster smoke verification.
+4. Done: default BusyBox smoke template proving terminal-ready sandbox startup.
+5. Done: terminal access plus logs/events in the web console.
+6. Done: real cluster smoke verification for create, runtime access, exec, status mapping, and cleanup.
+7. Next: preview port entry, PVC behavior, and richer namespace-scoped RBAC/policy handling.
 
 This slice proves the core product loop before CI/CD expands the surface area.

@@ -42,6 +42,7 @@ Implemented resources:
 - `EnvironmentTemplate`
 - `Sandbox`
 - Vite console views for listing and creating projects, templates, and sandboxes
+- browser terminal plus lightweight logs/events for ready sandbox runtimes
 
 This slice persists mbox product state in Postgres. When the runtime controller is explicitly enabled, it reconciles `Sandbox` records into `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources.
 
@@ -86,6 +87,7 @@ The runtime controller is disabled by default so local API development does not 
 
 ```sh
 export MBOX_RUNTIME_CONTROLLER_ENABLED=true
+export MBOX_RUNTIME_ACCESS_ENABLED=true
 export MBOX_KUBECONFIG="$HOME/.kube/config"
 export MBOX_KUBE_CONTEXT="<context-name>"
 go run ./cmd/mbox-server
@@ -94,9 +96,12 @@ go run ./cmd/mbox-server
 Optional runtime settings:
 
 - `MBOX_RUNTIME_RECONCILE_INTERVAL`: reconcile loop interval, for example `5s`.
+- `MBOX_RUNTIME_ACCESS_ENABLED`: enables terminal, logs, events, and runtime target routes when set to `true`.
 - `MBOX_AGENT_SANDBOX_WARM_POOL`: `agent-sandbox` warm pool policy, for example `none` or `default`.
 
 When enabled, mbox ensures the sandbox namespace exists, creates a scoped sandbox ServiceAccount with token automount disabled, creates or updates a `SandboxTemplate`, and creates a `SandboxClaim` in that namespace. The generated pod template uses the configured sandbox ServiceAccount and also disables token automount. The mbox Postgres record remains the product source of truth; Kubernetes resources are the runtime projection.
+
+`MBOX_RUNTIME_ACCESS_ENABLED=true` enables `/v1/sandboxes/{id}/terminal`, `/runtime`, `/logs`, and `/events`. The terminal route is a WebSocket proxy from the browser to Kubernetes `pods/exec`; ordinary sandbox pods still do not receive broad Kubernetes credentials.
 
 Run tests:
 
@@ -189,7 +194,7 @@ curl -sS http://127.0.0.1:18080/v1/sandboxes
 
 ## Runtime Smoke Test
 
-With the server running and `MBOX_RUNTIME_CONTROLLER_ENABLED=true`, run the cluster smoke test against a kubeconfig context that already has `agent-sandbox` installed:
+With the server running and both `MBOX_RUNTIME_CONTROLLER_ENABLED=true` and `MBOX_RUNTIME_ACCESS_ENABLED=true`, run the cluster smoke test against a kubeconfig context that already has `agent-sandbox` installed:
 
 ```sh
 export MBOX_API_URL=http://127.0.0.1:18080

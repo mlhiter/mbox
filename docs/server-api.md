@@ -23,6 +23,7 @@ The web console is a separate Vite app under `web/`. In development, Vite proxie
 | `DATABASE_URL` | yes | none | Postgres connection string for product state. |
 | `MBOX_LISTEN_ADDR` | no | `127.0.0.1:18080` | HTTP listen address. |
 | `MBOX_RUNTIME_CONTROLLER_ENABLED` | no | `false` | Enables Kubernetes runtime reconciliation when set to true. |
+| `MBOX_RUNTIME_ACCESS_ENABLED` | no | `false` | Enables runtime access routes for terminal, logs, events, and runtime target resolution. |
 | `MBOX_RUNTIME_RECONCILE_INTERVAL` | no | `5s` | Sandbox reconciler polling interval. |
 | `MBOX_KUBECONFIG` | no | in-cluster or default client behavior | Kubeconfig path used by the runtime controller. |
 | `MBOX_KUBE_CONTEXT` | no | current context | Kubeconfig context used by the runtime controller. |
@@ -59,6 +60,10 @@ All responses are JSON unless the route returns `204 No Content`.
 | `GET` | `/v1/sandboxes/{sandboxID}` | Gets one non-deleted sandbox. |
 | `PATCH` | `/v1/sandboxes/{sandboxID}` | Updates mutable sandbox fields. |
 | `DELETE` | `/v1/sandboxes/{sandboxID}` | Soft-deletes a sandbox. |
+| `GET` | `/v1/sandboxes/{sandboxID}/runtime` | Resolves the runtime Pod target for a ready sandbox. Requires runtime access. |
+| `GET` | `/v1/sandboxes/{sandboxID}/logs` | Returns recent logs from the runtime Pod. Optional `tailLines`, default `200`. |
+| `GET` | `/v1/sandboxes/{sandboxID}/events` | Returns Kubernetes events for the runtime Pod. |
+| `GET` | `/v1/sandboxes/{sandboxID}/terminal` | WebSocket terminal proxy to the runtime Pod shell. |
 
 Errors use:
 
@@ -164,6 +169,19 @@ Runtime reference shape:
 ```
 
 The generated pod template sets `serviceAccountName` and `automountServiceAccountToken: false`. This keeps ordinary sandbox pods from receiving broad Kubernetes credentials by default.
+
+## Runtime Access
+
+Runtime access routes are available only when `MBOX_RUNTIME_ACCESS_ENABLED=true`, because the server needs explicit permission to proxy terminal, logs, events, and runtime target reads through its Kubernetes client.
+
+The terminal route upgrades to WebSocket and proxies browser input/output to Kubernetes `pods/exec` for the resolved sandbox Pod. The server resolves the runtime target through:
+
+1. mbox `Sandbox.runtimeRef`
+2. `SandboxClaim.status.sandbox.name`
+3. `Sandbox.status.selector`
+4. the matching Pod and `workspace` container when present
+
+The terminal route only opens for sandboxes whose mbox status is `running`. The default shell command is `/bin/sh`. Passing `?shell=bash` requests `/bin/bash`; other shell values are rejected.
 
 ## Verification
 

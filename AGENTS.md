@@ -59,12 +59,15 @@ Keep the product centered on the mbox primitives above. New modules should direc
 
 - The current server entrypoint is `cmd/mbox-server`.
 - `DATABASE_URL` is required; startup runs embedded Postgres migrations.
-- The implemented HTTP surface is `GET /healthz` plus CRUD for `/v1/projects`, `/v1/templates`, and `/v1/sandboxes`.
+- The implemented HTTP surface is `GET /healthz`, CRUD for `/v1/projects`, `/v1/templates`, and `/v1/sandboxes`, plus sandbox runtime target, logs, events, and terminal routes under `/v1/sandboxes/{id}`.
 - The web console is a separate Vite app under `web/`; it is not embedded in the Go server.
-- The API server defaults to `127.0.0.1:18080`; the Vite dev server defaults to `127.0.0.1:5174` and proxies `/healthz` and `/v1/*` to the API target.
+- The API server defaults to `127.0.0.1:18080`; the Vite dev server defaults to `127.0.0.1:5174` and proxies `/healthz` and `/v1/*` to the API target, including WebSocket upgrades for sandbox terminal sessions.
 - The runtime controller is disabled by default. It may write Kubernetes resources only when `MBOX_RUNTIME_CONTROLLER_ENABLED=true`.
+- Runtime access is separately disabled by default. Terminal, logs, events, and runtime target routes require `MBOX_RUNTIME_ACCESS_ENABLED=true`.
 - When enabled, the controller projects mbox sandboxes into `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources and keeps Postgres as the product source of truth.
 - Sandbox ServiceAccounts and generated pod templates disable service account token automount by default.
+- The browser terminal uses Kubernetes `pods/exec` through the resolved `agent-sandbox` Pod. The terminal route only accepts running sandboxes and only allows `sh` or `bash`.
+- The dedicated local smoke target is `MBOX_KUBECONFIG=$HOME/.kube/config` with `MBOX_KUBE_CONTEXT=kind-agent-sandbox`; this cluster is available for mbox runtime smoke tests.
 
 ## UI Guidance
 

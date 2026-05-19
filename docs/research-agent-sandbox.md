@@ -86,12 +86,22 @@ Runtime mapping:
 - mbox `EnvironmentTemplate` -> `SandboxTemplate`
 - mbox `Sandbox` -> `SandboxClaim` plus resolved `Sandbox`
 - mbox runtime status -> Sandbox, Pod, PVC, Service, Gateway, and Events
+- mbox browser terminal -> resolved Pod through Kubernetes `pods/exec`
+
+Current implemented runtime resolution path:
+
+1. mbox `Sandbox.runtimeRef`
+2. `SandboxClaim.status.sandbox.name`
+3. `Sandbox.status.selector`
+4. matching Pod, preferring the `workspace` container when present
+
+Runtime access is intentionally separate from runtime reconciliation. `MBOX_RUNTIME_CONTROLLER_ENABLED=true` controls Kubernetes resource projection, while `MBOX_RUNTIME_ACCESS_ENABLED=true` controls terminal, logs, events, and runtime target API routes.
 
 ## Open Questions
 
 - Does `agent-sandbox` support all required pause/resume semantics for long-lived human sandboxes?
-- Does command execution need a sidecar, exec API, SDK tunnel, or separate gateway?
-- How should terminal, web IDE, notebook, and preview ports be exposed?
+- Should command execution remain on Kubernetes `pods/exec` for the MVP, or move to a sidecar/gateway when authentication, auditing, or multiplexing requirements grow?
+- How should web IDE, notebook, and preview ports be exposed?
 - Which CI steps should use `agent-sandbox` and which should stay as plain Kubernetes Jobs?
 - How mature are warm pools for production startup latency requirements?
 - How should PVC lifecycle and cleanup be coordinated between mbox and the runtime controller?

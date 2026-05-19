@@ -11,9 +11,11 @@ The current console supports the first product slice:
 - template list and create dialog
 - sandbox list and launch dialog
 - selected resource inspection panel
+- browser terminal for ready sandboxes
+- lightweight runtime logs and Kubernetes events in the sandbox detail panel
 - toast feedback for API failures and successful writes
 
-The console does not yet provide terminal access, logs, Kubernetes events, preview port entry, pipeline editing, deployments, credentials, or policy management. Those remain roadmap items.
+The console does not yet provide preview port entry, pipeline editing, deployments, credentials, or policy management. Those remain roadmap items.
 
 ## Local Development
 
@@ -36,7 +38,7 @@ Default local endpoints:
 - API server: `http://127.0.0.1:18080`
 - Vite console: `http://127.0.0.1:5174`
 
-Vite proxies `/healthz` and `/v1/*` to the API server. If the API server runs somewhere else, set:
+Vite proxies `/healthz` and `/v1/*` to the API server. The `/v1/*` proxy also forwards WebSocket upgrades for sandbox terminal sessions. If the API server runs somewhere else, set:
 
 ```sh
 MBOX_API_PROXY_TARGET=http://127.0.0.1:19080 npm run dev
@@ -96,4 +98,6 @@ Useful manual checks:
 - `http://127.0.0.1:5174/` loads the console.
 - API status shows healthy when the Go server is running.
 - Project, template, and sandbox create dialogs fill the modal width on desktop and mobile.
+- Selecting a ready sandbox shows the runtime target, logs, Kubernetes events, and terminal controls.
+- Terminal Connect is disabled until the sandbox has a runtime reference and `running` status.
 - No page-level horizontal overflow appears on mobile.
