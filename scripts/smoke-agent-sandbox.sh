@@ -109,6 +109,25 @@ wait_deleted() {
 	return 1
 }
 
+wait_replacement_pod_name() {
+	local selector="$1"
+	local old_uid="$2"
+	local deadline=$((SECONDS + TIMEOUT_SECONDS))
+	local pod_name=""
+
+	while ((SECONDS < deadline)); do
+		pod_name="$("${kubectl_cmd[@]}" get pods -n "$NAMESPACE" -l "$selector" -o json 2>/dev/null | jq -r --arg old "$old_uid" '.items[] | select(.metadata.uid != $old and (.metadata.deletionTimestamp | not)) | .metadata.name' | head -n 1 || true)"
+		if [[ -n "$pod_name" ]]; then
+			printf '%s' "$pod_name"
+			return 0
+		fi
+		sleep 2
+	done
+
+	echo "timed out waiting for replacement pod with selector $selector" >&2
+	return 1
+}
+
 wait_pod_name() {
 	local selector="$1"
 	local deadline=$((SECONDS + TIMEOUT_SECONDS))
@@ -220,9 +239,41 @@ if [[ "$token_automount" != "false" ]]; then
 	exit 1
 fi
 
+echo "Checking workspace PVC contract"
+template_runtime_name="$("${kubectl_cmd[@]}" get "sandboxclaim.extensions.agents.x-k8s.io/$claim_name" -n "$NAMESPACE" -o jsonpath='{.spec.sandboxTemplateRef.name}')"
+template_mount_path="$("${kubectl_cmd[@]}" get "sandboxtemplate.extensions.agents.x-k8s.io/$template_runtime_name" -n "$NAMESPACE" -o jsonpath='{.spec.podTemplate.spec.containers[0].volumeMounts[?(@.name=="workspace")].mountPath}')"
+template_storage_request="$("${kubectl_cmd[@]}" get "sandboxtemplate.extensions.agents.x-k8s.io/$template_runtime_name" -n "$NAMESPACE" -o jsonpath='{.spec.volumeClaimTemplates[?(@.metadata.name=="workspace")].spec.resources.requests.storage}')"
+if [[ "$template_mount_path" != "/workspace" ]]; then
+	echo "expected template workspace mount /workspace, got $template_mount_path" >&2
+	exit 1
+fi
+if [[ "$template_storage_request" != "1Gi" ]]; then
+	echo "expected template workspace storage request 1Gi, got $template_storage_request" >&2
+	exit 1
+fi
+pvc_name="$("${kubectl_cmd[@]}" get pod "$pod_name" -n "$NAMESPACE" -o jsonpath='{.spec.volumes[?(@.name=="workspace")].persistentVolumeClaim.claimName}')"
+if [[ -z "$pvc_name" ]]; then
+	echo "expected pod workspace volume to use a PersistentVolumeClaim" >&2
+	exit 1
+fi
+"${kubectl_cmd[@]}" wait -n "$NAMESPACE" "pvc/$pvc_name" --for=jsonpath='{.status.phase}'=Bound --timeout="${TIMEOUT_SECONDS}s"
+
 echo "Checking pod logs and workspace exec"
 "${kubectl_cmd[@]}" logs -n "$NAMESPACE" "$pod_name" | grep -F "mbox sandbox ready" >/dev/null
 "${kubectl_cmd[@]}" exec -n "$NAMESPACE" "$pod_name" -- sh -c 'echo smoke-ok > /workspace/mbox-smoke.txt && cat /workspace/mbox-smoke.txt' | grep -F "smoke-ok" >/dev/null
+
+echo "Checking workspace data survives pod replacement"
+pod_uid="$("${kubectl_cmd[@]}" get pod "$pod_name" -n "$NAMESPACE" -o jsonpath='{.metadata.uid}')"
+"${kubectl_cmd[@]}" delete pod "$pod_name" -n "$NAMESPACE" --wait=false >/dev/null
+replacement_pod_name="$(wait_replacement_pod_name "$pod_selector" "$pod_uid")"
+"${kubectl_cmd[@]}" wait -n "$NAMESPACE" "pod/$replacement_pod_name" --for=condition=Ready --timeout="${TIMEOUT_SECONDS}s"
+replacement_pvc_name="$("${kubectl_cmd[@]}" get pod "$replacement_pod_name" -n "$NAMESPACE" -o jsonpath='{.spec.volumes[?(@.name=="workspace")].persistentVolumeClaim.claimName}')"
+if [[ "$replacement_pvc_name" != "$pvc_name" ]]; then
+	echo "expected replacement pod to reuse PVC $pvc_name, got $replacement_pvc_name" >&2
+	exit 1
+fi
+"${kubectl_cmd[@]}" exec -n "$NAMESPACE" "$replacement_pod_name" -- sh -c 'cat /workspace/mbox-smoke.txt' | grep -F "smoke-ok" >/dev/null
+pod_name="$replacement_pod_name"
 
 echo "Declaring and checking preview port metadata"
 api_json PATCH "/v1/sandboxes/$sandbox_id" "$(jq -n '{ports: [{name: "web", port: 8080, protocol: "TCP"}]}')" >/dev/null
@@ -232,13 +283,18 @@ echo "Waiting for mbox API sandbox status running"
 wait_api_sandbox_status "$sandbox_id" running
 
 echo "Checking mbox runtime access APIs"
-api_json GET "/v1/sandboxes/$sandbox_id/runtime" | jq -e --arg pod "$pod_name" '.podName == $pod and .container != ""' >/dev/null
+api_json GET "/v1/sandboxes/$sandbox_id/runtime" | jq -e --arg pod "$pod_name" --arg pvc "$pvc_name" '.podName == $pod and .container != "" and (.storage[] | select(.mountPath == "/workspace" and .claimName == $pvc and .phase == "Bound"))' >/dev/null
 api_json GET "/v1/sandboxes/$sandbox_id/logs?tailLines=20" | jq -e '.logs | contains("mbox sandbox ready")' >/dev/null
 api_json GET "/v1/sandboxes/$sandbox_id/events" | jq -e '.items | type == "array"' >/dev/null
 
 echo "Deleting sandbox through mbox API"
 api_json DELETE "/v1/sandboxes/$sandbox_id" >/dev/null || true
 wait_deleted "sandboxclaim.extensions.agents.x-k8s.io/$claim_name"
+if "${kubectl_cmd[@]}" get "pvc/$pvc_name" -n "$NAMESPACE" >/dev/null 2>&1; then
+	echo "Workspace PVC $pvc_name remains after SandboxClaim deletion; namespace cleanup will remove it"
+else
+	echo "Workspace PVC $pvc_name was deleted with the SandboxClaim"
+fi
 
 echo "Deleting smoke project through mbox API"
 api_json DELETE "/v1/projects/$project_id" >/dev/null
