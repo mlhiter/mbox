@@ -60,6 +60,13 @@ export type PreviewPort = {
   message?: string
 }
 
+export type SandboxPort = {
+  name: string
+  port: number
+  protocol: string
+  previewUrl?: string
+}
+
 export type PreviewPortsResult = {
   target: RuntimeTarget
   items: PreviewPort[]
@@ -98,7 +105,7 @@ export type Sandbox = {
   serviceAccountName: string
   status: string
   runtimeRef?: RuntimeRef
-  ports?: Array<{ name: string; port: number; protocol: string; previewUrl?: string }>
+  ports?: SandboxPort[]
 }
 
 export type Selection = {

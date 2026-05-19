@@ -6,6 +6,7 @@ import {
   createTemplate as createTemplateRequest,
   deleteSandbox as deleteSandboxRequest,
   getHealth,
+  getSandbox,
   listProjects,
   listSandboxes,
   listTemplates,
@@ -160,6 +161,12 @@ export function useMboxData() {
     [loadAll, selection],
   )
 
+  const refreshSandbox = useCallback(async (id: string) => {
+    const sandbox = await getSandbox(id)
+    setSandboxes((current) => current.map((item) => (item.id === id ? sandbox : item)))
+    return sandbox
+  }, [])
+
   return {
     apiState,
     counts,
@@ -171,6 +178,7 @@ export function useMboxData() {
     loadAll,
     loading,
     projects,
+    refreshSandbox,
     sandboxes,
     selectedSandbox,
     selection,

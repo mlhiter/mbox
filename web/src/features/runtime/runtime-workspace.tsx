@@ -6,6 +6,7 @@ import {
   getRuntimeEvents,
   getRuntimeLogs,
   getRuntimeTarget,
+  updateSandboxPorts,
 } from "@/lib/api"
 import { storageSummary } from "@/lib/resource-utils"
 import { cn } from "@/lib/utils"
@@ -29,7 +30,42 @@ const runtimeTabs: Array<{ id: RuntimeTab; label: string }> = [
   { id: "events", label: "Events" },
 ]
 
-export function RuntimeWorkspace({ sandbox }: { sandbox: Sandbox }) {
+function previewPortsFromSandbox(sandbox: Sandbox, message: string): PreviewPort[] {
+  return (sandbox.ports || []).map((port) => ({
+    name: port.name,
+    port: port.port,
+    protocol: port.protocol || "TCP",
+    available: false,
+    message,
+  }))
+}
+
+function RuntimePendingPanel({
+  sandbox,
+  reason,
+}: {
+  sandbox: Sandbox
+  reason?: string
+}) {
+  return (
+    <div className="runtime-pending-panel">
+      <strong>Starting runtime</strong>
+      <span>{reason || "Runtime is starting"}</span>
+      <small>
+        Current state: {sandbox.status || "pending"}
+        {sandbox.runtimeRef ? ` · ${sandbox.runtimeRef.namespace}/${sandbox.runtimeRef.name}` : ""}
+      </small>
+    </div>
+  )
+}
+
+export function RuntimeWorkspace({
+  sandbox,
+  onSandboxChange,
+}: {
+  sandbox: Sandbox
+  onSandboxChange: (id: string) => Promise<Sandbox>
+}) {
   const [activeTab, setActiveTab] = useState<RuntimeTab>("terminal")
   const [target, setTarget] = useState<RuntimeTarget | null>(null)
   const [logs, setLogs] = useState("")
@@ -37,19 +73,21 @@ export function RuntimeWorkspace({ sandbox }: { sandbox: Sandbox }) {
   const [ports, setPorts] = useState<PreviewPort[]>([])
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const terminalDisabledReason = !sandbox.runtimeRef
-    ? "Runtime has not been projected yet"
+  const runtimeReady = Boolean(sandbox.runtimeRef && sandbox.status === "running")
+  const runtimeStarting = sandbox.status === "pending" || !sandbox.runtimeRef
+  const terminalDisabledReason = runtimeStarting
+    ? "Runtime is starting"
     : sandbox.status !== "running"
       ? `Sandbox is ${sandbox.status || "not running"}`
       : undefined
 
   async function loadRuntime() {
-    if (!sandbox.runtimeRef) {
-      setRuntimeError("Runtime is not ready")
+    if (!runtimeReady) {
+      setRuntimeError(null)
       setTarget(null)
       setLogs("")
       setEvents([])
-      setPorts([])
+      setPorts(previewPortsFromSandbox(sandbox, runtimeStarting ? "sandbox is starting" : "sandbox must be running before preview is available"))
       return
     }
     setLoading(true)
@@ -73,10 +111,40 @@ export function RuntimeWorkspace({ sandbox }: { sandbox: Sandbox }) {
     }
   }
 
+  async function savePreviewPorts(ports: Sandbox["ports"]) {
+    await updateSandboxPorts(sandbox.id, ports || [])
+    const updated = await onSandboxChange(sandbox.id)
+    if (updated.runtimeRef && updated.status === "running") {
+      const portResult = await getPreviewPorts(sandbox.id)
+      setPorts(portResult.items || [])
+    } else {
+      setPorts(previewPortsFromSandbox(updated, "sandbox must be running before preview is available"))
+    }
+    return updated
+  }
+
   useEffect(() => {
     setActiveTab("terminal")
     void loadRuntime()
-  }, [sandbox.id, sandbox.runtimeRef?.name])
+  }, [sandbox.id, sandbox.runtimeRef?.name, sandbox.status])
+
+  useEffect(() => {
+    if (runtimeReady || sandbox.status === "failed" || sandbox.status === "deleted" || sandbox.status === "stopped") {
+      return
+    }
+    let cancelled = false
+    const timer = window.setInterval(() => {
+      void onSandboxChange(sandbox.id).catch(() => {
+        if (!cancelled) {
+          setRuntimeError("Could not refresh sandbox status")
+        }
+      })
+    }, 2500)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [onSandboxChange, runtimeReady, sandbox.id, sandbox.status])
 
   return (
     <section id="runtime-workspace" className="runtime-workspace" aria-label="Sandbox runtime workspace">
@@ -93,7 +161,7 @@ export function RuntimeWorkspace({ sandbox }: { sandbox: Sandbox }) {
       {runtimeError ? <p className="runtime-error">{runtimeError}</p> : null}
       {terminalDisabledReason ? (
         <p className="runtime-notice" role="status">
-          Terminal will be available when the runtime target is running. Current blocker: {terminalDisabledReason}.
+          Runtime workspace is starting. Terminal, logs, events, and preview links become active after the sandbox is running.
         </p>
       ) : null}
       <div className="runtime-target-strip">
@@ -130,10 +198,21 @@ export function RuntimeWorkspace({ sandbox }: { sandbox: Sandbox }) {
       </div>
       <div className="runtime-tab-panel">
         {activeTab === "terminal" ? (
-          <TerminalPane sandbox={sandbox} disabled={Boolean(terminalDisabledReason)} disabledReason={terminalDisabledReason} />
+          runtimeReady ? (
+            <TerminalPane sandbox={sandbox} disabled={false} />
+          ) : (
+            <RuntimePendingPanel sandbox={sandbox} reason={terminalDisabledReason} />
+          )
         ) : null}
         {activeTab === "storage" ? <RuntimeStoragePanel storage={target?.storage || []} /> : null}
-        {activeTab === "preview" ? <PreviewPorts ports={ports} /> : null}
+        {activeTab === "preview" ? (
+          <PreviewPorts
+            ports={ports}
+            sandboxPorts={sandbox.ports || []}
+            sandboxStatus={sandbox.status}
+            onSave={savePreviewPorts}
+          />
+        ) : null}
         {activeTab === "logs" ? <RuntimeLogs logs={logs} /> : null}
         {activeTab === "events" ? <RuntimeEvents events={events} /> : null}
       </div>

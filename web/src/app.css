@@ -888,10 +888,94 @@
   padding: 10px;
 }
 
+.runtime-pending-panel {
+  display: grid;
+  gap: 7px;
+  min-height: 220px;
+  align-content: center;
+  justify-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: oklch(0.986 0.005 82);
+  color: var(--muted-copy);
+  padding: 22px;
+  text-align: center;
+}
+
+.runtime-pending-panel strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.runtime-pending-panel span {
+  color: var(--muted-copy);
+  font-size: 13px;
+}
+
+.runtime-pending-panel small {
+  color: var(--faint);
+  font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
+    monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .preview-ports {
   display: grid;
   gap: 8px;
   min-height: 320px;
+}
+
+.preview-port-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px auto;
+  gap: 10px;
+  align-items: end;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: oklch(0.986 0.005 82);
+  padding: 10px;
+}
+
+.preview-port-form > div {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.preview-port-form [data-slot="label"] {
+  color: var(--muted-copy);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.preview-port-form [data-slot="input"] {
+  height: 34px;
+  border-radius: 6px;
+  background: var(--paper);
+  font-size: 13px;
+}
+
+.preview-port-note,
+.preview-port-error {
+  margin: 0;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 8px 10px;
+}
+
+.preview-port-note {
+  border: 1px solid var(--line);
+  background: var(--info-soft);
+  color: var(--info-ink);
+}
+
+.preview-port-error {
+  border: 1px solid var(--danger-soft);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .runtime-storage {
@@ -923,9 +1007,9 @@
 
 .preview-ports li,
 .runtime-storage li {
-  display: flex;
+  display: grid;
   align-items: center;
-  justify-content: space-between;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
   min-width: 0;
   border: 1px solid var(--line);
@@ -1262,6 +1346,11 @@
   }
 
   .runtime-storage li {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-port-form,
+  .preview-ports li {
     grid-template-columns: 1fr;
   }
 

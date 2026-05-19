@@ -42,6 +42,7 @@ export function App() {
     loadAll,
     loading,
     projects,
+    refreshSandbox,
     sandboxes,
     selectedSandbox,
     selection,
@@ -119,7 +120,9 @@ export function App() {
 
       <SummaryStrip counts={counts} />
 
-      {activeView === "sandboxes" && selectedSandbox ? <RuntimeWorkspace sandbox={selectedSandbox} /> : null}
+      {activeView === "sandboxes" && selectedSandbox ? (
+        <RuntimeWorkspace sandbox={selectedSandbox} onSandboxChange={refreshSandbox} />
+      ) : null}
 
       <div className="resource-grid">
         {activeView === "projects" ? (

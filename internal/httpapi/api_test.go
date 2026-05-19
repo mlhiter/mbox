@@ -204,6 +204,57 @@ func TestCreateSandboxCopiesTemplatePorts(t *testing.T) {
 	}
 }
 
+func TestPatchSandboxPortsEnablesPreviewMetadata(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithRuntimeAccess(store, &fakeRuntimeAccess{})
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+	sandbox, err := store.CreateSandbox(context.Background(), domain.SandboxCreate{
+		ProjectID:          project.ID,
+		TemplateID:         template.ID,
+		Name:               "Manual Preview",
+		Slug:               "manual-preview",
+		Namespace:          "mbox-demo",
+		ServiceAccountName: "mbox-sandbox",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRef := &domain.RuntimeRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "SandboxClaim",
+		Namespace: "mbox-demo",
+		Name:      "manual-preview",
+	}
+	sandbox.Status = domain.SandboxStatusRunning
+	sandbox.RuntimeRef = runtimeRef
+	store.sandboxes[sandbox.ID] = sandbox
+
+	patchRes := request(api, http.MethodPatch, "/v1/sandboxes/"+sandbox.ID.String(), map[string]any{
+		"ports": []map[string]any{
+			{"name": "web", "port": 3000, "protocol": "TCP"},
+		},
+	})
+	if patchRes.Code != http.StatusOK {
+		t.Fatalf("expected patch status %d, got %d: %s", http.StatusOK, patchRes.Code, patchRes.Body.String())
+	}
+	var patched domain.Sandbox
+	decodeResponse(t, patchRes, &patched)
+	if len(patched.Ports) != 1 || patched.Ports[0].Port != 3000 {
+		t.Fatalf("expected patched sandbox port, got %+v", patched.Ports)
+	}
+
+	portsRes := request(api, http.MethodGet, "/v1/sandboxes/"+sandbox.ID.String()+"/ports", nil)
+	if portsRes.Code != http.StatusOK {
+		t.Fatalf("expected ports status %d, got %d: %s", http.StatusOK, portsRes.Code, portsRes.Body.String())
+	}
+	var ports mboxruntime.PreviewPortsResult
+	decodeResponse(t, portsRes, &ports)
+	if len(ports.Items) != 1 || ports.Items[0].Port != 3000 || !ports.Items[0].Available || ports.Items[0].PreviewURL == "" {
+		t.Fatalf("unexpected ports response: %+v", ports)
+	}
+}
+
 func TestCreateSandboxRequiresTemplateWithoutProjectDefault(t *testing.T) {
 	store := newFakeStore()
 	api := New(store)

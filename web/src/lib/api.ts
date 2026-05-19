@@ -5,6 +5,7 @@ import type {
   Project,
   RuntimeEvent,
   RuntimeTarget,
+  SandboxPort,
   Sandbox,
   Template,
 } from "@/types"
@@ -71,6 +72,17 @@ export function createSandbox(payload: Partial<Sandbox>) {
   return request<Sandbox>("/v1/sandboxes", {
     method: "POST",
     body: JSON.stringify(payload),
+  })
+}
+
+export function getSandbox(id: string) {
+  return request<Sandbox>(`/v1/sandboxes/${id}`)
+}
+
+export function updateSandboxPorts(id: string, ports: SandboxPort[]) {
+  return request<Sandbox>(`/v1/sandboxes/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ ports }),
   })
 }
 
