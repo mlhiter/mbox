@@ -75,6 +75,17 @@ type RuntimeTarget = {
   phase: string
   selector: string
   commands?: string[]
+  storage?: RuntimeStorage[]
+}
+
+type RuntimeStorage = {
+  name: string
+  mountPath: string
+  claimName?: string
+  phase?: string
+  capacity?: string
+  storageClassName?: string
+  message?: string
 }
 
 type LogResult = {
@@ -146,7 +157,7 @@ type Selection = {
   id: string
 }
 
-type RuntimeTab = "terminal" | "preview" | "logs" | "events"
+type RuntimeTab = "terminal" | "storage" | "preview" | "logs" | "events"
 
 type ListResponse<T> = {
   items?: T[]
@@ -162,6 +173,7 @@ const emptySelectionCopy = {
 
 const runtimeTabs: Array<{ id: RuntimeTab; label: string }> = [
   { id: "terminal", label: "Terminal" },
+  { id: "storage", label: "Storage" },
   { id: "preview", label: "Preview" },
   { id: "logs", label: "Logs" },
   { id: "events", label: "Events" },
@@ -1000,6 +1012,10 @@ function RuntimeWorkspace({ sandbox }: { sandbox: Sandbox }) {
           <span>Container</span>
           <strong>{target ? `${target.container} · ${target.phase || "unknown"}` : "No target"}</strong>
         </div>
+        <div>
+          <span>Workspace</span>
+          <strong>{storageSummary(target?.storage)}</strong>
+        </div>
       </div>
       <div className="runtime-tabs" role="tablist" aria-label="Runtime views">
         {runtimeTabs.map((tab) => (
@@ -1019,6 +1035,7 @@ function RuntimeWorkspace({ sandbox }: { sandbox: Sandbox }) {
         {activeTab === "terminal" ? (
           <TerminalPane sandbox={sandbox} disabled={!sandbox.runtimeRef || sandbox.status !== "running"} />
         ) : null}
+        {activeTab === "storage" ? <RuntimeStoragePanel storage={target?.storage || []} /> : null}
         {activeTab === "preview" ? <PreviewPorts ports={ports} /> : null}
         {activeTab === "logs" ? <RuntimeLogs logs={logs} /> : null}
         {activeTab === "events" ? <RuntimeEvents events={events} /> : null}
@@ -1131,6 +1148,37 @@ function TerminalPane({ sandbox, disabled }: { sandbox: Sandbox; disabled: boole
         </div>
       </div>
       <div ref={hostRef} className="terminal-host" />
+    </div>
+  )
+}
+
+function RuntimeStoragePanel({ storage }: { storage: RuntimeStorage[] }) {
+  return (
+    <div className="runtime-storage">
+      <RuntimeSectionHead eyebrow="Workspace" title="Storage" />
+      {storage.length === 0 ? (
+        <p>No persistent workspace mount resolved.</p>
+      ) : (
+        <ul>
+          {storage.map((item) => (
+            <li key={`${item.name}-${item.mountPath}`}>
+              <div>
+                <strong>{item.name}</strong>
+                <span>{item.mountPath}</span>
+              </div>
+              <div>
+                <span>Claim</span>
+                <strong>{item.claimName || "-"}</strong>
+              </div>
+              <div>
+                <span>Status</span>
+                <strong>{[item.phase, item.capacity, item.storageClassName].filter(Boolean).join(" · ") || "-"}</strong>
+              </div>
+              {item.message ? <small>{item.message}</small> : null}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
@@ -1362,6 +1410,14 @@ function templateName(id: string | undefined, templates: Template[]) {
 
 function resourceText(template: Template) {
   return [template.cpuRequest, template.memoryRequest, template.storageRequest].filter(Boolean).join(" / ") || "-"
+}
+
+function storageSummary(storage: RuntimeStorage[] | undefined) {
+  const workspace = storage?.find((item) => item.mountPath === "/workspace") || storage?.[0]
+  if (!workspace) {
+    return "No PVC"
+  }
+  return [workspace.phase || "PVC", workspace.capacity, workspace.claimName].filter(Boolean).join(" · ")
 }
 
 function parsePorts(value: string) {

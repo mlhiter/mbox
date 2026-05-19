@@ -646,7 +646,7 @@
 
 .runtime-target-strip {
   display: grid;
-  grid-template-columns: 1.2fr minmax(0, 1.5fr) minmax(0, 1fr);
+  grid-template-columns: 1.2fr minmax(0, 1.35fr) minmax(0, 0.9fr) minmax(0, 1.1fr);
   border-bottom: 1px solid var(--line);
   background: oklch(0.985 0.005 82);
 }
@@ -763,13 +763,26 @@
   min-height: 320px;
 }
 
+.runtime-storage {
+  display: grid;
+  gap: 8px;
+  min-height: 320px;
+}
+
 .preview-ports p {
   margin: 0;
   color: var(--muted-copy);
   font-size: 12px;
 }
 
-.preview-ports ul {
+.runtime-storage p {
+  margin: 0;
+  color: var(--muted-copy);
+  font-size: 12px;
+}
+
+.preview-ports ul,
+.runtime-storage ul {
   display: grid;
   gap: 8px;
   margin: 0;
@@ -777,7 +790,8 @@
   list-style: none;
 }
 
-.preview-ports li {
+.preview-ports li,
+.runtime-storage li {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -789,25 +803,40 @@
   padding: 10px;
 }
 
-.preview-ports li > div {
+.runtime-storage li {
+  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 1.2fr);
+}
+
+.preview-ports li > div,
+.runtime-storage li > div {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
 
-.preview-ports strong {
+.preview-ports strong,
+.runtime-storage strong {
   color: var(--ink);
   font-size: 13px;
   font-weight: 650;
+  overflow-wrap: anywhere;
 }
 
 .preview-ports span,
-.preview-ports small {
+.preview-ports small,
+.runtime-storage span,
+.runtime-storage small {
   color: var(--muted-copy);
   font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
     monospace;
   font-size: 11px;
   overflow-wrap: anywhere;
+}
+
+.runtime-storage small {
+  grid-column: 1 / -1;
 }
 
 .runtime-observe {
@@ -1043,6 +1072,10 @@
   .runtime-target-strip > div + div {
     border-top: 1px solid var(--line);
     border-left: 0;
+  }
+
+  .runtime-storage li {
+    grid-template-columns: 1fr;
   }
 
   .runtime-tab-panel {
