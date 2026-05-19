@@ -21,6 +21,7 @@ The runtime implementation currently depends on:
 - Pod events
 - Pod exec
 - Pod proxy for preview ports
+- PersistentVolumeClaims for workspace storage
 - `agent-sandbox` CRDs
 
 Security assumptions:
@@ -40,7 +41,7 @@ The implemented layout follows mature operational tools where terminal is a work
 - GitHub Codespaces style workspace terminal
 - JetBrains style expandable terminal tool window
 
-For mbox this translates to a main-area Runtime Workspace with Terminal, Preview, Logs, and Events tabs. The right pane remains metadata-only.
+For mbox this translates to a main-area Runtime Workspace with Terminal, Storage, Preview, Logs, and Events tabs. The right pane remains metadata-only.
 
 ## Local Tooling References
 

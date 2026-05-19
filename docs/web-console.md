@@ -13,6 +13,7 @@ The current console supports the first product slice:
 - selected resource inspection panel for resource identity and metadata
 - main workspace runtime panel for selected sandboxes
 - browser terminal for ready sandboxes
+- workspace storage tab showing resolved PVC mounts and capacity
 - preview port list with API-proxied open links for declared TCP ports
 - lightweight runtime logs and Kubernetes events in runtime tabs
 - toast feedback for API failures and successful writes
@@ -95,6 +96,7 @@ Current design principles:
 - restrained runtime green accent
 - dense tables and split detail panes
 - terminal as a primary workspace surface, not a narrow metadata sidebar
+- runtime storage state visible beside terminal, preview, logs, and events
 - cards only for repeated records and modal surfaces
 - no nested cards, decorative gradients, or hero-style composition
 
@@ -121,6 +123,7 @@ Useful manual checks:
 - `http://127.0.0.1:5174/` loads the console.
 - API status shows healthy when the Go server is running.
 - Project, template, and sandbox create dialogs fill the modal width on desktop and mobile.
-- Selecting a ready sandbox opens a main Runtime Workspace with terminal, preview ports, logs, and Kubernetes events as tabs.
+- Selecting a ready sandbox opens a main Runtime Workspace with terminal, storage, preview ports, logs, and Kubernetes events as tabs.
+- The Storage tab shows the workspace mount path, PVC name, bound phase, capacity, and storage class when a template has `storageRequest`.
 - Terminal Connect is disabled until the sandbox has a runtime reference and `running` status.
 - No page-level horizontal overflow appears on mobile.

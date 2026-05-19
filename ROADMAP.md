@@ -37,6 +37,7 @@ Current progress:
 - Done: runtime target, logs, and Kubernetes events API routes plus main-workspace runtime tabs.
 - Done: real `agent-sandbox` cluster smoke verification against `kind-agent-sandbox`.
 - Done: declared preview port metadata and API-proxied open links for running sandbox TCP ports.
+- Done: PVC-backed workspace projection, runtime storage metadata, and smoke coverage for persistence across Pod replacement.
 
 Scope:
 
@@ -219,6 +220,7 @@ First slice status:
 5. Done: terminal access plus logs/events in the web console runtime workspace.
 6. Done: real cluster smoke verification for create, runtime access, exec, status mapping, and cleanup.
 7. Done: basic preview port entry for declared TCP ports through the API server.
-8. Next: PVC behavior and richer namespace-scoped RBAC/policy handling.
+8. Done: PVC behavior is covered by runtime metadata and smoke verification.
+9. Next: richer namespace-scoped RBAC/policy handling.
 
 This slice proves the core product loop before CI/CD expands the surface area.

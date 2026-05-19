@@ -12,7 +12,7 @@ Current implementation status:
 - Web console: separate Vite React app under `web/`.
 - Product state: Postgres through `pgx`.
 - Implemented product resources: projects, environment templates, and sandboxes.
-- Implemented API surface: `GET /healthz`, CRUD routes under `/v1/projects`, `/v1/templates`, and `/v1/sandboxes`, plus runtime target, logs, events, preview ports, preview proxy, and terminal routes for sandboxes.
+- Implemented API surface: `GET /healthz`, CRUD routes under `/v1/projects`, `/v1/templates`, and `/v1/sandboxes`, plus runtime target with storage metadata, logs, events, preview ports, preview proxy, and terminal routes for sandboxes.
 - Runtime projection: opt-in `agent-sandbox` adapter and sandbox reconciler.
 - Runtime access: separately opt-in browser terminal, logs, events, preview proxy, and runtime target resolution through the API server's Kubernetes client.
 
@@ -149,7 +149,7 @@ Human-facing console for:
 
 The UI should be operational and dense enough for repeated use. Avoid landing-page style composition in the app surface.
 
-Current implemented console scope is intentionally narrower than the long-term product: list and create projects, templates, and sandboxes; inspect selected resource IDs and runtime state; open a main-workspace browser terminal for ready sandboxes; show declared preview ports through the API server's Pod proxy path; show lightweight runtime logs and Kubernetes events in runtime tabs; show API health and request errors. Pipelines, deployments, credentials, and policy screens are still roadmap work.
+Current implemented console scope is intentionally narrower than the long-term product: list and create projects, templates, and sandboxes; inspect selected resource IDs and runtime state; open a main-workspace browser terminal for ready sandboxes; show resolved workspace PVC storage metadata; show declared preview ports through the API server's Pod proxy path; show lightweight runtime logs and Kubernetes events in runtime tabs; show API health and request errors. Pipelines, deployments, credentials, and policy screens are still roadmap work.
 
 ### Controller / Reconciler
 
@@ -383,6 +383,10 @@ The implemented runtime controller is intentionally opt-in through `MBOX_RUNTIME
 
 The generated sandbox ServiceAccount and pod template both set token automount to false. Runtime credentials should be introduced later as narrow, explicit capabilities rather than inherited cluster access.
 
+When an environment template includes `storageRequest`, the adapter projects a `workspace` `volumeClaimTemplates` entry into the generated `SandboxTemplate` and mounts it at the template `workingDir`, defaulting to `/workspace`. This is the current persistence contract for interactive sandboxes: workspace data should survive runtime Pod replacement while the sandbox exists.
+
 Runtime access is intentionally gated separately from reconciliation through `MBOX_RUNTIME_ACCESS_ENABLED=true`. Enabling reconciliation alone may create or delete Kubernetes runtime resources, but it does not expose terminal, logs, events, or runtime target APIs. When runtime access is enabled, the server resolves a running mbox sandbox through `Sandbox.runtimeRef`, `SandboxClaim.status.sandbox.name`, `Sandbox.status.selector`, and the matching Pod, preferring the `workspace` container when present.
+
+Runtime target responses include PVC-backed storage metadata resolved from the selected container's volume mounts and PersistentVolumeClaims. This keeps the web console and automation clients on the mbox API surface while still exposing the workspace mount path, claim name, bound phase, capacity, and storage class when Kubernetes reports them.
 
 The browser terminal is a WebSocket proxy to Kubernetes `pods/exec`. The HTTP layer rejects non-running sandboxes before upgrading the connection and only permits `sh` or `bash` as shell selectors. Local Vite development depends on the `/v1/*` proxy forwarding WebSocket upgrades.

@@ -105,7 +105,7 @@ export MBOX_KUBE_CONTEXT=kind-agent-sandbox
 ./scripts/smoke-agent-sandbox.sh
 ```
 
-The smoke test creates and deletes Kubernetes runtime resources. Do not run it against a cluster unless that context is explicitly intended for mbox runtime testing.
+The smoke test creates and deletes Kubernetes runtime resources. It verifies the runtime `SandboxClaim`, Pod readiness, ServiceAccount token automount, workspace PVC mount, file persistence across Pod replacement, runtime storage metadata, preview-port metadata, logs, events, and runtime cleanup. Do not run it against a cluster unless that context is explicitly intended for mbox runtime testing.
 
 ## Troubleshooting
 
@@ -151,6 +151,16 @@ Check:
 - protocol is TCP
 - sandbox status is `running`
 - runtime access is enabled
+
+### Workspace Storage Does Not Persist
+
+Check:
+
+- the template has `storageRequest` set
+- the generated `SandboxTemplate` has `spec.volumeClaimTemplates`
+- the resolved runtime Pod mounts the `workspace` PVC at the template `workingDir`
+- the PVC is `Bound`
+- the replacement Pod reuses the same PVC after Pod deletion
 
 ### API Is Unavailable in the Web Console
 

@@ -249,7 +249,7 @@ mbox is flat by default and uses structure before shadow: borders, table divider
 - **Summary Strip:** One contiguous bordered surface divided by internal hairlines. Do not turn the four metrics into independent cards.
 - **Sidebar:** Soft Paper background with a right border on desktop and bottom border on mobile.
 - **Detail Pane:** Slightly deeper paper layer (`oklch(0.972 0.006 82)`) with a structural border. It is part of the workspace, not a modal.
-- **Runtime Workspace:** Main-area operational surface for selected sandboxes. Terminal, Preview, Logs, and Events live here as tabs; do not place the terminal inside the right detail pane.
+- **Runtime Workspace:** Main-area operational surface for selected sandboxes. Terminal, Storage, Preview, Logs, and Events live here as tabs; do not place the terminal inside the right detail pane.
 - **Internal Padding:** Panels use `16px 18px` headers and `12px 18px` table cells. Page padding is `28px 30px 44px` on desktop and `22px 16px 34px` on mobile.
 
 ### Inputs / Fields

@@ -38,11 +38,12 @@ Appears when the selected resource is a sandbox.
 Tabs:
 
 - Terminal
+- Storage
 - Preview
 - Logs
 - Events
 
-Terminal is the primary operation entry for a running sandbox. Preview lists declared TCP ports and opens API-proxied links. Logs and Events expose lightweight runtime observability.
+Terminal is the primary operation entry for a running sandbox. Storage shows resolved workspace PVC mount path, claim, bound phase, capacity, and storage class when available. Preview lists declared TCP ports and opens API-proxied links. Logs and Events expose lightweight runtime observability.
 
 ### Projects
 

@@ -160,6 +160,8 @@ For each reconciled sandbox:
 7. It maps the `SandboxClaim` Ready condition to mbox sandbox status.
 8. If the mbox sandbox is soft-deleted, it deletes the `SandboxClaim` and clears the `runtimeRef`.
 
+When `EnvironmentTemplate.storageRequest` is set, the adapter adds a `workspace` `volumeClaimTemplates` entry and mounts it into the workspace container at the template `workingDir`, defaulting to `/workspace`. This is the Phase 1 persistence contract: workspace data should survive runtime Pod replacement while the sandbox exists. PVC deletion behavior after sandbox deletion is owned by the runtime controller and must be checked in smoke tests for the target cluster.
+
 Runtime reference shape:
 
 ```json
@@ -183,6 +185,28 @@ The terminal route upgrades to WebSocket and proxies browser input/output to Kub
 2. `SandboxClaim.status.sandbox.name`
 3. `Sandbox.status.selector`
 4. the matching Pod and `workspace` container when present
+
+The runtime target response includes persistent storage metadata when the resolved container mounts PVC-backed volumes:
+
+```json
+{
+  "namespace": "mbox-demo",
+  "podName": "demo-pod",
+  "container": "workspace",
+  "phase": "Running",
+  "selector": "agents.x-k8s.io/sandbox=demo",
+  "storage": [
+    {
+      "name": "workspace",
+      "mountPath": "/workspace",
+      "claimName": "workspace-demo",
+      "phase": "Bound",
+      "capacity": "1Gi",
+      "storageClassName": "standard"
+    }
+  ]
+}
+```
 
 The terminal route only opens for sandboxes whose mbox status is `running`. The default shell command is `/bin/sh`. Passing `?shell=bash` requests `/bin/bash`; other shell values are rejected.
 
@@ -211,6 +235,8 @@ export MBOX_KUBECONFIG="$HOME/.kube/config"
 export MBOX_KUBE_CONTEXT=kind-agent-sandbox
 ./scripts/smoke-agent-sandbox.sh
 ```
+
+The smoke script verifies runtime projection, terminal-ready Pod startup, ServiceAccount token automount disabled, workspace PVC projection, file persistence across Pod replacement, runtime storage metadata, preview-port metadata, logs, events, and `SandboxClaim` cleanup.
 
 Optional Postgres integration verification:
 
