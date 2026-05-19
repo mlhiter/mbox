@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -150,6 +151,33 @@ func rejectUnknownFields(fields map[string]json.RawMessage, allowed map[string]s
 
 func validateSlug(slug string) bool {
 	return slugPattern.MatchString(slug)
+}
+
+func slugOrName(slug string, name string) string {
+	normalized := strings.TrimSpace(slug)
+	if normalized == "" {
+		return slugFromName(name)
+	}
+	return normalized
+}
+
+func slugFromName(name string) string {
+	var builder strings.Builder
+	lastDash := false
+	for _, value := range strings.ToLower(strings.TrimSpace(name)) {
+		if value >= 'a' && value <= 'z' || value >= '0' && value <= '9' {
+			builder.WriteRune(value)
+			lastDash = false
+			continue
+		}
+		if unicode.IsSpace(value) || value == '-' || value == '_' || value == '.' || value == '/' {
+			if builder.Len() > 0 && !lastDash {
+				builder.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	return strings.Trim(builder.String(), "-")
 }
 
 func validateRequired(value string) bool {

@@ -151,6 +151,31 @@ func TestCreateSandboxUsesProjectDefaults(t *testing.T) {
 	}
 }
 
+func TestCreateSandboxDefaultsSlugFromName(t *testing.T) {
+	store := newFakeStore()
+	api := New(store)
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+	project.DefaultTemplateID = &template.ID
+	store.projects[project.ID] = project
+
+	res := request(api, http.MethodPost, "/v1/sandboxes", map[string]any{
+		"projectId": project.ID,
+		"name":      "Test Node.js",
+	})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, res.Code, res.Body.String())
+	}
+	var sandbox domain.Sandbox
+	decodeResponse(t, res, &sandbox)
+	if sandbox.Slug != "test-node-js" {
+		t.Fatalf("expected generated slug, got %q", sandbox.Slug)
+	}
+	if sandbox.Namespace != project.DefaultNamespace || sandbox.ServiceAccountName != defaultSandboxServiceAccountName {
+		t.Fatalf("unexpected runtime defaults: namespace=%q serviceAccount=%q", sandbox.Namespace, sandbox.ServiceAccountName)
+	}
+}
+
 func TestCreateSandboxCopiesTemplatePorts(t *testing.T) {
 	store := newFakeStore()
 	api := New(store)

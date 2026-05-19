@@ -105,7 +105,8 @@ func (api *API) createSandbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON request body")
 		return
 	}
-	if req.ProjectID == uuid.Nil || !validateRequired(req.Name) || !validateSlug(req.Slug) {
+	slug := slugOrName(req.Slug, req.Name)
+	if req.ProjectID == uuid.Nil || !validateRequired(req.Name) || !validateSlug(slug) {
 		writeError(w, http.StatusBadRequest, "projectId, name, and valid slug are required")
 		return
 	}
@@ -147,7 +148,7 @@ func (api *API) createSandbox(w http.ResponseWriter, r *http.Request) {
 		ProjectID:          req.ProjectID,
 		TemplateID:         templateID,
 		Name:               req.Name,
-		Slug:               req.Slug,
+		Slug:               slug,
 		Namespace:          namespace,
 		ServiceAccountName: serviceAccountName,
 		Ports:              ports,

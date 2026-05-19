@@ -61,7 +61,8 @@ func (api *API) createTemplate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON request body")
 		return
 	}
-	if !validateRequired(req.Name) || !validateSlug(req.Slug) || !validateRequired(req.Image) {
+	slug := slugOrName(req.Slug, req.Name)
+	if !validateRequired(req.Name) || !validateSlug(slug) || !validateRequired(req.Image) {
 		writeError(w, http.StatusBadRequest, "name, valid slug, and image are required")
 		return
 	}
@@ -73,7 +74,7 @@ func (api *API) createTemplate(w http.ResponseWriter, r *http.Request) {
 	template, err := api.store.CreateTemplate(r.Context(), domain.TemplateCreate{
 		ProjectID:       req.ProjectID,
 		Name:            req.Name,
-		Slug:            req.Slug,
+		Slug:            slug,
 		Image:           req.Image,
 		StartupCommand:  req.StartupCommand,
 		WorkingDir:      req.WorkingDir,

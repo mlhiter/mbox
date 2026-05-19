@@ -82,14 +82,15 @@ func (api *API) createProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON request body")
 		return
 	}
-	if !validateRequired(req.Name) || !validateSlug(req.Slug) || !validateRequired(req.DefaultNamespace) {
+	slug := slugOrName(req.Slug, req.Name)
+	if !validateRequired(req.Name) || !validateSlug(slug) || !validateRequired(req.DefaultNamespace) {
 		writeError(w, http.StatusBadRequest, "name, valid slug, and defaultNamespace are required")
 		return
 	}
 
 	project, err := api.store.CreateProject(r.Context(), domain.ProjectCreate{
 		Name:             req.Name,
-		Slug:             req.Slug,
+		Slug:             slug,
 		RepositoryURL:    req.RepositoryURL,
 		DefaultNamespace: req.DefaultNamespace,
 		Metadata:         req.Metadata,
