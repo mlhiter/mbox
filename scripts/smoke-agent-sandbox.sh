@@ -224,6 +224,10 @@ echo "Checking pod logs and workspace exec"
 "${kubectl_cmd[@]}" logs -n "$NAMESPACE" "$pod_name" | grep -F "mbox sandbox ready" >/dev/null
 "${kubectl_cmd[@]}" exec -n "$NAMESPACE" "$pod_name" -- sh -c 'echo smoke-ok > /workspace/mbox-smoke.txt && cat /workspace/mbox-smoke.txt' | grep -F "smoke-ok" >/dev/null
 
+echo "Declaring and checking preview port metadata"
+api_json PATCH "/v1/sandboxes/$sandbox_id" "$(jq -n '{ports: [{name: "web", port: 8080, protocol: "TCP"}]}')" >/dev/null
+api_json GET "/v1/sandboxes/$sandbox_id/ports" | jq -e '.items[0].port == 8080 and .items[0].available == true and (.items[0].previewUrl | contains("/ports/8080/proxy/"))' >/dev/null
+
 echo "Waiting for mbox API sandbox status running"
 wait_api_sandbox_status "$sandbox_id" running
 

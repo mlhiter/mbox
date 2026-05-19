@@ -136,6 +136,12 @@ func (api *API) createSandbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "namespace and serviceAccountName are required")
 		return
 	}
+	template, err := api.store.GetTemplate(r.Context(), templateID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	ports := sandboxPortsFromTemplate(template.ExposedPorts)
 
 	sandbox, err := api.store.CreateSandbox(r.Context(), domain.SandboxCreate{
 		ProjectID:          req.ProjectID,
@@ -144,6 +150,7 @@ func (api *API) createSandbox(w http.ResponseWriter, r *http.Request) {
 		Slug:               req.Slug,
 		Namespace:          namespace,
 		ServiceAccountName: serviceAccountName,
+		Ports:              ports,
 		Metadata:           req.Metadata,
 	})
 	if err != nil {
@@ -266,4 +273,20 @@ func validateSandboxPorts(ports []domain.SandboxPort) string {
 		}
 	}
 	return ""
+}
+
+func sandboxPortsFromTemplate(ports []domain.TemplatePort) []domain.SandboxPort {
+	out := make([]domain.SandboxPort, 0, len(ports))
+	for _, port := range ports {
+		protocol := port.Protocol
+		if protocol == "" {
+			protocol = "TCP"
+		}
+		out = append(out, domain.SandboxPort{
+			Name:     port.Name,
+			Port:     port.Port,
+			Protocol: protocol,
+		})
+	}
+	return out
 }

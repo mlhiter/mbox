@@ -63,6 +63,8 @@ All responses are JSON unless the route returns `204 No Content`.
 | `GET` | `/v1/sandboxes/{sandboxID}/runtime` | Resolves the runtime Pod target for a ready sandbox. Requires runtime access. |
 | `GET` | `/v1/sandboxes/{sandboxID}/logs` | Returns recent logs from the runtime Pod. Optional `tailLines`, default `200`. |
 | `GET` | `/v1/sandboxes/{sandboxID}/events` | Returns Kubernetes events for the runtime Pod. |
+| `GET` | `/v1/sandboxes/{sandboxID}/ports` | Returns declared sandbox preview ports plus API proxy URLs when available. |
+| `GET` | `/v1/sandboxes/{sandboxID}/ports/{port}/proxy/*` | Proxies a declared TCP port on a running sandbox Pod through the API server. |
 | `GET` | `/v1/sandboxes/{sandboxID}/terminal` | WebSocket terminal proxy to the runtime Pod shell. |
 
 Errors use:
@@ -112,6 +114,7 @@ Slugs must match:
 - If `namespace` is omitted or empty, the project `defaultNamespace` is used.
 - If `serviceAccountName` is omitted or empty, `mbox-sandbox` is used.
 - If `templateId` is omitted, the project must have `defaultTemplateId` set.
+- Sandbox `ports` are initialized from the selected template's `exposedPorts`.
 
 Valid sandbox statuses are:
 
@@ -182,6 +185,14 @@ The terminal route upgrades to WebSocket and proxies browser input/output to Kub
 4. the matching Pod and `workspace` container when present
 
 The terminal route only opens for sandboxes whose mbox status is `running`. The default shell command is `/bin/sh`. Passing `?shell=bash` requests `/bin/bash`; other shell values are rejected.
+
+The preview port route exposes only sandbox ports declared in the mbox sandbox record and only for TCP ports while the sandbox is `running`. The first implementation proxies through the Kubernetes Pod proxy behind the mbox API server:
+
+```text
+/v1/sandboxes/{sandboxID}/ports/{port}/proxy/
+```
+
+This keeps the browser using the mbox API surface instead of direct Kubernetes access. Gateway, Ingress, and public preview URLs remain future exposure mechanisms.
 
 ## Verification
 

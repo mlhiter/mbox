@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/mlhiter/mbox/internal/domain"
 	mboxruntime "github.com/mlhiter/mbox/internal/runtime"
 )
 
@@ -80,6 +83,77 @@ func (api *API) getSandboxEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": events})
 }
 
+func (api *API) getSandboxPorts(w http.ResponseWriter, r *http.Request) {
+	sandbox, ref, ok := api.sandboxRuntimeRef(w, r)
+	if !ok {
+		return
+	}
+	target, err := api.access.ResolveRuntime(r.Context(), ref)
+	if err != nil {
+		writeRuntimeError(w, err)
+		return
+	}
+	ports := make([]mboxruntime.PreviewPort, 0, len(sandbox.Ports))
+	for _, port := range sandbox.Ports {
+		protocol := defaultProtocol(port.Protocol)
+		preview := mboxruntime.PreviewPort{
+			Name:      port.Name,
+			Port:      port.Port,
+			Protocol:  protocol,
+			Available: sandbox.Status == "running" && (port.PreviewURL != "" || protocol == "TCP"),
+		}
+		if preview.Available && port.PreviewURL != "" {
+			preview.PreviewURL = port.PreviewURL
+		} else if preview.Available {
+			preview.PreviewURL = sandboxPortProxyURL(r, sandbox.ID.String(), port.Port, "/")
+		} else if protocol != "TCP" {
+			preview.Message = "only TCP ports can be opened in browser preview"
+		} else {
+			preview.Message = "sandbox must be running before preview is available"
+		}
+		ports = append(ports, preview)
+	}
+	writeJSON(w, http.StatusOK, mboxruntime.PreviewPortsResult{
+		Target: target,
+		Items:  ports,
+	})
+}
+
+func (api *API) proxySandboxPort(w http.ResponseWriter, r *http.Request) {
+	sandbox, ref, ok := api.sandboxRuntimeRef(w, r)
+	if !ok {
+		return
+	}
+	if sandbox.Status != "running" {
+		writeError(w, http.StatusConflict, "sandbox must be running before opening preview")
+		return
+	}
+	port, ok := parseSandboxPortParam(w, r)
+	if !ok {
+		return
+	}
+	if !sandboxAllowsPreviewPort(sandbox, port) {
+		writeError(w, http.StatusNotFound, "sandbox port is not declared or is not previewable")
+		return
+	}
+	response, err := api.access.ProxyPreview(r.Context(), ref, mboxruntime.PreviewProxyRequest{
+		Port:  port,
+		Path:  strings.TrimPrefix(r.URL.Path, fmt.Sprintf("/v1/sandboxes/%s/ports/%d/proxy", sandbox.ID.String(), port)),
+		Query: r.URL.RawQuery,
+	})
+	if err != nil {
+		writeRuntimeError(w, err)
+		return
+	}
+	defer response.Body.Close()
+
+	copyProxyHeaders(w.Header(), response.Header)
+	if response.StatusCode > 0 {
+		w.WriteHeader(response.StatusCode)
+	}
+	_, _ = io.Copy(w, response.Body)
+}
+
 func (api *API) connectSandboxTerminal(w http.ResponseWriter, r *http.Request) {
 	sandbox, ref, ok := api.sandboxRuntimeRef(w, r)
 	if !ok {
@@ -143,4 +217,50 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(normalized)
 	return ip != nil && ip.IsLoopback()
+}
+
+func parseSandboxPortParam(w http.ResponseWriter, r *http.Request) (int, bool) {
+	port, err := strconv.Atoi(r.PathValue("port"))
+	if err != nil || port < 1 || port > 65535 {
+		writeError(w, http.StatusBadRequest, "invalid sandbox port")
+		return 0, false
+	}
+	return port, true
+}
+
+func sandboxAllowsPreviewPort(sandbox domain.Sandbox, port int) bool {
+	for _, item := range sandbox.Ports {
+		if item.Port == port && defaultProtocol(item.Protocol) == "TCP" {
+			return true
+		}
+	}
+	return false
+}
+
+func defaultProtocol(protocol string) string {
+	if strings.TrimSpace(protocol) == "" {
+		return "TCP"
+	}
+	return strings.ToUpper(protocol)
+}
+
+func sandboxPortProxyURL(r *http.Request, sandboxID string, port int, proxyPath string) string {
+	if proxyPath == "" {
+		proxyPath = "/"
+	}
+	if !strings.HasPrefix(proxyPath, "/") {
+		proxyPath = "/" + proxyPath
+	}
+	return fmt.Sprintf("/v1/sandboxes/%s/ports/%d/proxy%s", sandboxID, port, proxyPath)
+}
+
+func copyProxyHeaders(target http.Header, source map[string][]string) {
+	for key, values := range source {
+		if strings.EqualFold(key, "Content-Length") || strings.EqualFold(key, "Transfer-Encoding") {
+			continue
+		}
+		for _, value := range values {
+			target.Add(key, value)
+		}
+	}
 }

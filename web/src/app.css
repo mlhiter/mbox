@@ -588,32 +588,53 @@
   overflow-wrap: anywhere;
 }
 
-.runtime-panel {
+.runtime-workspace {
   display: grid;
-  gap: 12px;
   min-width: 0;
-  border-top: 1px solid var(--line);
-  padding-top: 14px;
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  overflow: hidden;
 }
 
-.runtime-panel-head {
+.runtime-workspace-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+  padding: 16px 18px 14px;
+}
+
+.runtime-workspace-head h2,
+.runtime-section-head h3 {
+  margin: 0;
+  color: var(--ink);
+  letter-spacing: -0.012em;
+}
+
+.runtime-workspace-head h2 {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.runtime-section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.runtime-panel h3,
-.runtime-panel h4 {
-  margin: 0;
-  color: var(--ink);
+.runtime-section-head h3 {
   font-size: 14px;
   font-weight: 680;
-  letter-spacing: 0;
+  line-height: 1.2;
 }
 
 .runtime-error {
-  margin: 0;
+  margin: 14px 18px 0;
   border: 1px solid var(--danger-soft);
   border-radius: 6px;
   background: var(--danger-soft);
@@ -621,6 +642,86 @@
   font-size: 12px;
   line-height: 1.35;
   padding: 8px 10px;
+}
+
+.runtime-target-strip {
+  display: grid;
+  grid-template-columns: 1.2fr minmax(0, 1.5fr) minmax(0, 1fr);
+  border-bottom: 1px solid var(--line);
+  background: oklch(0.985 0.005 82);
+}
+
+.runtime-target-strip > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 12px 18px;
+}
+
+.runtime-target-strip > div + div {
+  border-left: 1px solid var(--line);
+}
+
+.runtime-target-strip span {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.runtime-target-strip strong {
+  min-width: 0;
+  color: var(--ink);
+  font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
+    monospace;
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-soft);
+  padding: 8px 10px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.runtime-tabs button {
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-copy);
+  font-size: 13px;
+  font-weight: 650;
+  padding: 0 12px;
+  transition:
+    background-color 120ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 120ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 120ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+
+.runtime-tabs button:active {
+  transform: scale(0.98);
+}
+
+.runtime-tabs button.is-active,
+.runtime-tabs button[aria-selected="true"] {
+  border-color: var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.runtime-tab-panel {
+  min-width: 0;
+  padding: 14px;
 }
 
 .terminal-shell {
@@ -635,12 +736,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   border-bottom: 1px solid oklch(0.28 0.01 80);
   background: oklch(0.2 0.007 80);
   color: oklch(0.82 0.012 82);
   font-size: 12px;
-  padding: 8px;
+  padding: 8px 10px;
 }
 
 .terminal-toolbar > div {
@@ -651,13 +752,57 @@
 
 .terminal-host {
   width: 100%;
-  height: 260px;
-  padding: 8px;
+  height: min(520px, 58vh);
+  min-height: 360px;
+  padding: 10px;
 }
 
-.runtime-meta {
+.preview-ports {
   display: grid;
-  gap: 4px;
+  gap: 8px;
+  min-height: 320px;
+}
+
+.preview-ports p {
+  margin: 0;
+  color: var(--muted-copy);
+  font-size: 12px;
+}
+
+.preview-ports ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.preview-ports li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 10px;
+}
+
+.preview-ports li > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.preview-ports strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.preview-ports span,
+.preview-ports small {
   color: var(--muted-copy);
   font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
     monospace;
@@ -668,15 +813,13 @@
 .runtime-observe {
   display: grid;
   gap: 10px;
-}
-
-.runtime-observe > div {
-  min-width: 0;
+  min-height: 320px;
 }
 
 .runtime-observe pre {
-  max-height: 180px;
-  margin: 8px 0 0;
+  min-height: 360px;
+  max-height: 560px;
+  margin: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--paper);
@@ -691,7 +834,7 @@
 }
 
 .runtime-observe p {
-  margin: 8px 0 0;
+  margin: 0;
   color: var(--muted-copy);
   font-size: 12px;
 }
@@ -699,7 +842,7 @@
 .runtime-observe ul {
   display: grid;
   gap: 6px;
-  margin: 8px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -707,8 +850,10 @@
 .runtime-observe li {
   display: grid;
   gap: 2px;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 10px;
 }
 
 .runtime-observe li strong {
@@ -809,6 +954,20 @@
   .records-table tr[data-state="selected"]:hover {
     background: var(--info-soft);
   }
+
+  .runtime-tabs button:hover,
+  .runtime-tabs button:focus-visible {
+    background: var(--paper-hover);
+    color: var(--ink);
+    outline: none;
+  }
+
+  .runtime-tabs button.is-active:hover,
+  .runtime-tabs button[aria-selected="true"]:hover,
+  .runtime-tabs button.is-active:focus-visible,
+  .runtime-tabs button[aria-selected="true"]:focus-visible {
+    background: var(--paper);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -871,9 +1030,41 @@
 
   .topbar,
   .panel-head,
+  .runtime-workspace-head,
   .dialog-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .runtime-target-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-target-strip > div + div {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .runtime-tab-panel {
+    padding: 10px;
+  }
+
+  .terminal-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .terminal-toolbar > div {
+    flex-wrap: wrap;
+  }
+
+  .terminal-host {
+    height: 360px;
+    min-height: 320px;
+  }
+
+  .runtime-observe pre {
+    min-height: 300px;
   }
 
   .summary,

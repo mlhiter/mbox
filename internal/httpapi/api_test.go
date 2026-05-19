@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,6 +151,34 @@ func TestCreateSandboxUsesProjectDefaults(t *testing.T) {
 	}
 }
 
+func TestCreateSandboxCopiesTemplatePorts(t *testing.T) {
+	store := newFakeStore()
+	api := New(store)
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+	template.ExposedPorts = []domain.TemplatePort{{
+		Name:     "web",
+		Port:     3000,
+		Protocol: "TCP",
+	}}
+	store.templates[template.ID] = template
+
+	res := request(api, http.MethodPost, "/v1/sandboxes", map[string]any{
+		"projectId":  project.ID,
+		"templateId": template.ID,
+		"name":       "Preview Dev",
+		"slug":       "preview-dev",
+	})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, res.Code, res.Body.String())
+	}
+	var sandbox domain.Sandbox
+	decodeResponse(t, res, &sandbox)
+	if len(sandbox.Ports) != 1 || sandbox.Ports[0].Name != "web" || sandbox.Ports[0].Port != 3000 {
+		t.Fatalf("expected template port copied to sandbox, got %+v", sandbox.Ports)
+	}
+}
+
 func TestCreateSandboxRequiresTemplateWithoutProjectDefault(t *testing.T) {
 	store := newFakeStore()
 	api := New(store)
@@ -242,6 +271,117 @@ func TestRuntimeRoutesReturnTargetLogsAndEvents(t *testing.T) {
 	decodeResponse(t, eventsRes, &events)
 	if len(events.Items) != 1 || events.Items[0].Reason != "Started" {
 		t.Fatalf("unexpected events response: %+v", events)
+	}
+}
+
+func TestSandboxPortsRouteReturnsPreviewURLs(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithRuntimeAccess(store, &fakeRuntimeAccess{})
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+	sandbox, err := store.CreateSandbox(context.Background(), domain.SandboxCreate{
+		ProjectID:          project.ID,
+		TemplateID:         template.ID,
+		Name:               "Dev",
+		Slug:               "dev",
+		Namespace:          "mbox-demo",
+		ServiceAccountName: "mbox-sandbox",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRef := &domain.RuntimeRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "SandboxClaim",
+		Namespace: "mbox-demo",
+		Name:      "dev",
+	}
+	sandbox.Status = domain.SandboxStatusRunning
+	sandbox.RuntimeRef = runtimeRef
+	sandbox.Ports = []domain.SandboxPort{{Name: "web", Port: 3000, Protocol: "TCP"}}
+	store.sandboxes[sandbox.ID] = sandbox
+
+	res := request(api, http.MethodGet, "/v1/sandboxes/"+sandbox.ID.String()+"/ports", nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, res.Code, res.Body.String())
+	}
+	var ports mboxruntime.PreviewPortsResult
+	decodeResponse(t, res, &ports)
+	if len(ports.Items) != 1 || !ports.Items[0].Available || ports.Items[0].PreviewURL == "" {
+		t.Fatalf("unexpected ports response: %+v", ports)
+	}
+}
+
+func TestSandboxPortProxyRequiresDeclaredTCPPort(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithRuntimeAccess(store, &fakeRuntimeAccess{})
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+	sandbox, err := store.CreateSandbox(context.Background(), domain.SandboxCreate{
+		ProjectID:          project.ID,
+		TemplateID:         template.ID,
+		Name:               "Dev",
+		Slug:               "dev",
+		Namespace:          "mbox-demo",
+		ServiceAccountName: "mbox-sandbox",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRef := &domain.RuntimeRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "SandboxClaim",
+		Namespace: "mbox-demo",
+		Name:      "dev",
+	}
+	sandbox.Status = domain.SandboxStatusRunning
+	sandbox.RuntimeRef = runtimeRef
+	sandbox.Ports = []domain.SandboxPort{{Name: "web", Port: 3000, Protocol: "TCP"}}
+	store.sandboxes[sandbox.ID] = sandbox
+
+	res := request(api, http.MethodGet, "/v1/sandboxes/"+sandbox.ID.String()+"/ports/3001/proxy/", nil)
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusNotFound, res.Code, res.Body.String())
+	}
+}
+
+func TestSandboxPortProxyStreamsRuntimeResponse(t *testing.T) {
+	store := newFakeStore()
+	access := &fakeRuntimeAccess{}
+	api := NewWithRuntimeAccess(store, access)
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+	sandbox, err := store.CreateSandbox(context.Background(), domain.SandboxCreate{
+		ProjectID:          project.ID,
+		TemplateID:         template.ID,
+		Name:               "Dev",
+		Slug:               "dev",
+		Namespace:          "mbox-demo",
+		ServiceAccountName: "mbox-sandbox",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRef := &domain.RuntimeRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "SandboxClaim",
+		Namespace: "mbox-demo",
+		Name:      "dev",
+	}
+	sandbox.Status = domain.SandboxStatusRunning
+	sandbox.RuntimeRef = runtimeRef
+	sandbox.Ports = []domain.SandboxPort{{Name: "web", Port: 3000, Protocol: "TCP"}}
+	store.sandboxes[sandbox.ID] = sandbox
+
+	res := request(api, http.MethodGet, "/v1/sandboxes/"+sandbox.ID.String()+"/ports/3000/proxy/healthz?ready=true", nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, res.Code, res.Body.String())
+	}
+	if res.Body.String() != "preview:/healthz?ready=true" {
+		t.Fatalf("unexpected proxy response: %q", res.Body.String())
+	}
+	if access.lastPreviewPort != 3000 || access.lastPreviewPath != "/healthz" || access.lastPreviewQuery != "ready=true" {
+		t.Fatalf("unexpected proxy request: port=%d path=%q query=%q", access.lastPreviewPort, access.lastPreviewPath, access.lastPreviewQuery)
 	}
 }
 
@@ -606,6 +746,7 @@ func (s *fakeStore) CreateSandbox(_ context.Context, input domain.SandboxCreate)
 		Status:             domain.SandboxStatusPending,
 		Namespace:          input.Namespace,
 		ServiceAccountName: input.ServiceAccountName,
+		Ports:              input.Ports,
 		Metadata:           input.Metadata,
 		CreatedAt:          now,
 		UpdatedAt:          now,
@@ -687,7 +828,10 @@ func (s *fakeStore) MarkSandboxRuntimeDeleted(_ context.Context, id uuid.UUID) e
 }
 
 type fakeRuntimeAccess struct {
-	lastTailLines int64
+	lastTailLines    int64
+	lastPreviewPort  int
+	lastPreviewPath  string
+	lastPreviewQuery string
 }
 
 func (f *fakeRuntimeAccess) ResolveRuntime(context.Context, domain.RuntimeRef) (mboxruntime.RuntimeTarget, error) {
@@ -716,6 +860,17 @@ func (f *fakeRuntimeAccess) ListEvents(context.Context, domain.RuntimeRef) ([]mb
 		Message: "Started container",
 		Count:   1,
 	}}, nil
+}
+
+func (f *fakeRuntimeAccess) ProxyPreview(_ context.Context, _ domain.RuntimeRef, request mboxruntime.PreviewProxyRequest) (mboxruntime.PreviewProxyResponse, error) {
+	f.lastPreviewPort = request.Port
+	f.lastPreviewPath = request.Path
+	f.lastPreviewQuery = request.Query
+	return mboxruntime.PreviewProxyResponse{
+		StatusCode: http.StatusOK,
+		Header:     map[string][]string{"Content-Type": {"text/plain"}},
+		Body:       io.NopCloser(strings.NewReader("preview:" + request.Path + "?" + request.Query)),
+	}, nil
 }
 
 func (f *fakeRuntimeAccess) Exec(_ context.Context, _ domain.RuntimeRef, options mboxruntime.ExecOptions) error {

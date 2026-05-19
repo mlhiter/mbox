@@ -9,6 +9,7 @@ import {
 import { FitAddon } from "@xterm/addon-fit"
 import { Terminal } from "@xterm/xterm"
 import "@xterm/xterm/css/xterm.css"
+import { ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -90,6 +91,20 @@ type RuntimeEvent = {
   lastTimestamp?: string
 }
 
+type PreviewPort = {
+  name: string
+  port: number
+  protocol: string
+  previewUrl?: string
+  available: boolean
+  message?: string
+}
+
+type PreviewPortsResult = {
+  target: RuntimeTarget
+  items: PreviewPort[]
+}
+
 type Project = {
   id: string
   name: string
@@ -110,6 +125,7 @@ type Template = {
   cpuRequest?: string
   memoryRequest?: string
   storageRequest?: string
+  exposedPorts?: Array<{ name: string; port: number; protocol: string }>
 }
 
 type Sandbox = {
@@ -130,6 +146,8 @@ type Selection = {
   id: string
 }
 
+type RuntimeTab = "terminal" | "preview" | "logs" | "events"
+
 type ListResponse<T> = {
   items?: T[]
 }
@@ -141,6 +159,13 @@ const emptySelectionCopy = {
   body: "Inspect a row to see IDs, runtime state, and configuration.",
   detail: "Nothing is selected yet.",
 }
+
+const runtimeTabs: Array<{ id: RuntimeTab; label: string }> = [
+  { id: "terminal", label: "Terminal" },
+  { id: "preview", label: "Preview" },
+  { id: "logs", label: "Logs" },
+  { id: "events", label: "Events" },
+]
 
 export function App() {
   const [projects, setProjects] = useState<Project[]>([])
@@ -163,6 +188,13 @@ export function App() {
     }),
     [projects, sandboxes, templates],
   )
+
+  const selectedSandbox = useMemo(() => {
+    if (selection?.kind !== "sandbox") {
+      return null
+    }
+    return sandboxes.find((sandbox) => sandbox.id === selection.id) || null
+  }, [sandboxes, selection])
 
   async function loadAll() {
     setLoading(true)
@@ -234,6 +266,7 @@ export function App() {
       cpuRequest: stringValue(data.cpuRequest),
       memoryRequest: stringValue(data.memoryRequest),
       storageRequest: stringValue(data.storageRequest),
+      exposedPorts: parsePorts(stringValue(data.exposedPorts)),
     })
     const template = await request<Template>("/v1/templates", {
       method: "POST",
@@ -293,6 +326,8 @@ export function App() {
           </header>
 
           <Summary counts={counts} />
+
+          {selectedSandbox ? <RuntimeWorkspace sandbox={selectedSandbox} /> : null}
 
           <div className="resource-grid">
             <ProjectTable
@@ -662,6 +697,7 @@ function TemplateDialog({
           <TextField name="memoryRequest" label="Memory" defaultValue="64Mi" />
           <TextField name="storageRequest" label="Storage" defaultValue="1Gi" />
         </div>
+        <TextField name="exposedPorts" label="Ports" placeholder="web:3000" />
         <CheckboxField name="setDefault" label="Set as project default" defaultChecked />
       </FieldGroup>
     </ResourceDialog>
@@ -859,7 +895,6 @@ function DetailPane({
   const selected = selection
     ? collectionFor(selection.kind, projects, templates, sandboxes).find((item) => item.id === selection.id)
     : null
-  const selectedSandbox = selection?.kind === "sandbox" ? (selected as Sandbox | null) : null
 
   return (
     <aside className="detail" aria-label="Selected resource">
@@ -889,7 +924,6 @@ function DetailPane({
                 <dd>{String(value || "-")}</dd>
               </div>
             ))}</dl>
-            {selectedSandbox ? <SandboxRuntimePanel sandbox={selectedSandbox} /> : null}
           </>
         )}
       </div>
@@ -897,10 +931,12 @@ function DetailPane({
   )
 }
 
-function SandboxRuntimePanel({ sandbox }: { sandbox: Sandbox }) {
+function RuntimeWorkspace({ sandbox }: { sandbox: Sandbox }) {
+  const [activeTab, setActiveTab] = useState<RuntimeTab>("terminal")
   const [target, setTarget] = useState<RuntimeTarget | null>(null)
   const [logs, setLogs] = useState("")
   const [events, setEvents] = useState<RuntimeEvent[]>([])
+  const [ports, setPorts] = useState<PreviewPort[]>([])
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -910,19 +946,22 @@ function SandboxRuntimePanel({ sandbox }: { sandbox: Sandbox }) {
       setTarget(null)
       setLogs("")
       setEvents([])
+      setPorts([])
       return
     }
     setLoading(true)
     setRuntimeError(null)
     try {
-      const [runtimeTarget, logResult, eventResult] = await Promise.all([
+      const [runtimeTarget, logResult, eventResult, portResult] = await Promise.all([
         request<RuntimeTarget>(`/v1/sandboxes/${sandbox.id}/runtime`),
         request<LogResult>(`/v1/sandboxes/${sandbox.id}/logs?tailLines=120`),
         request<ListResponse<RuntimeEvent>>(`/v1/sandboxes/${sandbox.id}/events`),
+        request<PreviewPortsResult>(`/v1/sandboxes/${sandbox.id}/ports`),
       ])
       setTarget(runtimeTarget)
       setLogs(logResult.logs)
       setEvents(eventResult.items || [])
+      setPorts(portResult.items || [])
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Runtime request failed"
       setRuntimeError(message)
@@ -932,46 +971,57 @@ function SandboxRuntimePanel({ sandbox }: { sandbox: Sandbox }) {
   }
 
   useEffect(() => {
+    setActiveTab("terminal")
     void loadRuntime()
   }, [sandbox.id, sandbox.runtimeRef?.name])
 
   return (
-    <section className="runtime-panel" aria-label="Sandbox runtime">
-      <div className="runtime-panel-head">
+    <section className="runtime-workspace" aria-label="Sandbox runtime workspace">
+      <div className="runtime-workspace-head">
         <div>
-          <p className="eyebrow">Runtime</p>
-          <h3>Terminal</h3>
+          <p className="eyebrow">Runtime workspace</p>
+          <h2>{sandbox.name}</h2>
         </div>
         <Button variant="outline" size="sm" onClick={() => void loadRuntime()} disabled={loading}>
           {loading ? "Loading..." : "Refresh"}
         </Button>
       </div>
       {runtimeError ? <p className="runtime-error">{runtimeError}</p> : null}
-      <TerminalPane sandbox={sandbox} disabled={!sandbox.runtimeRef || sandbox.status !== "running"} />
-      <div className="runtime-meta">
-        <span>{target ? `${target.namespace}/${target.podName}` : "Pod pending"}</span>
-        <span>{target ? `${target.container} · ${target.phase || "unknown"}` : "No runtime target"}</span>
+      <div className="runtime-target-strip">
+        <div>
+          <span>Runtime</span>
+          <strong>{sandbox.runtimeRef ? `${sandbox.runtimeRef.kind} ${sandbox.runtimeRef.namespace}/${sandbox.runtimeRef.name}` : "Pending"}</strong>
+        </div>
+        <div>
+          <span>Pod</span>
+          <strong>{target ? `${target.namespace}/${target.podName}` : "Pending"}</strong>
+        </div>
+        <div>
+          <span>Container</span>
+          <strong>{target ? `${target.container} · ${target.phase || "unknown"}` : "No target"}</strong>
+        </div>
       </div>
-      <div className="runtime-observe">
-        <div>
-          <h4>Logs</h4>
-          <pre>{logs || "No logs loaded."}</pre>
-        </div>
-        <div>
-          <h4>Events</h4>
-          {events.length === 0 ? (
-            <p>No events loaded.</p>
-          ) : (
-            <ul>
-              {events.slice(0, 6).map((event, index) => (
-                <li key={`${event.reason}-${index}`}>
-                  <strong>{event.reason || event.type || "Event"}</strong>
-                  <span>{event.message || "-"}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+      <div className="runtime-tabs" role="tablist" aria-label="Runtime views">
+        {runtimeTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={cn(activeTab === tab.id && "is-active")}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className="runtime-tab-panel">
+        {activeTab === "terminal" ? (
+          <TerminalPane sandbox={sandbox} disabled={!sandbox.runtimeRef || sandbox.status !== "running"} />
+        ) : null}
+        {activeTab === "preview" ? <PreviewPorts ports={ports} /> : null}
+        {activeTab === "logs" ? <RuntimeLogs logs={logs} /> : null}
+        {activeTab === "events" ? <RuntimeEvents events={events} /> : null}
       </div>
     </section>
   )
@@ -1006,7 +1056,7 @@ function TerminalPane({ sandbox, disabled }: { sandbox: Sandbox; disabled: boole
     terminal.loadAddon(fit)
     terminal.open(host)
     fit.fit()
-    terminal.write("Select Connect to open a shell.\r\n")
+    terminal.write("mbox terminal standby.\r\n")
     terminalRef.current = terminal
 
     const resizeObserver = new ResizeObserver(() => fit.fit())
@@ -1081,6 +1131,81 @@ function TerminalPane({ sandbox, disabled }: { sandbox: Sandbox; disabled: boole
         </div>
       </div>
       <div ref={hostRef} className="terminal-host" />
+    </div>
+  )
+}
+
+function PreviewPorts({ ports }: { ports: PreviewPort[] }) {
+  return (
+    <div className="preview-ports">
+      <RuntimeSectionHead eyebrow="Preview" title="Ports" />
+      {ports.length === 0 ? (
+        <p>No preview ports declared.</p>
+      ) : (
+        <ul>
+          {ports.map((port) => (
+            <li key={`${port.name}-${port.port}`}>
+              <div>
+                <strong>{port.name}</strong>
+                <span>{port.protocol || "TCP"} · {port.port}</span>
+                {port.message ? <small>{port.message}</small> : null}
+              </div>
+              {port.available && port.previewUrl ? (
+                <Button asChild size="sm" variant="outline">
+                  <a href={port.previewUrl} target="_blank" rel="noreferrer">
+                    <ExternalLink data-icon="inline-start" />
+                    Open
+                  </a>
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" disabled>
+                  Open
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function RuntimeLogs({ logs }: { logs: string }) {
+  return (
+    <div className="runtime-observe">
+      <RuntimeSectionHead eyebrow="Observe" title="Logs" />
+      <pre>{logs || "No logs loaded."}</pre>
+    </div>
+  )
+}
+
+function RuntimeEvents({ events }: { events: RuntimeEvent[] }) {
+  return (
+    <div className="runtime-observe">
+      <RuntimeSectionHead eyebrow="Observe" title="Events" />
+      {events.length === 0 ? (
+        <p>No events loaded.</p>
+      ) : (
+        <ul>
+          {events.map((event, index) => (
+            <li key={`${event.reason}-${index}`}>
+              <strong>{event.reason || event.type || "Event"}</strong>
+              <span>{event.message || "-"}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function RuntimeSectionHead({ eyebrow, title }: { eyebrow: string; title: string }) {
+  return (
+    <div className="runtime-section-head">
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h3>{title}</h3>
+      </div>
     </div>
   )
 }
@@ -1237,6 +1362,23 @@ function templateName(id: string | undefined, templates: Template[]) {
 
 function resourceText(template: Template) {
   return [template.cpuRequest, template.memoryRequest, template.storageRequest].filter(Boolean).join(" / ") || "-"
+}
+
+function parsePorts(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const [nameOrPort, rawPort] = item.split(":")
+      const port = Number(rawPort || nameOrPort)
+      return {
+        name: rawPort ? nameOrPort.trim() : `port-${port}`,
+        port,
+        protocol: "TCP",
+      }
+    })
+    .filter((item) => item.port >= 1 && item.port <= 65535)
 }
 
 function runtimeText(ref: RuntimeRef | undefined) {

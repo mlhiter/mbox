@@ -333,12 +333,16 @@ func (s *Store) ListSandboxesForReconcile(ctx context.Context) ([]domain.Sandbox
 }
 
 func (s *Store) CreateSandbox(ctx context.Context, input domain.SandboxCreate) (domain.Sandbox, error) {
+	ports, err := json.Marshal(input.Ports)
+	if err != nil {
+		return domain.Sandbox{}, err
+	}
 	row := s.pool.QueryRow(ctx, `
-		INSERT INTO sandboxes (project_id, template_id, name, slug, namespace, service_account_name, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO sandboxes (project_id, template_id, name, slug, namespace, service_account_name, ports, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, project_id, template_id, name, slug, status, namespace, service_account_name,
 			runtime_ref, ports, metadata, created_at, updated_at, deleted_at
-	`, input.ProjectID, input.TemplateID, input.Name, input.Slug, input.Namespace, input.ServiceAccountName, jsonDefaultObject(input.Metadata))
+	`, input.ProjectID, input.TemplateID, input.Name, input.Slug, input.Namespace, input.ServiceAccountName, ports, jsonDefaultObject(input.Metadata))
 
 	sandbox, err := scanSandbox(row)
 	return sandbox, mapWriteError(err)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -14,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8snet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -170,6 +172,7 @@ func (a *Adapter) GetRuntimeStatus(ctx context.Context, ref domain.RuntimeRef) (
 	return mboxruntime.Status{
 		Status:     status,
 		RuntimeRef: ref,
+		Ports:      runtimePorts(claim),
 		Message:    message,
 	}, nil
 }
@@ -279,6 +282,49 @@ func (a *Adapter) ListEvents(ctx context.Context, ref domain.RuntimeRef) ([]mbox
 		})
 	}
 	return items, nil
+}
+
+func (a *Adapter) ProxyPreview(ctx context.Context, ref domain.RuntimeRef, request mboxruntime.PreviewProxyRequest) (mboxruntime.PreviewProxyResponse, error) {
+	if a.coreClient == nil || a.restConfig == nil {
+		return mboxruntime.PreviewProxyResponse{}, fmt.Errorf("kubernetes preview proxy client is not configured")
+	}
+	target, err := a.ResolveRuntime(ctx, ref)
+	if err != nil {
+		return mboxruntime.PreviewProxyResponse{}, err
+	}
+	if request.Port < 1 || request.Port > 65535 {
+		return mboxruntime.PreviewProxyResponse{}, fmt.Errorf("preview port must be between 1 and 65535")
+	}
+	proxyPath := strings.TrimPrefix(request.Path, "/")
+	proxyRequest := a.coreClient.CoreV1().RESTClient().Get().
+		Namespace(target.Namespace).
+		Resource("pods").
+		SubResource("proxy").
+		Name(k8snet.JoinSchemeNamePort("http", target.PodName, fmt.Sprintf("%d", request.Port))).
+		Suffix(proxyPath)
+	for key, value := range parseProxyQuery(request.Query) {
+		proxyRequest = proxyRequest.Param(key, value)
+	}
+	if err := proxyRequest.Error(); err != nil {
+		return mboxruntime.PreviewProxyResponse{}, err
+	}
+	client, err := rest.HTTPClientFor(a.restConfig)
+	if err != nil {
+		return mboxruntime.PreviewProxyResponse{}, err
+	}
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, proxyRequest.URL().String(), nil)
+	if err != nil {
+		return mboxruntime.PreviewProxyResponse{}, err
+	}
+	response, err := client.Do(httpRequest)
+	if err != nil {
+		return mboxruntime.PreviewProxyResponse{}, err
+	}
+	return mboxruntime.PreviewProxyResponse{
+		StatusCode: response.StatusCode,
+		Header:     response.Header.Clone(),
+		Body:       response.Body,
+	}, nil
 }
 
 func (a *Adapter) Exec(ctx context.Context, ref domain.RuntimeRef, options mboxruntime.ExecOptions) error {
@@ -535,6 +581,23 @@ func defaultString(value string, fallback string) string {
 	return value
 }
 
+func parseProxyQuery(raw string) map[string]string {
+	if raw == "" {
+		return nil
+	}
+	query, err := url.ParseQuery(raw)
+	if err != nil {
+		return nil
+	}
+	values := map[string]string{}
+	for key, items := range query {
+		if len(items) > 0 {
+			values[key] = items[0]
+		}
+	}
+	return values
+}
+
 func pickRuntimePod(pods []corev1.Pod) corev1.Pod {
 	for _, pod := range pods {
 		if pod.Status.Phase == corev1.PodRunning {
@@ -542,6 +605,52 @@ func pickRuntimePod(pods []corev1.Pod) corev1.Pod {
 		}
 	}
 	return pods[0]
+}
+
+func runtimePorts(claim *unstructured.Unstructured) []domain.SandboxPort {
+	ports, ok, _ := unstructured.NestedSlice(claim.Object, "status", "ports")
+	if !ok {
+		return nil
+	}
+	out := make([]domain.SandboxPort, 0, len(ports))
+	for _, item := range ports {
+		port, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := port["name"].(string)
+		protocol, _ := port["protocol"].(string)
+		previewURL, _ := port["previewUrl"].(string)
+		number := portNumber(port["port"])
+		if number == 0 {
+			number = portNumber(port["containerPort"])
+		}
+		if number == 0 {
+			continue
+		}
+		out = append(out, domain.SandboxPort{
+			Name:       defaultString(name, fmt.Sprintf("port-%d", number)),
+			Port:       number,
+			Protocol:   defaultString(protocol, "TCP"),
+			PreviewURL: previewURL,
+		})
+	}
+	return out
+}
+
+func portNumber(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case int32:
+		return int(typed)
+	case float64:
+		return int(typed)
+	default:
+		return 0
+	}
 }
 
 func readyCondition(obj *unstructured.Unstructured) (corev1.ConditionStatus, string) {

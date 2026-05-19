@@ -28,8 +28,12 @@ Long term, mbox should have several coordinated technical surfaces:
 - [ARCHITECTURE.md](ARCHITECTURE.md): system layers, runtime design, security boundaries, and Kubernetes integration.
 - [ROADMAP.md](ROADMAP.md): staged execution plan from prototype to production platform.
 - [AGENTS.md](AGENTS.md): instructions for future coding agents working in this repo.
+- [docs/architecture.md](docs/architecture.md): short implementation architecture handoff for the current slice.
 - [docs/server-api.md](docs/server-api.md): currently implemented server routes, config, data model, and runtime projection.
 - [docs/web-console.md](docs/web-console.md): Vite console structure, local proxy behavior, UI scope, and verification.
+- [docs/runbook.md](docs/runbook.md): local startup, verification, runtime smoke, and troubleshooting commands.
+- [docs/ia.md](docs/ia.md): current web-console information architecture.
+- [docs/references.md](docs/references.md): runtime, Kubernetes, and frontend reference notes.
 - [docs/research-agent-sandbox.md](docs/research-agent-sandbox.md): notes about using `kubernetes-sigs/agent-sandbox` as the interactive sandbox runtime substrate.
 
 ## Current Status
@@ -42,11 +46,31 @@ Implemented resources:
 - `EnvironmentTemplate`
 - `Sandbox`
 - Vite console views for listing and creating projects, templates, and sandboxes
-- browser terminal plus lightweight logs/events for ready sandbox runtimes
+- browser terminal, preview ports, and lightweight logs/events for ready sandbox runtimes
 
 This slice persists mbox product state in Postgres. When the runtime controller is explicitly enabled, it reconciles `Sandbox` records into `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources.
 
 ## Local Development
+
+Start the full local development stack:
+
+```sh
+./scripts/dev.sh
+```
+
+This starts local Postgres, the Go API server, and the Vite web console. Open `http://127.0.0.1:5174`.
+
+Runtime access is disabled by default so ordinary local startup does not write Kubernetes resources. To enable the `agent-sandbox` controller, terminal, logs, events, and preview proxy:
+
+```sh
+MBOX_KUBE_CONTEXT=kind-agent-sandbox ./scripts/dev.sh --runtime
+```
+
+If you already have Postgres running, skip Docker Postgres:
+
+```sh
+DATABASE_URL='postgres://mbox:mbox@127.0.0.1:5432/mbox?sslmode=disable' ./scripts/dev.sh --no-docker
+```
 
 Start a local Postgres:
 
@@ -101,7 +125,7 @@ Optional runtime settings:
 
 When enabled, mbox ensures the sandbox namespace exists, creates a scoped sandbox ServiceAccount with token automount disabled, creates or updates a `SandboxTemplate`, and creates a `SandboxClaim` in that namespace. The generated pod template uses the configured sandbox ServiceAccount and also disables token automount. The mbox Postgres record remains the product source of truth; Kubernetes resources are the runtime projection.
 
-`MBOX_RUNTIME_ACCESS_ENABLED=true` enables `/v1/sandboxes/{id}/terminal`, `/runtime`, `/logs`, and `/events`. The terminal route is a WebSocket proxy from the browser to Kubernetes `pods/exec`; ordinary sandbox pods still do not receive broad Kubernetes credentials.
+`MBOX_RUNTIME_ACCESS_ENABLED=true` enables `/v1/sandboxes/{id}/terminal`, `/runtime`, `/logs`, `/events`, and `/ports`. The terminal route is a WebSocket proxy from the browser to Kubernetes `pods/exec`; declared TCP preview ports are proxied through the mbox API server to the resolved runtime Pod. Ordinary sandbox pods still do not receive broad Kubernetes credentials.
 
 Run tests:
 

@@ -132,14 +132,14 @@ components:
 
 **Creative North Star: "The Operations Notebook"**
 
-mbox should feel like a Notion-adjacent operations workspace for real Kubernetes-backed execution, not a decorative SaaS dashboard. The interface is warm, calm, dense, and legible. It uses paper-like surfaces, restrained green state color, precise table structure, and a persistent detail pane so operators can inspect resources without losing context.
+mbox should feel like a Notion-adjacent operations workspace for real Kubernetes-backed execution, not a decorative SaaS dashboard. The interface is warm, calm, dense, and legible. It uses paper-like surfaces, restrained green state color, precise table structure, a main-area Runtime Workspace for selected sandboxes, and a persistent detail pane so operators can inspect metadata without losing context.
 
 The design serves repeated work: creating projects, shaping templates, launching sandboxes, inspecting runtime state, and catching API failures quickly. It should avoid marketing composition, oversized cards, ornamental gradients, and vague empty states. Every screen should make the current resource, state, permission boundary, or next operation visible.
 
 **Key Characteristics:**
 
 - Warm paper workspace with tinted neutrals, not sterile gray or pure white.
-- Dense operational layout: rail, tables, summary strip, split detail panel.
+- Dense operational layout: rail, tables, summary strip, main runtime workspace, and split metadata detail panel.
 - Restrained accent color used only for primary action, selected state, and healthy status.
 - Small-radius controls and panels, aligned to practical product UI patterns.
 - Copy is direct and task-oriented: no feature explanations inside the app chrome.
@@ -249,6 +249,7 @@ mbox is flat by default and uses structure before shadow: borders, table divider
 - **Summary Strip:** One contiguous bordered surface divided by internal hairlines. Do not turn the four metrics into independent cards.
 - **Sidebar:** Soft Paper background with a right border on desktop and bottom border on mobile.
 - **Detail Pane:** Slightly deeper paper layer (`oklch(0.972 0.006 82)`) with a structural border. It is part of the workspace, not a modal.
+- **Runtime Workspace:** Main-area operational surface for selected sandboxes. Terminal, Preview, Logs, and Events live here as tabs; do not place the terminal inside the right detail pane.
 - **Internal Padding:** Panels use `16px 18px` headers and `12px 18px` table cells. Page padding is `28px 30px 44px` on desktop and `22px 16px 34px` on mobile.
 
 ### Inputs / Fields

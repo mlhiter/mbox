@@ -132,6 +132,14 @@ func TestGetRuntimeStatusMapsReadyCondition(t *testing.T) {
 					"message": "Sandbox is ready",
 				},
 			},
+			"ports": []any{
+				map[string]any{
+					"name":       "web",
+					"port":       int64(3000),
+					"protocol":   "TCP",
+					"previewUrl": "https://preview.example.com",
+				},
+			},
 		},
 	}}
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
@@ -150,6 +158,9 @@ func TestGetRuntimeStatusMapsReadyCondition(t *testing.T) {
 	}
 	if status.Status != mboxruntime.RuntimeStatusRunning {
 		t.Fatalf("expected running, got %q", status.Status)
+	}
+	if len(status.Ports) != 1 || status.Ports[0].Port != 3000 || status.Ports[0].PreviewURL == "" {
+		t.Fatalf("expected runtime ports, got %+v", status.Ports)
 	}
 }
 

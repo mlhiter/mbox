@@ -38,6 +38,32 @@ type RuntimeTarget struct {
 	Commands  []string `json:"commands,omitempty"`
 }
 
+type PreviewPort struct {
+	Name       string `json:"name"`
+	Port       int    `json:"port"`
+	Protocol   string `json:"protocol"`
+	PreviewURL string `json:"previewUrl,omitempty"`
+	Available  bool   `json:"available"`
+	Message    string `json:"message,omitempty"`
+}
+
+type PreviewPortsResult struct {
+	Target RuntimeTarget `json:"target"`
+	Items  []PreviewPort `json:"items"`
+}
+
+type PreviewProxyRequest struct {
+	Port  int
+	Path  string
+	Query string
+}
+
+type PreviewProxyResponse struct {
+	StatusCode int
+	Header     map[string][]string
+	Body       io.ReadCloser
+}
+
 type LogOptions struct {
 	Container string
 	TailLines int64
@@ -76,6 +102,7 @@ type Access interface {
 	ResolveRuntime(ctx context.Context, ref domain.RuntimeRef) (RuntimeTarget, error)
 	ReadLogs(ctx context.Context, ref domain.RuntimeRef, options LogOptions) (LogResult, error)
 	ListEvents(ctx context.Context, ref domain.RuntimeRef) ([]RuntimeEvent, error)
+	ProxyPreview(ctx context.Context, ref domain.RuntimeRef, request PreviewProxyRequest) (PreviewProxyResponse, error)
 	Exec(ctx context.Context, ref domain.RuntimeRef, options ExecOptions) error
 }
 

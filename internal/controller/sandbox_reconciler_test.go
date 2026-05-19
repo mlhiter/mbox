@@ -37,7 +37,14 @@ func TestReconcilerCreatesRuntimeForPendingSandbox(t *testing.T) {
 
 func TestReconcilerAppliesRuntimeStatus(t *testing.T) {
 	store := newFakeStore()
-	adapter := &fakeAdapter{status: mboxruntime.Status{Status: mboxruntime.RuntimeStatusRunning}}
+	adapter := &fakeAdapter{status: mboxruntime.Status{
+		Status: mboxruntime.RuntimeStatusRunning,
+		Ports: []domain.SandboxPort{{
+			Name:     "web",
+			Port:     3000,
+			Protocol: "TCP",
+		}},
+	}}
 	project := store.mustProject()
 	template := store.mustTemplate(&project.ID)
 	sandbox := store.mustSandbox(project.ID, template.ID)
@@ -58,6 +65,9 @@ func TestReconcilerAppliesRuntimeStatus(t *testing.T) {
 	}
 	if updated.Status != domain.SandboxStatusRunning {
 		t.Fatalf("expected running status, got %q", updated.Status)
+	}
+	if len(updated.Ports) != 1 || updated.Ports[0].Port != 3000 {
+		t.Fatalf("expected runtime ports to be stored, got %+v", updated.Ports)
 	}
 	if adapter.statusCalls != 1 {
 		t.Fatalf("expected 1 status call, got %d", adapter.statusCalls)
@@ -254,6 +264,7 @@ func (s *fakeStore) CreateSandbox(_ context.Context, input domain.SandboxCreate)
 		Status:             domain.SandboxStatusPending,
 		Namespace:          input.Namespace,
 		ServiceAccountName: input.ServiceAccountName,
+		Ports:              input.Ports,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}

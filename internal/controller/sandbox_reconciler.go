@@ -122,9 +122,11 @@ func (r *SandboxReconciler) applyRuntimeStatus(ctx context.Context, sandbox doma
 		next = domain.SandboxStatusPending
 	}
 
-	_, err := r.store.UpdateSandbox(ctx, sandbox.ID, domain.SandboxUpdate{
-		Status: &next,
-	})
+	update := domain.SandboxUpdate{Status: &next}
+	if status.Ports != nil {
+		update.Ports = &status.Ports
+	}
+	_, err := r.store.UpdateSandbox(ctx, sandbox.ID, update)
 	return err
 }
 

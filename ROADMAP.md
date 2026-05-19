@@ -34,8 +34,9 @@ Current progress:
 - Done: separate Vite web console with project, template, and sandbox list/create/inspect workflows.
 - Done: Notion-adjacent console design system captured in `DESIGN.md`.
 - Done: browser terminal for running sandboxes through Kubernetes `pods/exec`.
-- Done: runtime target, logs, and Kubernetes events API routes plus web-console detail panel.
+- Done: runtime target, logs, and Kubernetes events API routes plus main-workspace runtime tabs.
 - Done: real `agent-sandbox` cluster smoke verification against `kind-agent-sandbox`.
+- Done: declared preview port metadata and API-proxied open links for running sandbox TCP ports.
 
 Scope:
 
@@ -47,7 +48,7 @@ Scope:
 - Initial controller/reconciler.
 - Basic web console.
 - Terminal access.
-- Port listing and preview endpoint.
+- Basic port listing and preview endpoint.
 - PVC-backed workspace.
 - Sandbox lifecycle: create, start, stop, delete.
 - Basic logs and events view.
@@ -213,10 +214,11 @@ First slice status:
 
 1. Done: API server with Projects, Templates, and Sandboxes.
 2. Done: controller that creates one `agent-sandbox` runtime per Sandbox record when explicitly enabled.
-3. Done: Vite web console with project list, template list, sandbox list, create dialogs, and resource inspection.
+3. Done: Vite web console with project list, template list, sandbox list, create dialogs, resource inspection, and main-area Runtime Workspace.
 4. Done: default BusyBox smoke template proving terminal-ready sandbox startup.
-5. Done: terminal access plus logs/events in the web console.
+5. Done: terminal access plus logs/events in the web console runtime workspace.
 6. Done: real cluster smoke verification for create, runtime access, exec, status mapping, and cleanup.
-7. Next: preview port entry, PVC behavior, and richer namespace-scoped RBAC/policy handling.
+7. Done: basic preview port entry for declared TCP ports through the API server.
+8. Next: PVC behavior and richer namespace-scoped RBAC/policy handling.
 
 This slice proves the core product loop before CI/CD expands the surface area.

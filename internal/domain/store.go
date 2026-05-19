@@ -61,6 +61,7 @@ type SandboxCreate struct {
 	Slug               string
 	Namespace          string
 	ServiceAccountName string
+	Ports              []SandboxPort
 	Metadata           []byte
 }
 

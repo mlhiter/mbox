@@ -12,9 +12,9 @@ Current implementation status:
 - Web console: separate Vite React app under `web/`.
 - Product state: Postgres through `pgx`.
 - Implemented product resources: projects, environment templates, and sandboxes.
-- Implemented API surface: `GET /healthz`, CRUD routes under `/v1/projects`, `/v1/templates`, and `/v1/sandboxes`, plus runtime target, logs, events, and terminal routes for sandboxes.
+- Implemented API surface: `GET /healthz`, CRUD routes under `/v1/projects`, `/v1/templates`, and `/v1/sandboxes`, plus runtime target, logs, events, preview ports, preview proxy, and terminal routes for sandboxes.
 - Runtime projection: opt-in `agent-sandbox` adapter and sandbox reconciler.
-- Runtime access: separately opt-in browser terminal, logs, events, and runtime target resolution through the API server's Kubernetes client.
+- Runtime access: separately opt-in browser terminal, logs, events, preview proxy, and runtime target resolution through the API server's Kubernetes client.
 
 See `docs/server-api.md` for the current concrete API and configuration contract, and `docs/web-console.md` for the current frontend structure.
 
@@ -149,7 +149,7 @@ Human-facing console for:
 
 The UI should be operational and dense enough for repeated use. Avoid landing-page style composition in the app surface.
 
-Current implemented console scope is intentionally narrower than the long-term product: list and create projects, templates, and sandboxes; inspect selected resource IDs and runtime state; open a browser terminal for ready sandboxes; show lightweight runtime logs and Kubernetes events; show API health and request errors. Preview ports, pipelines, deployments, credentials, and policy screens are still roadmap work.
+Current implemented console scope is intentionally narrower than the long-term product: list and create projects, templates, and sandboxes; inspect selected resource IDs and runtime state; open a main-workspace browser terminal for ready sandboxes; show declared preview ports through the API server's Pod proxy path; show lightweight runtime logs and Kubernetes events in runtime tabs; show API health and request errors. Pipelines, deployments, credentials, and policy screens are still roadmap work.
 
 ### Controller / Reconciler
 
