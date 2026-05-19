@@ -9,13 +9,13 @@ The current console supports the first product slice:
 - API health check through `/healthz`
 - view-switched left navigation for Projects, Templates, and Sandboxes
 - project list and create dialog
-- template list and create dialog
-- sandbox list, guarded launch dialog, and delete confirmation dialog
+- template list and create dialog with Node.js workspace defaults
+- sandbox list, simplified guarded launch dialog, and delete confirmation dialog
 - selected resource inspection panel for resource identity and metadata
 - main workspace runtime panel for selected sandboxes only in the Sandboxes view
-- browser terminal for ready sandboxes
+- browser terminal for ready sandboxes, with a starting state while new runtimes are pending
 - workspace storage tab showing resolved PVC mounts and capacity
-- preview port list with API-proxied open links for declared TCP ports
+- preview port list with manual add/remove controls and API-proxied open links for declared TCP ports
 - lightweight runtime logs and Kubernetes events in runtime tabs
 - toast feedback for API failures and successful writes
 - runtime readiness notices when terminal access is blocked by missing runtime projection or non-running sandbox status
@@ -94,6 +94,22 @@ Key files:
 
 The app uses shadcn source components rather than a published component package. Treat these files as local code and review upstream diffs before overwriting them.
 
+## Resource Workflows
+
+Template creation defaults to a usable Node.js workspace:
+
+- image: `node:22-bookworm-slim`
+- startup command: `sh -c 'mkdir -p /workspace && cd /workspace && echo mbox node sandbox ready && tail -f /dev/null'`
+- working directory: `/workspace`
+- resources: `250m` CPU, `512Mi` memory, `2Gi` storage
+- exposed port: `web:3000`
+
+Sandbox launch is intentionally short. The dialog asks for Project, Template, and Name. The frontend derives the slug from the name, and the API fills namespace from the project plus the default sandbox ServiceAccount `mbox-sandbox`.
+
+When a sandbox is selected, the Runtime Workspace should not treat `pending` as an error. It shows a starting panel, polls the sandbox record, and waits until the sandbox is `running` with a `runtimeRef` before calling terminal, logs, events, runtime target, or runtime preview routes.
+
+The Preview tab edits the sandbox's declared `ports` list. A user can start a service in Terminal, add its TCP port in Preview, and open the API-proxied URL once the sandbox is running.
+
 ## Design System
 
 The visual direction is documented in `DESIGN.md`.
@@ -144,8 +160,11 @@ Useful manual checks:
 - Left rail buttons switch between Projects, Templates, and Sandboxes instead of scrolling a combined page.
 - Switching away from Sandboxes clears sandbox selection and hides the Runtime Workspace.
 - Sandbox launch is disabled until at least one project and one template exist.
+- The launch dialog only asks for Project, Template, and Name.
 - Sandbox deletion opens a confirmation dialog and does not delete from the row button directly.
 - Selecting a ready sandbox opens a main Runtime Workspace with terminal, storage, preview ports, logs, and Kubernetes events as tabs.
+- Selecting a pending sandbox shows a starting Runtime Workspace and does not surface a terminal error.
 - The Storage tab shows the workspace mount path, PVC name, bound phase, capacity, and storage class when a template has `storageRequest`.
 - Terminal Connect is disabled until the sandbox has a runtime reference and `running` status, with the blocker visible in the workspace notice and button title.
+- The Preview tab can add and remove TCP ports, and links stay disabled until the sandbox is running.
 - No page-level horizontal overflow appears on mobile.

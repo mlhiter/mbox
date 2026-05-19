@@ -23,7 +23,7 @@ The web console is a separate Vite app under `web/`. In development, Vite proxie
 | `DATABASE_URL` | yes | none | Postgres connection string for product state. |
 | `MBOX_LISTEN_ADDR` | no | `127.0.0.1:18080` | HTTP listen address. |
 | `MBOX_RUNTIME_CONTROLLER_ENABLED` | no | `false` | Enables Kubernetes runtime reconciliation when set to true. |
-| `MBOX_RUNTIME_ACCESS_ENABLED` | no | `false` | Enables runtime access routes for terminal, logs, events, and runtime target resolution. |
+| `MBOX_RUNTIME_ACCESS_ENABLED` | no | `false` | Enables runtime access routes for terminal, logs, events, preview ports, and runtime target resolution. |
 | `MBOX_RUNTIME_RECONCILE_INTERVAL` | no | `5s` | Sandbox reconciler polling interval. |
 | `MBOX_KUBECONFIG` | no | in-cluster or default client behavior | Kubeconfig path used by the runtime controller. |
 | `MBOX_KUBE_CONTEXT` | no | current context | Kubeconfig context used by the runtime controller. |
@@ -87,6 +87,8 @@ Slugs must match:
 ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
 ```
 
+`POST /v1/projects`, `POST /v1/templates`, and `POST /v1/sandboxes` accept an omitted or empty `slug`. In that case the server derives a slug from `name` before validation.
+
 `PATCH /v1/projects/{projectID}` accepts:
 
 - `name`
@@ -109,12 +111,16 @@ Slugs must match:
 
 `runtimeRef` has the same nullable PATCH semantics: absent keeps the existing value, and `null` clears it.
 
+`ports` is the sandbox's declared preview-port list. Templates seed this list from `exposedPorts`, and the web Preview tab updates it through this PATCH route when a user adds or removes a manual preview port.
+
 `POST /v1/sandboxes` accepts `namespace` and `serviceAccountName`, but they are optional on the normal create path:
 
 - If `namespace` is omitted or empty, the project `defaultNamespace` is used.
 - If `serviceAccountName` is omitted or empty, `mbox-sandbox` is used.
 - If `templateId` is omitted, the project must have `defaultTemplateId` set.
 - Sandbox `ports` are initialized from the selected template's `exposedPorts`.
+
+The intended user-facing launch path only needs `projectId`, `name`, and either `templateId` or a project `defaultTemplateId`. Slug, namespace, and ServiceAccount are machine defaults unless a lower-level API client intentionally overrides them.
 
 Valid sandbox statuses are:
 
@@ -210,7 +216,7 @@ The runtime target response includes persistent storage metadata when the resolv
 
 The terminal route only opens for sandboxes whose mbox status is `running`. The default shell command is `/bin/sh`. Passing `?shell=bash` requests `/bin/bash`; other shell values are rejected.
 
-The preview port route exposes only sandbox ports declared in the mbox sandbox record and only for TCP ports while the sandbox is `running`. The first implementation proxies through the Kubernetes Pod proxy behind the mbox API server:
+The preview port route exposes only sandbox ports declared in the mbox sandbox record and only for TCP ports while the sandbox is `running`. Declaring a port is separate from proving a process is listening on that port: users can start a service inside the terminal, add the TCP port to the Preview tab, and then open the generated API proxy URL after the sandbox is running. The first implementation proxies through the Kubernetes Pod proxy behind the mbox API server:
 
 ```text
 /v1/sandboxes/{sandboxID}/ports/{port}/proxy/

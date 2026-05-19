@@ -45,7 +45,7 @@ Tabs:
 
 Terminal is the primary operation entry for a running sandbox. Storage shows resolved workspace PVC mount path, claim, bound phase, capacity, and storage class when available. Preview lists declared TCP ports and opens API-proxied links. Logs and Events expose lightweight runtime observability.
 
-If terminal access is blocked because the sandbox has no runtime reference or is not `running`, the workspace shows the blocker and the Connect button remains disabled.
+If runtime access is blocked because the sandbox has no runtime reference or is not `running`, the workspace shows a starting/blocker state and keeps runtime actions disabled. New sandboxes can be `pending` while `agent-sandbox` creates the `SandboxClaim` and Pod; that state belongs in the workspace instead of surfacing as a terminal error.
 
 ### Projects
 
@@ -61,6 +61,7 @@ Current operations:
 
 - list templates
 - create template
+- start from a Node.js workspace default template
 - capture exposed ports with entries such as `web:3000`
 - inspect selected template metadata
 
@@ -69,10 +70,11 @@ Current operations:
 Current operations:
 
 - list sandboxes
-- launch sandbox after a project and template exist
+- launch sandbox after a project and template exist, using only Project, Template, and Name in the user-facing dialog
 - inspect selected sandbox metadata
 - delete sandbox through a confirmation dialog
 - open runtime workspace for the selected sandbox
+- add or remove declared TCP preview ports from the Preview tab
 
 ## Future Navigation Areas
 

@@ -46,7 +46,8 @@ Implemented resources:
 - `EnvironmentTemplate`
 - `Sandbox`
 - Vite console views for listing and creating projects, templates, and sandboxes
-- browser terminal, workspace storage, preview ports, and lightweight logs/events for ready sandbox runtimes
+- simplified sandbox launch that asks for project, template, and name while deriving slug, namespace, and ServiceAccount defaults
+- browser terminal, workspace storage, manually declared preview ports, and lightweight logs/events for ready sandbox runtimes
 
 This slice persists mbox product state in Postgres. When the runtime controller is explicitly enabled, it reconciles `Sandbox` records into `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources.
 
@@ -150,25 +151,24 @@ curl -sS -X POST http://127.0.0.1:18080/v1/projects \
   -H 'content-type: application/json' \
   -d '{
     "name": "Demo Project",
-    "slug": "demo-project",
     "repositoryUrl": "https://github.com/example/demo",
     "defaultNamespace": "mbox-demo"
   }'
 ```
 
-Create a template:
+Create a Node.js workspace template:
 
 ```sh
 curl -sS -X POST http://127.0.0.1:18080/v1/templates \
   -H 'content-type: application/json' \
   -d '{
-    "name": "Ubuntu Terminal",
-    "slug": "ubuntu-terminal",
-    "image": "ubuntu:24.04",
+    "name": "Node.js Workspace",
+    "image": "node:22-bookworm-slim",
+    "startupCommand": ["sh", "-c", "mkdir -p /workspace && cd /workspace && echo mbox node sandbox ready && tail -f /dev/null"],
     "workingDir": "/workspace",
-    "cpuRequest": "500m",
-    "memoryRequest": "1Gi",
-    "storageRequest": "10Gi",
+    "cpuRequest": "250m",
+    "memoryRequest": "512Mi",
+    "storageRequest": "2Gi",
     "exposedPorts": [
       {"name": "web", "port": 3000, "protocol": "TCP"}
     ]
@@ -183,10 +183,7 @@ curl -sS -X POST http://127.0.0.1:18080/v1/sandboxes \
   -d '{
     "projectId": "<project-id>",
     "templateId": "<template-id>",
-    "name": "Demo Sandbox",
-    "slug": "demo-sandbox",
-    "namespace": "mbox-demo",
-    "serviceAccountName": "mbox-sandbox"
+    "name": "Demo Sandbox"
   }'
 ```
 
@@ -201,12 +198,11 @@ curl -sS -X POST http://127.0.0.1:18080/v1/sandboxes \
   -H 'content-type: application/json' \
   -d '{
     "projectId": "<project-id>",
-    "name": "Demo Sandbox",
-    "slug": "demo-sandbox"
+    "name": "Demo Sandbox"
   }'
 ```
 
-In this path, mbox uses the project `defaultNamespace`, the project `defaultTemplateId`, and the default sandbox ServiceAccount `mbox-sandbox`.
+In these paths, mbox derives the slug from the name when `slug` is omitted, uses the project `defaultNamespace`, and defaults the sandbox ServiceAccount to `mbox-sandbox`.
 
 List resources:
 
@@ -228,3 +224,22 @@ export MBOX_KUBE_CONTEXT=kind-agent-sandbox
 ```
 
 The smoke test creates a project, a BusyBox terminal template, and a sandbox through the mbox API. It then verifies the generated `SandboxClaim`, resolved `Sandbox`, ready Pod, disabled ServiceAccount token automount, pod logs, workspace exec, API status mapping, and delete cleanup path.
+
+## Node Preview Smoke
+
+With runtime mode enabled, launch a sandbox from the Node.js workspace template and wait for it to reach `running`. The Runtime Workspace shows a starting panel while the `SandboxClaim` and Pod are still pending, then enables Terminal, Logs, Events, Storage, and Preview.
+
+In the terminal tab, start a service in the background:
+
+```sh
+cat > server.js <<'EOF'
+const http = require('http')
+http.createServer((req, res) => {
+  res.end('hello from mbox node preview')
+}).listen(3000, '0.0.0.0')
+EOF
+
+node server.js > server.log 2>&1 &
+```
+
+Open the Preview tab, make sure port `3000` is declared as `web`, and use `Open` after the sandbox is running. If the template did not declare the port, add it in the Preview tab; this saves the sandbox `ports` field through `PATCH /v1/sandboxes/{id}`.

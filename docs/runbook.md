@@ -107,6 +107,35 @@ export MBOX_KUBE_CONTEXT=kind-agent-sandbox
 
 The smoke test creates and deletes Kubernetes runtime resources. It verifies the runtime `SandboxClaim`, Pod readiness, ServiceAccount token automount, workspace PVC mount, file persistence across Pod replacement, runtime storage metadata, preview-port metadata, logs, events, and runtime cleanup. Do not run it against a cluster unless that context is explicitly intended for mbox runtime testing.
 
+## Node.js Preview Smoke
+
+Use this when checking the console flow that users expect from a fresh sandbox.
+
+1. Start the stack in runtime mode:
+
+```sh
+MBOX_KUBE_CONTEXT=kind-agent-sandbox ./scripts/dev.sh --runtime
+```
+
+2. In the web console, create or select a project, create a template using the default `Node.js Workspace` values, and launch a sandbox with only Project, Template, and Name.
+
+3. The Runtime Workspace may show `Starting runtime` while the sandbox is `pending`. Wait for the sandbox to become `running`; the workspace polls the sandbox record while it is starting.
+
+4. In the Terminal tab, start a Node service in the background:
+
+```sh
+cat > server.js <<'EOF'
+const http = require('http')
+http.createServer((req, res) => {
+  res.end('hello from mbox node preview')
+}).listen(3000, '0.0.0.0')
+EOF
+
+node server.js > server.log 2>&1 &
+```
+
+5. In the Preview tab, add `web` port `3000` if it is not already declared. The Preview tab saves sandbox ports through `PATCH /v1/sandboxes/{id}`. Use `Open` after the sandbox is running.
+
 ## Troubleshooting
 
 ### Docker Postgres Fails on Port 5432
@@ -142,15 +171,20 @@ Check:
 - Vite proxy has `ws: true` for `/v1`
 - the server can resolve the runtime Pod through the configured kube context
 
+For a newly launched sandbox, `pending` is expected. The console should show `Starting runtime` and poll status instead of trying to connect the terminal before the `runtimeRef` exists.
+
 ### Preview Port Does Not Open
 
 Check:
 
-- the template declares the port in `exposedPorts`
-- the sandbox copied that port into its `ports` field at creation time
+- the sandbox declares the port in its `ports` field
+- if the template did not declare the port in `exposedPorts`, add the TCP port in the Preview tab
 - protocol is TCP
 - sandbox status is `running`
 - runtime access is enabled
+- a process is actually listening on the target port inside the sandbox
+
+If the terminal command looks concatenated, for example `node server.jsls`, the shell did not receive a newline or the service was started in the foreground. Start the service with a background command such as `node server.js > server.log 2>&1 &`, then run `ls`, `cat server.log`, or `curl 127.0.0.1:3000` as separate commands.
 
 ### Workspace Storage Does Not Persist
 

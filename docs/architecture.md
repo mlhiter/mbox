@@ -20,6 +20,8 @@ The API server owns product records. Kubernetes resources are runtime projection
 
 Postgres migrations live in `internal/postgres/migrations`. Startup requires `DATABASE_URL` and runs embedded migrations before serving HTTP.
 
+Create routes can derive slugs from names. The normal sandbox launch path is product-oriented: users provide project, template, and name; mbox fills namespace from the project and uses the default sandbox ServiceAccount unless an API client deliberately overrides those fields.
+
 ## Runtime Projection
 
 Runtime reconciliation is disabled by default. When `MBOX_RUNTIME_CONTROLLER_ENABLED=true`, the sandbox reconciler:
@@ -34,6 +36,8 @@ Runtime reconciliation is disabled by default. When `MBOX_RUNTIME_CONTROLLER_ENA
 8. Deletes the runtime claim when the sandbox is soft-deleted.
 
 The generated pod template also disables service account token automount. When a template has `storageRequest`, the generated `SandboxTemplate` includes a `workspace` PVC template mounted at the template `workingDir`, defaulting to `/workspace`.
+
+A `pending` mbox sandbox can exist before a `runtimeRef` is written and before the Pod is ready. Frontend runtime surfaces should treat that as a starting state, not a failed terminal/runtime request.
 
 ## Runtime Access
 
@@ -56,7 +60,7 @@ The runtime target resolution path is:
 
 The terminal is a WebSocket bridge to Kubernetes `pods/exec`. It only opens for mbox sandboxes with `running` status and only accepts `sh` or `bash`.
 
-Preview ports are allowed only when the port is declared in the mbox sandbox record, the sandbox is running, and the protocol is TCP. The first implementation proxies through the mbox API server to the resolved Kubernetes Pod proxy path.
+Preview ports are product declarations stored on the mbox sandbox record. Template `exposedPorts` seed the list at creation time, and the Preview tab can patch the sandbox list when a user starts an additional service in the terminal. Preview links are allowed only when the port is declared, the sandbox is running, and the protocol is TCP. The first implementation proxies through the mbox API server to the resolved Kubernetes Pod proxy path.
 
 Runtime target responses include PVC-backed storage metadata by inspecting the resolved Pod's `workspace` container volume mounts and matching PersistentVolumeClaims. The Storage tab uses this to show mount path, claim name, bound phase, capacity, and storage class without exposing raw Kubernetes access to the browser.
 
@@ -73,6 +77,8 @@ The current UI is a single operational console with:
 - main-area Runtime Workspace for the selected sandbox
 
 The Runtime Workspace has tabs for Terminal, Storage, Preview, Logs, and Events. Terminal is intentionally treated as a primary workspace surface, not as right-sidebar metadata.
+
+The template creation flow defaults to a Node.js workspace (`node:22-bookworm-slim`, `/workspace`, `web:3000`) so a fresh local sandbox can immediately prove terminal plus preview behavior without users hand-writing the low-level template shape.
 
 ## Safety Boundaries
 

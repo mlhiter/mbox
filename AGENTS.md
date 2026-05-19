@@ -67,9 +67,12 @@ Keep the product centered on the mbox primitives above. New modules should direc
 - Runtime access is separately disabled by default. Terminal, logs, events, runtime target, and preview port routes require `MBOX_RUNTIME_ACCESS_ENABLED=true`.
 - When enabled, the controller projects mbox sandboxes into `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources and keeps Postgres as the product source of truth.
 - Sandbox ServiceAccounts and generated pod templates disable service account token automount by default.
+- Project, template, and sandbox create endpoints can derive `slug` from `name` when omitted. Normal sandbox launch should rely on the project namespace and default `mbox-sandbox` ServiceAccount instead of asking users for those machine fields.
 - Templates with `storageRequest` project a `workspace` PVC template mounted at the template `workingDir`, defaulting to `/workspace`; runtime target responses include resolved PVC storage metadata when available.
-- Sandbox ports are initialized from template `exposedPorts`. Only declared TCP ports on running sandboxes are previewable through the API proxy.
+- The template creation dialog defaults to a practical Node.js workspace: `node:22-bookworm-slim`, `/workspace`, `250m`, `512Mi`, `2Gi`, and `web:3000`.
+- Sandbox ports are initialized from template `exposedPorts` and can be manually added or removed from the Runtime Workspace Preview tab. Only declared TCP ports on running sandboxes are previewable through the API proxy.
 - The browser terminal uses Kubernetes `pods/exec` through the resolved `agent-sandbox` Pod. The terminal route only accepts running sandboxes and only allows `sh` or `bash`.
+- A newly launched sandbox can stay `pending` before the runtime exists. The Runtime Workspace should show the starting state, poll sandbox status, and avoid calling terminal/logs/events/preview runtime routes until the sandbox is `running` with a `runtimeRef`.
 - The dedicated local smoke target is `MBOX_KUBECONFIG=$HOME/.kube/config` with `MBOX_KUBE_CONTEXT=kind-agent-sandbox`; this cluster is available for mbox runtime smoke tests.
 
 ## UI Guidance
@@ -109,7 +112,7 @@ Current UI implementation:
 - Keep the Notion-adjacent operational style documented in `DESIGN.md`.
 - The left rail is view switching for Projects, Templates, and Sandboxes, not in-page anchor navigation. Keep only the active resource table visible.
 - A selected sandbox opens the main-area Runtime Workspace only while the Sandboxes view is active. Switching views should not leave stale sandbox runtime UI visible.
-- Sandbox launch requires at least one project and one template. Sandbox deletion must stay behind an explicit confirmation.
+- Sandbox launch requires at least one project and one template. The launch dialog should stay focused on Project, Template, and Name; slug, namespace, and ServiceAccount are derived/defaulted. Sandbox deletion must stay behind an explicit confirmation.
 - The rail active state uses soft runtime green, not white. The brand mark is the compact abstract grid mark, not a serif lowercase letter tile.
 
 ## Security Expectations
