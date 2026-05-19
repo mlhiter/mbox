@@ -34,21 +34,27 @@ export function TemplateDialog({
             ...projects.map((project) => ({ value: project.id, label: project.name })),
           ]}
         />
-        <TextField name="name" label="Name" required />
-        <TextField name="slug" label="Slug" required pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" />
-        <TextField name="image" label="Image" required defaultValue="busybox:1.37" />
+        <TextField name="name" label="Name" required defaultValue="Node.js Workspace" />
+        <TextField
+          name="slug"
+          label="Slug"
+          required
+          pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?"
+          defaultValue="nodejs-workspace"
+        />
+        <TextField name="image" label="Image" required defaultValue="node:22-bookworm-slim" />
         <TextField
           name="startupCommand"
           label="Startup command"
-          defaultValue="sh -c 'mkdir -p /workspace && echo mbox sandbox ready && sleep 86400'"
+          defaultValue="sh -c 'mkdir -p /workspace && cd /workspace && echo mbox node sandbox ready && tail -f /dev/null'"
         />
         <TextField name="workingDir" label="Working dir" defaultValue="/workspace" />
         <div className="dialog-row">
-          <TextField name="cpuRequest" label="CPU" defaultValue="50m" />
-          <TextField name="memoryRequest" label="Memory" defaultValue="64Mi" />
-          <TextField name="storageRequest" label="Storage" defaultValue="1Gi" />
+          <TextField name="cpuRequest" label="CPU" defaultValue="250m" />
+          <TextField name="memoryRequest" label="Memory" defaultValue="512Mi" />
+          <TextField name="storageRequest" label="Storage" defaultValue="2Gi" />
         </div>
-        <TextField name="exposedPorts" label="Ports" placeholder="web:3000" />
+        <TextField name="exposedPorts" label="Ports" defaultValue="web:3000" placeholder="web:3000" />
         <CheckboxField name="setDefault" label="Set as project default" defaultChecked />
       </FieldGroup>
     </ResourceDialog>

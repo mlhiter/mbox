@@ -61,11 +61,6 @@ export function SandboxDialog({
           ]}
         />
         <TextField name="name" label="Name" required />
-        <TextField name="slug" label="Slug" required pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" />
-        <div className="dialog-row">
-          <TextField name="namespace" label="Namespace" />
-          <TextField name="serviceAccountName" label="ServiceAccount" placeholder="mbox-sandbox" />
-        </div>
       </FieldGroup>
     </ResourceDialog>
   )

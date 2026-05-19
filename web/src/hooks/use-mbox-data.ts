@@ -15,6 +15,7 @@ import {
   compactObject,
   parseCommand,
   parsePorts,
+  slugFromName,
   stringValue,
 } from "@/lib/resource-utils"
 import type {
@@ -126,13 +127,12 @@ export function useMboxData() {
 
   const createSandbox = useCallback(
     async (data: FormRecord) => {
+      const name = stringValue(data.name)
       const payload = compactObject({
         projectId: stringValue(data.projectId),
         templateId: stringValue(data.templateId),
-        name: stringValue(data.name),
-        slug: stringValue(data.slug),
-        namespace: stringValue(data.namespace),
-        serviceAccountName: stringValue(data.serviceAccountName),
+        name,
+        slug: slugFromName(name),
       })
       const sandbox = await createSandboxRequest(payload)
       await loadAll()

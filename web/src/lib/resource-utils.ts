@@ -132,6 +132,14 @@ export function parseCommand(value: string) {
   return trimmed.split(/\s+/)
 }
 
+export function slugFromName(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
 export function stringValue(value: FormDataEntryValue | undefined) {
   return typeof value === "string" ? value.trim() : ""
 }
