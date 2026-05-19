@@ -1,4 +1,14 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react"
+import { FitAddon } from "@xterm/addon-fit"
+import { Terminal } from "@xterm/xterm"
+import "@xterm/xterm/css/xterm.css"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -57,6 +67,29 @@ type RuntimeRef = {
   name: string
 }
 
+type RuntimeTarget = {
+  namespace: string
+  podName: string
+  container: string
+  phase: string
+  selector: string
+  commands?: string[]
+}
+
+type LogResult = {
+  target: RuntimeTarget
+  logs: string
+}
+
+type RuntimeEvent = {
+  type?: string
+  reason?: string
+  message?: string
+  count?: number
+  firstTimestamp?: string
+  lastTimestamp?: string
+}
+
 type Project = {
   id: string
   name: string
@@ -89,6 +122,7 @@ type Sandbox = {
   serviceAccountName: string
   status: string
   runtimeRef?: RuntimeRef
+  ports?: Array<{ name: string; port: number; protocol: string; previewUrl?: string }>
 }
 
 type Selection = {
@@ -519,7 +553,9 @@ function SandboxTable(props: {
                 </TableCell>
                 <TableCell>{projectName(sandbox.projectId, props.projects)}</TableCell>
                 <TableCell className="mono">{sandbox.namespace}</TableCell>
-                <TableCell>{runtimeText(sandbox.runtimeRef)}</TableCell>
+                <TableCell>
+                  <RuntimeCell refValue={sandbox.runtimeRef} />
+                </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2">
                     <Button variant="outline" size="sm" onClick={() => props.onSelect(sandbox.id)}>
@@ -823,6 +859,7 @@ function DetailPane({
   const selected = selection
     ? collectionFor(selection.kind, projects, templates, sandboxes).find((item) => item.id === selection.id)
     : null
+  const selectedSandbox = selection?.kind === "sandbox" ? (selected as Sandbox | null) : null
 
   return (
     <aside className="detail" aria-label="Selected resource">
@@ -852,10 +889,199 @@ function DetailPane({
                 <dd>{String(value || "-")}</dd>
               </div>
             ))}</dl>
+            {selectedSandbox ? <SandboxRuntimePanel sandbox={selectedSandbox} /> : null}
           </>
         )}
       </div>
     </aside>
+  )
+}
+
+function SandboxRuntimePanel({ sandbox }: { sandbox: Sandbox }) {
+  const [target, setTarget] = useState<RuntimeTarget | null>(null)
+  const [logs, setLogs] = useState("")
+  const [events, setEvents] = useState<RuntimeEvent[]>([])
+  const [runtimeError, setRuntimeError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  async function loadRuntime() {
+    if (!sandbox.runtimeRef) {
+      setRuntimeError("Runtime is not ready")
+      setTarget(null)
+      setLogs("")
+      setEvents([])
+      return
+    }
+    setLoading(true)
+    setRuntimeError(null)
+    try {
+      const [runtimeTarget, logResult, eventResult] = await Promise.all([
+        request<RuntimeTarget>(`/v1/sandboxes/${sandbox.id}/runtime`),
+        request<LogResult>(`/v1/sandboxes/${sandbox.id}/logs?tailLines=120`),
+        request<ListResponse<RuntimeEvent>>(`/v1/sandboxes/${sandbox.id}/events`),
+      ])
+      setTarget(runtimeTarget)
+      setLogs(logResult.logs)
+      setEvents(eventResult.items || [])
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "Runtime request failed"
+      setRuntimeError(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadRuntime()
+  }, [sandbox.id, sandbox.runtimeRef?.name])
+
+  return (
+    <section className="runtime-panel" aria-label="Sandbox runtime">
+      <div className="runtime-panel-head">
+        <div>
+          <p className="eyebrow">Runtime</p>
+          <h3>Terminal</h3>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => void loadRuntime()} disabled={loading}>
+          {loading ? "Loading..." : "Refresh"}
+        </Button>
+      </div>
+      {runtimeError ? <p className="runtime-error">{runtimeError}</p> : null}
+      <TerminalPane sandbox={sandbox} disabled={!sandbox.runtimeRef || sandbox.status !== "running"} />
+      <div className="runtime-meta">
+        <span>{target ? `${target.namespace}/${target.podName}` : "Pod pending"}</span>
+        <span>{target ? `${target.container} · ${target.phase || "unknown"}` : "No runtime target"}</span>
+      </div>
+      <div className="runtime-observe">
+        <div>
+          <h4>Logs</h4>
+          <pre>{logs || "No logs loaded."}</pre>
+        </div>
+        <div>
+          <h4>Events</h4>
+          {events.length === 0 ? (
+            <p>No events loaded.</p>
+          ) : (
+            <ul>
+              {events.slice(0, 6).map((event, index) => (
+                <li key={`${event.reason}-${index}`}>
+                  <strong>{event.reason || event.type || "Event"}</strong>
+                  <span>{event.message || "-"}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TerminalPane({ sandbox, disabled }: { sandbox: Sandbox; disabled: boolean }) {
+  const hostRef = useRef<HTMLDivElement | null>(null)
+  const terminalRef = useRef<Terminal | null>(null)
+  const socketRef = useRef<WebSocket | null>(null)
+  const inputDisposableRef = useRef<{ dispose: () => void } | null>(null)
+  const [connected, setConnected] = useState(false)
+
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) {
+      return
+    }
+    const terminal = new Terminal({
+      cursorBlink: true,
+      convertEol: true,
+      fontFamily: '"SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas, monospace',
+      fontSize: 12,
+      rows: 16,
+      theme: {
+        background: "#151512",
+        foreground: "#ebe7dc",
+        cursor: "#8ccf9f",
+        selectionBackground: "#4e5a47",
+      },
+    })
+    const fit = new FitAddon()
+    terminal.loadAddon(fit)
+    terminal.open(host)
+    fit.fit()
+    terminal.write("Select Connect to open a shell.\r\n")
+    terminalRef.current = terminal
+
+    const resizeObserver = new ResizeObserver(() => fit.fit())
+    resizeObserver.observe(host)
+
+    return () => {
+      resizeObserver.disconnect()
+      socketRef.current?.close()
+      inputDisposableRef.current?.dispose()
+      terminal.dispose()
+      terminalRef.current = null
+    }
+  }, [sandbox.id])
+
+  function connect() {
+    if (disabled || socketRef.current?.readyState === WebSocket.OPEN) {
+      return
+    }
+    const terminal = terminalRef.current
+    if (!terminal) {
+      return
+    }
+    terminal.clear()
+    terminal.write("Connecting...\r\n")
+    const socket = new WebSocket(terminalURL(sandbox.id))
+    socketRef.current = socket
+
+    socket.onopen = () => {
+      setConnected(true)
+      terminal.write("Connected.\r\n")
+      terminal.focus()
+    }
+    socket.onmessage = (event) => {
+      terminal.write(typeof event.data === "string" ? event.data : "")
+    }
+    socket.onerror = () => {
+      terminal.write("\r\nConnection error.\r\n")
+    }
+    socket.onclose = () => {
+      setConnected(false)
+      terminal.write("\r\nConnection closed.\r\n")
+      inputDisposableRef.current?.dispose()
+      inputDisposableRef.current = null
+    }
+    inputDisposableRef.current?.dispose()
+    inputDisposableRef.current = terminal.onData((data) => {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(data)
+      }
+    })
+  }
+
+  function disconnect() {
+    socketRef.current?.close()
+    socketRef.current = null
+    inputDisposableRef.current?.dispose()
+    inputDisposableRef.current = null
+    setConnected(false)
+  }
+
+  return (
+    <div className="terminal-shell">
+      <div className="terminal-toolbar">
+        <span>{connected ? "Connected" : disabled ? "Runtime pending" : "Disconnected"}</span>
+        <div>
+          <Button size="sm" onClick={connect} disabled={disabled || connected}>
+            Connect
+          </Button>
+          <Button size="sm" variant="outline" onClick={disconnect} disabled={!connected}>
+            Disconnect
+          </Button>
+        </div>
+      </div>
+      <div ref={hostRef} className="terminal-host" />
+    </div>
   )
 }
 
@@ -903,6 +1129,18 @@ function StatusBadge({ status }: { status: string }) {
       <span className="status-badge-dot" />
       {status}
     </Badge>
+  )
+}
+
+function RuntimeCell({ refValue }: { refValue: RuntimeRef | undefined }) {
+  if (!refValue) {
+    return <span className="runtime-cell empty">-</span>
+  }
+  return (
+    <span className="runtime-cell" title={runtimeText(refValue)}>
+      <strong>{refValue.kind}</strong>
+      <span>{refValue.namespace}/{refValue.name}</span>
+    </span>
   )
 }
 
@@ -1006,6 +1244,11 @@ function runtimeText(ref: RuntimeRef | undefined) {
     return "-"
   }
   return `${ref.kind} ${ref.namespace}/${ref.name}`
+}
+
+function terminalURL(sandboxID: string) {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
+  return `${protocol}//${window.location.host}/v1/sandboxes/${sandboxID}/terminal`
 }
 
 function shortID(id: string | undefined) {
