@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -149,5 +150,71 @@ func TestGetRuntimeStatusMapsReadyCondition(t *testing.T) {
 	}
 	if status.Status != mboxruntime.RuntimeStatusRunning {
 		t.Fatalf("expected running, got %q", status.Status)
+	}
+}
+
+func TestResolveRuntimeFindsPodFromClaimSandboxSelector(t *testing.T) {
+	scheme := runtime.NewScheme()
+	claim := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": apiVersion,
+		"kind":       "SandboxClaim",
+		"metadata": map[string]any{
+			"name":      "claim",
+			"namespace": "mbox-demo",
+		},
+		"status": map[string]any{
+			"sandbox": map[string]any{
+				"name": "resolved-sandbox",
+			},
+		},
+	}}
+	runtimeSandbox := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "agents.x-k8s.io/v1alpha1",
+		"kind":       "Sandbox",
+		"metadata": map[string]any{
+			"name":      "resolved-sandbox",
+			"namespace": "mbox-demo",
+		},
+		"status": map[string]any{
+			"selector": "agents.x-k8s.io/sandbox=resolved-sandbox",
+		},
+	}}
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		claimsGVR:    "SandboxClaimList",
+		sandboxesGVR: "SandboxList",
+	}, claim)
+	if _, err := client.Resource(sandboxesGVR).Namespace("mbox-demo").Create(context.Background(), runtimeSandbox, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	coreClient := k8sfake.NewSimpleClientset(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "runtime-pod",
+			Namespace: "mbox-demo",
+			Labels: map[string]string{
+				"agents.x-k8s.io/sandbox": "resolved-sandbox",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name: "workspace",
+			}},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	})
+	adapter := NewWithClients(client, coreClient, Config{})
+
+	target, err := adapter.ResolveRuntime(context.Background(), domain.RuntimeRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "SandboxClaim",
+		Namespace: "mbox-demo",
+		Name:      "claim",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.PodName != "runtime-pod" || target.Container != "workspace" || target.Phase != "Running" {
+		t.Fatalf("unexpected runtime target: %+v", target)
 	}
 }

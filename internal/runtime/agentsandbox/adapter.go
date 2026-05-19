@@ -1,26 +1,33 @@
 package agentsandbox
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/remotecommand"
 
 	"github.com/mlhiter/mbox/internal/domain"
 	mboxruntime "github.com/mlhiter/mbox/internal/runtime"
 )
 
 const (
-	adapterName = "agent-sandbox"
-	apiVersion  = "extensions.agents.x-k8s.io/v1alpha1"
+	adapterName   = "agent-sandbox"
+	apiVersion    = "extensions.agents.x-k8s.io/v1alpha1"
+	containerName = "workspace"
 )
 
 var (
@@ -34,11 +41,17 @@ var (
 		Version:  "v1alpha1",
 		Resource: "sandboxtemplates",
 	}
+	sandboxesGVR = schema.GroupVersionResource{
+		Group:    "agents.x-k8s.io",
+		Version:  "v1alpha1",
+		Resource: "sandboxes",
+	}
 )
 
 type Adapter struct {
 	client         dynamic.Interface
 	coreClient     kubernetes.Interface
+	restConfig     *rest.Config
 	warmPoolPolicy string
 }
 
@@ -51,7 +64,7 @@ func New(restConfig *rest.Config, cfg Config) (*Adapter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewWithClients(client, coreClient, cfg), nil
+	return NewWithClients(client, coreClient, cfg).WithRESTConfig(restConfig), nil
 }
 
 func NewWithClient(client dynamic.Interface, cfg Config) *Adapter {
@@ -64,6 +77,11 @@ func NewWithClients(client dynamic.Interface, coreClient kubernetes.Interface, c
 		coreClient:     coreClient,
 		warmPoolPolicy: cfg.WarmPoolPolicy,
 	}
+}
+
+func (a *Adapter) WithRESTConfig(restConfig *rest.Config) *Adapter {
+	a.restConfig = restConfig
+	return a
 }
 
 func (a *Adapter) CreateRuntime(ctx context.Context, request mboxruntime.CreateRequest) (domain.RuntimeRef, error) {
@@ -154,6 +172,152 @@ func (a *Adapter) GetRuntimeStatus(ctx context.Context, ref domain.RuntimeRef) (
 		RuntimeRef: ref,
 		Message:    message,
 	}, nil
+}
+
+func (a *Adapter) ResolveRuntime(ctx context.Context, ref domain.RuntimeRef) (mboxruntime.RuntimeTarget, error) {
+	if ref.Adapter != adapterName || ref.Kind != "SandboxClaim" {
+		return mboxruntime.RuntimeTarget{}, fmt.Errorf("unsupported runtime ref %s/%s", ref.Adapter, ref.Kind)
+	}
+	if a.coreClient == nil {
+		return mboxruntime.RuntimeTarget{}, fmt.Errorf("kubernetes core client is not configured")
+	}
+
+	claim, err := a.client.Resource(claimsGVR).Namespace(ref.Namespace).Get(ctx, ref.Name, metav1.GetOptions{})
+	if err != nil {
+		return mboxruntime.RuntimeTarget{}, err
+	}
+	sandboxName, _, _ := unstructured.NestedString(claim.Object, "status", "sandbox", "name")
+	if sandboxName == "" {
+		return mboxruntime.RuntimeTarget{}, fmt.Errorf("sandbox claim %s/%s has no resolved sandbox", ref.Namespace, ref.Name)
+	}
+	runtimeSandbox, err := a.client.Resource(sandboxesGVR).Namespace(ref.Namespace).Get(ctx, sandboxName, metav1.GetOptions{})
+	if err != nil {
+		return mboxruntime.RuntimeTarget{}, err
+	}
+	selector, _, _ := unstructured.NestedString(runtimeSandbox.Object, "status", "selector")
+	if selector == "" {
+		return mboxruntime.RuntimeTarget{}, fmt.Errorf("runtime sandbox %s/%s has no pod selector", ref.Namespace, sandboxName)
+	}
+	pods, err := a.coreClient.CoreV1().Pods(ref.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: selector,
+	})
+	if err != nil {
+		return mboxruntime.RuntimeTarget{}, err
+	}
+	if len(pods.Items) == 0 {
+		return mboxruntime.RuntimeTarget{}, fmt.Errorf("no pod found for runtime sandbox selector %q", selector)
+	}
+	pod := pickRuntimePod(pods.Items)
+	container := containerName
+	if len(pod.Spec.Containers) > 0 {
+		container = pod.Spec.Containers[0].Name
+		for _, item := range pod.Spec.Containers {
+			if item.Name == containerName {
+				container = item.Name
+				break
+			}
+		}
+	}
+	return mboxruntime.RuntimeTarget{
+		Namespace: ref.Namespace,
+		PodName:   pod.Name,
+		Container: container,
+		Phase:     string(pod.Status.Phase),
+		Selector:  selector,
+		Commands:  []string{"/bin/bash", "/bin/sh", "sh"},
+	}, nil
+}
+
+func (a *Adapter) ReadLogs(ctx context.Context, ref domain.RuntimeRef, options mboxruntime.LogOptions) (mboxruntime.LogResult, error) {
+	if a.coreClient == nil {
+		return mboxruntime.LogResult{}, fmt.Errorf("kubernetes core client is not configured")
+	}
+	target, err := a.ResolveRuntime(ctx, ref)
+	if err != nil {
+		return mboxruntime.LogResult{}, err
+	}
+	container := defaultString(options.Container, target.Container)
+	podOptions := &corev1.PodLogOptions{Container: container}
+	if options.TailLines > 0 {
+		podOptions.TailLines = &options.TailLines
+	}
+	stream, err := a.coreClient.CoreV1().Pods(target.Namespace).GetLogs(target.PodName, podOptions).Stream(ctx)
+	if err != nil {
+		return mboxruntime.LogResult{}, err
+	}
+	defer stream.Close()
+	var out bytes.Buffer
+	if _, err := io.Copy(&out, stream); err != nil {
+		return mboxruntime.LogResult{}, err
+	}
+	target.Container = container
+	return mboxruntime.LogResult{Target: target, Logs: out.String()}, nil
+}
+
+func (a *Adapter) ListEvents(ctx context.Context, ref domain.RuntimeRef) ([]mboxruntime.RuntimeEvent, error) {
+	if a.coreClient == nil {
+		return nil, fmt.Errorf("kubernetes core client is not configured")
+	}
+	target, err := a.ResolveRuntime(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	selector := fields.OneTermEqualSelector("involvedObject.name", target.PodName).String()
+	events, err := a.coreClient.CoreV1().Events(target.Namespace).List(ctx, metav1.ListOptions{FieldSelector: selector})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]mboxruntime.RuntimeEvent, 0, len(events.Items))
+	for _, event := range events.Items {
+		items = append(items, mboxruntime.RuntimeEvent{
+			Type:           event.Type,
+			Reason:         event.Reason,
+			Message:        event.Message,
+			Count:          event.Count,
+			FirstTimestamp: event.FirstTimestamp.Time,
+			LastTimestamp:  event.LastTimestamp.Time,
+		})
+	}
+	return items, nil
+}
+
+func (a *Adapter) Exec(ctx context.Context, ref domain.RuntimeRef, options mboxruntime.ExecOptions) error {
+	if a.coreClient == nil || a.restConfig == nil {
+		return fmt.Errorf("kubernetes exec client is not configured")
+	}
+	target, err := a.ResolveRuntime(ctx, ref)
+	if err != nil {
+		return err
+	}
+	command := options.Command
+	if len(command) == 0 {
+		command = []string{"/bin/sh"}
+	}
+	container := defaultString(options.Container, target.Container)
+	req := a.coreClient.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(target.PodName).
+		Namespace(target.Namespace).
+		SubResource("exec")
+	req.VersionedParams(&corev1.PodExecOptions{
+		Container: container,
+		Command:   command,
+		Stdin:     options.Stdin != nil,
+		Stdout:    options.Stdout != nil,
+		Stderr:    options.Stderr != nil,
+		TTY:       options.TTY,
+	}, scheme.ParameterCodec)
+
+	executor, err := remotecommand.NewSPDYExecutor(a.restConfig, http.MethodPost, req.URL())
+	if err != nil {
+		return err
+	}
+	return executor.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdin:  options.Stdin,
+		Stdout: options.Stdout,
+		Stderr: options.Stderr,
+		Tty:    options.TTY,
+	})
 }
 
 func (a *Adapter) ensureTemplate(ctx context.Context, namespace string, name string, template domain.EnvironmentTemplate, serviceAccountName string) error {
@@ -369,6 +533,15 @@ func defaultString(value string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func pickRuntimePod(pods []corev1.Pod) corev1.Pod {
+	for _, pod := range pods {
+		if pod.Status.Phase == corev1.PodRunning {
+			return pod
+		}
+	}
+	return pods[0]
 }
 
 func readyCondition(obj *unstructured.Unstructured) (corev1.ConditionStatus, string) {

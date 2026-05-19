@@ -11,6 +11,7 @@ type Config struct {
 	ListenAddr               string
 	DatabaseURL              string
 	RuntimeControllerEnabled bool
+	RuntimeAccessEnabled     bool
 	RuntimeReconcileInterval time.Duration
 	KubeconfigPath           string
 	KubeContext              string
@@ -22,6 +23,7 @@ func Load() (Config, error) {
 		ListenAddr:               envDefault("MBOX_LISTEN_ADDR", "127.0.0.1:18080"),
 		DatabaseURL:              os.Getenv("DATABASE_URL"),
 		RuntimeControllerEnabled: envBool("MBOX_RUNTIME_CONTROLLER_ENABLED", false),
+		RuntimeAccessEnabled:     envBool("MBOX_RUNTIME_ACCESS_ENABLED", false),
 		RuntimeReconcileInterval: envDuration("MBOX_RUNTIME_RECONCILE_INTERVAL", 5*time.Second),
 		KubeconfigPath:           os.Getenv("MBOX_KUBECONFIG"),
 		KubeContext:              os.Getenv("MBOX_KUBE_CONTEXT"),

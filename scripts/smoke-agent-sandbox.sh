@@ -227,6 +227,11 @@ echo "Checking pod logs and workspace exec"
 echo "Waiting for mbox API sandbox status running"
 wait_api_sandbox_status "$sandbox_id" running
 
+echo "Checking mbox runtime access APIs"
+api_json GET "/v1/sandboxes/$sandbox_id/runtime" | jq -e --arg pod "$pod_name" '.podName == $pod and .container != ""' >/dev/null
+api_json GET "/v1/sandboxes/$sandbox_id/logs?tailLines=20" | jq -e '.logs | contains("mbox sandbox ready")' >/dev/null
+api_json GET "/v1/sandboxes/$sandbox_id/events" | jq -e '.items | type == "array"' >/dev/null
+
 echo "Deleting sandbox through mbox API"
 api_json DELETE "/v1/sandboxes/$sandbox_id" >/dev/null || true
 wait_deleted "sandboxclaim.extensions.agents.x-k8s.io/$claim_name"

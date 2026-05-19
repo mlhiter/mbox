@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mlhiter/mbox/internal/domain"
+	mboxruntime "github.com/mlhiter/mbox/internal/runtime"
 )
 
 func TestCreateProject(t *testing.T) {
@@ -163,6 +165,195 @@ func TestCreateSandboxRequiresTemplateWithoutProjectDefault(t *testing.T) {
 	}
 }
 
+func TestRuntimeRoutesRequireConfiguredAccess(t *testing.T) {
+	store := newFakeStore()
+	api := New(store)
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+	sandbox, err := store.CreateSandbox(context.Background(), domain.SandboxCreate{
+		ProjectID:          project.ID,
+		TemplateID:         template.ID,
+		Name:               "Dev",
+		Slug:               "dev",
+		Namespace:          "mbox-demo",
+		ServiceAccountName: "mbox-sandbox",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res := request(api, http.MethodGet, "/v1/sandboxes/"+sandbox.ID.String()+"/runtime", nil)
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status %d, got %d", http.StatusServiceUnavailable, res.Code)
+	}
+}
+
+func TestRuntimeRoutesReturnTargetLogsAndEvents(t *testing.T) {
+	store := newFakeStore()
+	access := &fakeRuntimeAccess{}
+	api := NewWithRuntimeAccess(store, access)
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+	sandbox, err := store.CreateSandbox(context.Background(), domain.SandboxCreate{
+		ProjectID:          project.ID,
+		TemplateID:         template.ID,
+		Name:               "Dev",
+		Slug:               "dev",
+		Namespace:          "mbox-demo",
+		ServiceAccountName: "mbox-sandbox",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRef := &domain.RuntimeRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "SandboxClaim",
+		Namespace: "mbox-demo",
+		Name:      "dev",
+	}
+	sandbox.RuntimeRef = runtimeRef
+	store.sandboxes[sandbox.ID] = sandbox
+
+	runtimeRes := request(api, http.MethodGet, "/v1/sandboxes/"+sandbox.ID.String()+"/runtime", nil)
+	if runtimeRes.Code != http.StatusOK {
+		t.Fatalf("expected runtime status %d, got %d: %s", http.StatusOK, runtimeRes.Code, runtimeRes.Body.String())
+	}
+	var target mboxruntime.RuntimeTarget
+	decodeResponse(t, runtimeRes, &target)
+	if target.PodName != "pod-dev" {
+		t.Fatalf("unexpected target: %+v", target)
+	}
+
+	logsRes := request(api, http.MethodGet, "/v1/sandboxes/"+sandbox.ID.String()+"/logs?tailLines=12", nil)
+	if logsRes.Code != http.StatusOK {
+		t.Fatalf("expected logs status %d, got %d: %s", http.StatusOK, logsRes.Code, logsRes.Body.String())
+	}
+	var logs mboxruntime.LogResult
+	decodeResponse(t, logsRes, &logs)
+	if logs.Logs != "ready\n" || access.lastTailLines != 12 {
+		t.Fatalf("unexpected logs response: %+v tail=%d", logs, access.lastTailLines)
+	}
+
+	eventsRes := request(api, http.MethodGet, "/v1/sandboxes/"+sandbox.ID.String()+"/events", nil)
+	if eventsRes.Code != http.StatusOK {
+		t.Fatalf("expected events status %d, got %d: %s", http.StatusOK, eventsRes.Code, eventsRes.Body.String())
+	}
+	var events ListResponse[mboxruntime.RuntimeEvent]
+	decodeResponse(t, eventsRes, &events)
+	if len(events.Items) != 1 || events.Items[0].Reason != "Started" {
+		t.Fatalf("unexpected events response: %+v", events)
+	}
+}
+
+func TestTerminalRejectsNonRunningSandbox(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithRuntimeAccess(store, &fakeRuntimeAccess{})
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+	sandbox, err := store.CreateSandbox(context.Background(), domain.SandboxCreate{
+		ProjectID:          project.ID,
+		TemplateID:         template.ID,
+		Name:               "Dev",
+		Slug:               "dev",
+		Namespace:          "mbox-demo",
+		ServiceAccountName: "mbox-sandbox",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRef := &domain.RuntimeRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "SandboxClaim",
+		Namespace: "mbox-demo",
+		Name:      "dev",
+	}
+	sandbox.RuntimeRef = runtimeRef
+	store.sandboxes[sandbox.ID] = sandbox
+
+	res := request(api, http.MethodGet, "/v1/sandboxes/"+sandbox.ID.String()+"/terminal", nil)
+	if res.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusConflict, res.Code, res.Body.String())
+	}
+}
+
+func TestTerminalRejectsUnsupportedShell(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithRuntimeAccess(store, &fakeRuntimeAccess{})
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+	sandbox, err := store.CreateSandbox(context.Background(), domain.SandboxCreate{
+		ProjectID:          project.ID,
+		TemplateID:         template.ID,
+		Name:               "Dev",
+		Slug:               "dev",
+		Namespace:          "mbox-demo",
+		ServiceAccountName: "mbox-sandbox",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	running := domain.SandboxStatusRunning
+	runtimeRef := &domain.RuntimeRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "SandboxClaim",
+		Namespace: "mbox-demo",
+		Name:      "dev",
+	}
+	sandbox.Status = running
+	sandbox.RuntimeRef = runtimeRef
+	store.sandboxes[sandbox.ID] = sandbox
+
+	res := request(api, http.MethodGet, "/v1/sandboxes/"+sandbox.ID.String()+"/terminal?shell=/bin/zsh", nil)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, res.Code, res.Body.String())
+	}
+}
+
+func TestTerminalOriginCheckAllowsOnlySameHostOrLoopbackDev(t *testing.T) {
+	tests := []struct {
+		name        string
+		requestHost string
+		origin      string
+		want        bool
+	}{
+		{
+			name:        "same host and port",
+			requestHost: "app.example.com:18080",
+			origin:      "https://app.example.com:18080",
+			want:        true,
+		},
+		{
+			name:        "same host different port denied",
+			requestHost: "app.example.com:18080",
+			origin:      "https://app.example.com:5174",
+			want:        false,
+		},
+		{
+			name:        "loopback dev proxy allowed across ports",
+			requestHost: "127.0.0.1:18080",
+			origin:      "http://localhost:5174",
+			want:        true,
+		},
+		{
+			name:        "cross host denied",
+			requestHost: "app.example.com",
+			origin:      "https://evil.example.com",
+			want:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/v1/sandboxes/id/terminal", nil)
+			req.Host = tt.requestHost
+			req.Header.Set("Origin", tt.origin)
+			if got := terminalUpgrader.CheckOrigin(req); got != tt.want {
+				t.Fatalf("expected %v, got %v", tt.want, got)
+			}
+		})
+	}
+}
+
 func request(handler http.Handler, method, path string, body any) *httptest.ResponseRecorder {
 	var buf bytes.Buffer
 	if body != nil {
@@ -180,6 +371,10 @@ func decodeResponse(t *testing.T, res *httptest.ResponseRecorder, dest any) {
 	if err := json.NewDecoder(res.Body).Decode(dest); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
+}
+
+type ListResponse[T any] struct {
+	Items []T `json:"items"`
 }
 
 type fakeStore struct {
@@ -488,5 +683,44 @@ func (s *fakeStore) MarkSandboxRuntimeDeleted(_ context.Context, id uuid.UUID) e
 	}
 	sandbox.RuntimeRef = nil
 	s.sandboxes[id] = sandbox
+	return nil
+}
+
+type fakeRuntimeAccess struct {
+	lastTailLines int64
+}
+
+func (f *fakeRuntimeAccess) ResolveRuntime(context.Context, domain.RuntimeRef) (mboxruntime.RuntimeTarget, error) {
+	return mboxruntime.RuntimeTarget{
+		Namespace: "mbox-demo",
+		PodName:   "pod-dev",
+		Container: "workspace",
+		Phase:     "Running",
+		Selector:  "app=pod-dev",
+	}, nil
+}
+
+func (f *fakeRuntimeAccess) ReadLogs(_ context.Context, ref domain.RuntimeRef, options mboxruntime.LogOptions) (mboxruntime.LogResult, error) {
+	f.lastTailLines = options.TailLines
+	target, _ := f.ResolveRuntime(context.Background(), ref)
+	return mboxruntime.LogResult{
+		Target: target,
+		Logs:   "ready\n",
+	}, nil
+}
+
+func (f *fakeRuntimeAccess) ListEvents(context.Context, domain.RuntimeRef) ([]mboxruntime.RuntimeEvent, error) {
+	return []mboxruntime.RuntimeEvent{{
+		Type:    "Normal",
+		Reason:  "Started",
+		Message: "Started container",
+		Count:   1,
+	}}, nil
+}
+
+func (f *fakeRuntimeAccess) Exec(_ context.Context, _ domain.RuntimeRef, options mboxruntime.ExecOptions) error {
+	if options.Stdin != nil {
+		_, _ = io.Copy(options.Stdout, options.Stdin)
+	}
 	return nil
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/mlhiter/mbox/internal/controller"
 	"github.com/mlhiter/mbox/internal/httpapi"
 	"github.com/mlhiter/mbox/internal/postgres"
+	mboxruntime "github.com/mlhiter/mbox/internal/runtime"
 	"github.com/mlhiter/mbox/internal/runtime/agentsandbox"
 )
 
@@ -49,7 +50,8 @@ func run(ctx context.Context) error {
 	}
 
 	store := postgres.NewStore(pool)
-	if cfg.RuntimeControllerEnabled {
+	var runtimeAccess mboxruntime.Access
+	if cfg.RuntimeControllerEnabled || cfg.RuntimeAccessEnabled {
 		restConfig, err := agentsandbox.BuildRESTConfig(agentsandbox.Config{
 			KubeconfigPath: cfg.KubeconfigPath,
 			Context:        cfg.KubeContext,
@@ -63,17 +65,27 @@ func run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		reconciler := controller.NewSandboxReconciler(store, adapter, cfg.RuntimeReconcileInterval, slog.Default())
-		go func() {
-			if err := reconciler.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				slog.Error("sandbox reconciler exited", "error", err)
-			}
-		}()
+		if cfg.RuntimeAccessEnabled {
+			runtimeAccess = adapter
+		} else {
+			slog.Info("sandbox runtime access disabled")
+		}
+		if cfg.RuntimeControllerEnabled {
+			reconciler := controller.NewSandboxReconciler(store, adapter, cfg.RuntimeReconcileInterval, slog.Default())
+			go func() {
+				if err := reconciler.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+					slog.Error("sandbox reconciler exited", "error", err)
+				}
+			}()
+		} else {
+			slog.Info("sandbox runtime controller disabled")
+		}
 	} else {
 		slog.Info("sandbox runtime controller disabled")
+		slog.Info("sandbox runtime access disabled")
 	}
 
-	api := httpapi.New(store)
+	api := httpapi.NewWithRuntimeAccess(store, runtimeAccess)
 	server := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           requestLogger(api),

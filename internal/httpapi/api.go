@@ -1,27 +1,37 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 
 	"github.com/mlhiter/mbox/internal/domain"
+	mboxruntime "github.com/mlhiter/mbox/internal/runtime"
 )
 
 type API struct {
-	store domain.Store
-	mux   *http.ServeMux
+	store  domain.Store
+	access mboxruntime.Access
+	mux    *http.ServeMux
 }
 
 func New(store domain.Store) *API {
+	return NewWithRuntimeAccess(store, nil)
+}
+
+func NewWithRuntimeAccess(store domain.Store, access mboxruntime.Access) *API {
 	api := &API{
-		store: store,
-		mux:   http.NewServeMux(),
+		store:  store,
+		access: access,
+		mux:    http.NewServeMux(),
 	}
 	api.routes()
 	return api
@@ -50,6 +60,10 @@ func (api *API) routes() {
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}", api.getSandbox)
 	api.mux.HandleFunc("PATCH /v1/sandboxes/{sandboxID}", api.updateSandbox)
 	api.mux.HandleFunc("DELETE /v1/sandboxes/{sandboxID}", api.deleteSandbox)
+	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/runtime", api.getSandboxRuntime)
+	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/logs", api.getSandboxLogs)
+	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/events", api.getSandboxEvents)
+	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/terminal", api.connectSandboxTerminal)
 }
 
 func (api *API) healthz(w http.ResponseWriter, _ *http.Request) {
@@ -159,4 +173,88 @@ func writeStoreError(w http.ResponseWriter, err error) {
 	default:
 		writeError(w, http.StatusInternalServerError, "internal server error")
 	}
+}
+
+func (api *API) sandboxRuntimeRef(w http.ResponseWriter, r *http.Request) (domain.Sandbox, domain.RuntimeRef, bool) {
+	if api.access == nil {
+		writeError(w, http.StatusServiceUnavailable, "runtime access is not configured")
+		return domain.Sandbox{}, domain.RuntimeRef{}, false
+	}
+	id, ok := parseUUIDParam(r, "sandboxID")
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid sandbox id")
+		return domain.Sandbox{}, domain.RuntimeRef{}, false
+	}
+	sandbox, err := api.store.GetSandbox(r.Context(), id)
+	if err != nil {
+		writeStoreError(w, err)
+		return domain.Sandbox{}, domain.RuntimeRef{}, false
+	}
+	if sandbox.RuntimeRef == nil {
+		writeError(w, http.StatusConflict, "sandbox runtime is not ready")
+		return domain.Sandbox{}, domain.RuntimeRef{}, false
+	}
+	return sandbox, *sandbox.RuntimeRef, true
+}
+
+func writeRuntimeError(w http.ResponseWriter, err error) {
+	writeError(w, http.StatusBadGateway, err.Error())
+}
+
+type websocketReader struct {
+	conn    *websocket.Conn
+	pending []byte
+}
+
+func (r *websocketReader) Read(p []byte) (int, error) {
+	if len(r.pending) > 0 {
+		n := copy(p, r.pending)
+		r.pending = r.pending[n:]
+		return n, nil
+	}
+	for {
+		messageType, payload, err := r.conn.ReadMessage()
+		if err != nil {
+			return 0, err
+		}
+		if messageType != websocket.TextMessage && messageType != websocket.BinaryMessage {
+			continue
+		}
+		if len(payload) == 0 {
+			continue
+		}
+		n := copy(p, payload)
+		r.pending = payload[n:]
+		return n, nil
+	}
+}
+
+type websocketWriter struct {
+	conn *websocket.Conn
+}
+
+func (w *websocketWriter) Write(p []byte) (int, error) {
+	if err := w.conn.WriteMessage(websocket.TextMessage, p); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+var _ io.Reader = (*websocketReader)(nil)
+var _ io.Writer = (*websocketWriter)(nil)
+
+func execCommandFromQuery(r *http.Request) ([]string, bool) {
+	shell := strings.TrimSpace(r.URL.Query().Get("shell"))
+	switch shell {
+	case "", "sh":
+		return []string{"/bin/sh"}, true
+	case "bash":
+		return []string{"/bin/bash"}, true
+	default:
+		return nil, false
+	}
+}
+
+func contextWithRequest(r *http.Request) (context.Context, context.CancelFunc) {
+	return context.WithCancel(r.Context())
 }
