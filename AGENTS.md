@@ -99,10 +99,18 @@ Core UI areas:
 
 Current UI implementation:
 
-- `web/src/app.tsx` owns the current single-page resource console.
+- `web/src/app.tsx` owns top-level console composition, active view state, and selection cleanup.
 - `web/src/app.css` owns app-level layout and design tokens.
+- Console shell components live in `web/src/components/console/`.
+- Resource tables and dialogs live in `web/src/features/resources/`.
+- Runtime Workspace panels live in `web/src/features/runtime/`.
+- API wrappers, resource helpers, and data state live in `web/src/lib/` and `web/src/hooks/`.
 - shadcn source components live in `web/src/components/ui/`.
 - Keep the Notion-adjacent operational style documented in `DESIGN.md`.
+- The left rail is view switching for Projects, Templates, and Sandboxes, not in-page anchor navigation. Keep only the active resource table visible.
+- A selected sandbox opens the main-area Runtime Workspace only while the Sandboxes view is active. Switching views should not leave stale sandbox runtime UI visible.
+- Sandbox launch requires at least one project and one template. Sandbox deletion must stay behind an explicit confirmation.
+- The rail active state uses soft runtime green, not white. The brand mark is the compact abstract grid mark, not a serif lowercase letter tile.
 
 ## Security Expectations
 

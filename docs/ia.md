@@ -4,21 +4,21 @@ This document captures the current web-console information architecture. It is i
 
 ## Current App Shell
 
-The current console is a single-page operational surface:
+The current console is a state-switched operational surface:
 
 - left rail
 - main workspace
 - right detail pane
 
-The left rail links to the current resource sections:
+The left rail switches the active resource view:
 
 - Projects
 - Templates
 - Sandboxes
 
-The main workspace starts with API/product summary counts, then shows the selected sandbox Runtime Workspace when a sandbox is selected, followed by the resource tables.
+The main workspace starts with the active view title, active-view record count, and global API/product summary counts. It then shows the selected sandbox Runtime Workspace only when the active view is Sandboxes and a sandbox is selected. Below that, it renders exactly one active resource table, not all resource tables stacked on the same page.
 
-The right detail pane is metadata-only. It shows the selected project, template, or sandbox identity and key fields. It should not host the terminal.
+The right detail pane is metadata-only. It shows the selected project, template, or sandbox identity and key fields. It should not host the terminal. Changing the active view clears incompatible selection so the detail pane does not show metadata from another view.
 
 ## Main Workspace Sections
 
@@ -33,7 +33,7 @@ Shows current counts:
 
 ### Runtime Workspace
 
-Appears when the selected resource is a sandbox.
+Appears when the active view is Sandboxes and the selected resource is a sandbox.
 
 Tabs:
 
@@ -44,6 +44,8 @@ Tabs:
 - Events
 
 Terminal is the primary operation entry for a running sandbox. Storage shows resolved workspace PVC mount path, claim, bound phase, capacity, and storage class when available. Preview lists declared TCP ports and opens API-proxied links. Logs and Events expose lightweight runtime observability.
+
+If terminal access is blocked because the sandbox has no runtime reference or is not `running`, the workspace shows the blocker and the Connect button remains disabled.
 
 ### Projects
 
@@ -67,9 +69,9 @@ Current operations:
 Current operations:
 
 - list sandboxes
-- launch sandbox
+- launch sandbox after a project and template exist
 - inspect selected sandbox metadata
-- delete sandbox
+- delete sandbox through a confirmation dialog
 - open runtime workspace for the selected sandbox
 
 ## Future Navigation Areas

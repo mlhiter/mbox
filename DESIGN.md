@@ -263,8 +263,8 @@ mbox is flat by default and uses structure before shadow: borders, table divider
 ### Navigation
 
 - **Rail:** Fixed left rail on desktop, stacked top rail on mobile. Keep navigation compact and predictable.
-- **Links:** `32px` minimum height, `6px` radius, warm muted text. Hover uses Hover Paper and Ink.
-- **Brand Mark:** Small `30px` square, Soft Runtime Green background, Green Ink text, serif lowercase `m`. It is a quiet signpost, not a logo hero.
+- **View Buttons:** `32px` minimum height, `6px` radius, warm muted text. Hover uses Hover Paper and Ink. Active state uses Soft Runtime Green and Green Ink, never a white active pill.
+- **Brand Mark:** Small abstract control-plane grid mark, around `34px` square, with Soft Runtime Green fill, Green Ink geometry, and a faint grid texture. It is a quiet signpost, not a logo hero or a serif letter tile.
 - **API State:** Status dot plus short text at the bottom of the rail. Dot colors follow Warning, Runtime Green, and Danger.
 
 ### Tables
