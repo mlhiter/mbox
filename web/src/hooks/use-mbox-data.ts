@@ -10,6 +10,8 @@ import {
   listProjects,
   listSandboxes,
   listTemplates,
+  startSandbox as startSandboxRequest,
+  stopSandbox as stopSandboxRequest,
   updateProject,
 } from "@/lib/api"
 import {
@@ -161,6 +163,38 @@ export function useMboxData() {
     [loadAll, selection],
   )
 
+  const stopSandbox = useCallback(
+    async (id: string) => {
+      try {
+        const sandbox = await stopSandboxRequest(id)
+        setSandboxes((current) => current.map((item) => (item.id === id ? sandbox : item)))
+        toast.success("Sandbox stopped")
+        return sandbox
+      } catch (stopError) {
+        const message = stopError instanceof Error ? stopError.message : "Stop failed"
+        toast.error(message)
+        throw stopError
+      }
+    },
+    [],
+  )
+
+  const startSandbox = useCallback(
+    async (id: string) => {
+      try {
+        const sandbox = await startSandboxRequest(id)
+        setSandboxes((current) => current.map((item) => (item.id === id ? sandbox : item)))
+        toast.success("Sandbox starting")
+        return sandbox
+      } catch (startError) {
+        const message = startError instanceof Error ? startError.message : "Start failed"
+        toast.error(message)
+        throw startError
+      }
+    },
+    [],
+  )
+
   const refreshSandbox = useCallback(async (id: string) => {
     const sandbox = await getSandbox(id)
     setSandboxes((current) => current.map((item) => (item.id === id ? sandbox : item)))
@@ -183,6 +217,8 @@ export function useMboxData() {
     selectedSandbox,
     selection,
     setSelection,
+    startSandbox,
+    stopSandbox,
     templates,
   }
 }

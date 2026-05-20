@@ -551,7 +551,7 @@
 
 .records-table .sandbox-table th:nth-child(6),
 .records-table .sandbox-table td:nth-child(6) {
-  width: 184px;
+  width: 206px;
 }
 
 .records-table tr {
@@ -563,6 +563,76 @@
 .records-table tr.is-selected,
 .records-table tr[data-state="selected"] {
   background: var(--info-soft);
+}
+
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: 100%;
+  white-space: nowrap;
+}
+
+.row-action-group {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--paper) 90%, var(--paper-soft));
+}
+
+.row-action-icon-group {
+  gap: 0;
+}
+
+.row-action-button,
+.row-action-workspace {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.row-action-workspace {
+  height: 32px;
+  padding-inline: 10px 11px;
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.row-action-button {
+  width: 32px;
+  height: 32px;
+  color: var(--muted);
+}
+
+.row-action-lifecycle {
+  color: var(--ink);
+}
+
+.row-action-button + .row-action-button {
+  border-left: 1px solid var(--line);
+}
+
+.row-action-lifecycle:hover,
+.row-action-lifecycle:focus-visible,
+.row-action-workspace:hover,
+.row-action-workspace:focus-visible {
+  background: var(--paper-hover);
+  color: var(--runtime-ink);
+}
+
+.row-action-danger {
+  color: var(--danger);
+}
+
+.row-action-danger:hover,
+.row-action-danger:focus-visible {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .cell-title {

@@ -1,4 +1,4 @@
-import { SquareTerminal } from "lucide-react"
+import { Play, Power, SquareTerminal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -28,6 +28,8 @@ export function SandboxTable(props: {
   onSelect: (id: string) => void
   onCreate: (data: FormRecord) => Promise<void>
   onDelete: (id: string) => Promise<void>
+  onStart: (id: string) => Promise<Sandbox>
+  onStop: (id: string) => Promise<Sandbox>
 }) {
   const canLaunch = props.projects.length > 0 && props.templates.length > 0
 
@@ -86,12 +88,49 @@ export function SandboxTable(props: {
                   <RuntimeCell refValue={sandbox.runtimeRef} />
                 </TableCell>
                 <TableCell>
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="sm" onClick={() => props.onSelect(sandbox.id)}>
-                      <SquareTerminal data-icon="inline-start" />
-                      Open workspace
-                    </Button>
-                    <DeleteSandboxDialog sandbox={sandbox} onDelete={props.onDelete} />
+                  <div className="row-actions" aria-label={`Actions for ${sandbox.name}`}>
+                    <div className="row-action-group">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="row-action-workspace"
+                        onClick={() => props.onSelect(sandbox.id)}
+                      >
+                        <SquareTerminal data-icon="inline-start" />
+                        Workspace
+                      </Button>
+                    </div>
+                    <div className="row-action-group row-action-icon-group">
+                      {sandbox.status === "stopped" ? (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="row-action-button row-action-lifecycle"
+                          aria-label={`Start ${sandbox.name}`}
+                          title="Start sandbox"
+                          onClick={() => void props.onStart(sandbox.id)}
+                        >
+                          <Play />
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="row-action-button row-action-lifecycle"
+                          aria-label={`Stop ${sandbox.name}`}
+                          title="Stop sandbox"
+                          disabled={sandbox.status === "deleted"}
+                          onClick={() => void props.onStop(sandbox.id)}
+                        >
+                          <Power />
+                        </Button>
+                      )}
+                      <DeleteSandboxDialog
+                        sandbox={sandbox}
+                        onDelete={props.onDelete}
+                        className="row-action-button row-action-danger"
+                      />
+                    </div>
                   </div>
                 </TableCell>
               </TableRow>

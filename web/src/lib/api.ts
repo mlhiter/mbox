@@ -90,6 +90,14 @@ export function deleteSandbox(id: string) {
   return request<void>(`/v1/sandboxes/${id}`, { method: "DELETE" })
 }
 
+export function startSandbox(id: string) {
+  return request<Sandbox>(`/v1/sandboxes/${id}/start`, { method: "POST" })
+}
+
+export function stopSandbox(id: string) {
+  return request<Sandbox>(`/v1/sandboxes/${id}/stop`, { method: "POST" })
+}
+
 export function getRuntimeTarget(sandboxID: string) {
   return request<RuntimeTarget>(`/v1/sandboxes/${sandboxID}/runtime`)
 }

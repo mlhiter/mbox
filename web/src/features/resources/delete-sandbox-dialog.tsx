@@ -17,9 +17,11 @@ import type { Sandbox } from "@/types"
 export function DeleteSandboxDialog({
   sandbox,
   onDelete,
+  className,
 }: {
   sandbox: Sandbox
   onDelete: (id: string) => Promise<void>
+  className?: string
 }) {
   const [open, setOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -37,7 +39,7 @@ export function DeleteSandboxDialog({
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !deleting && setOpen(nextOpen)}>
       <DialogTrigger asChild>
-        <Button variant="destructive" size="icon-sm" aria-label={`Delete ${sandbox.name}`}>
+        <Button variant="ghost" size="icon-sm" className={className} aria-label={`Delete ${sandbox.name}`} title="Delete sandbox">
           <Trash2 />
         </Button>
       </DialogTrigger>

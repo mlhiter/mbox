@@ -47,6 +47,8 @@ export function App() {
     selectedSandbox,
     selection,
     setSelection,
+    startSandbox,
+    stopSandbox,
     templates,
   } = useMboxData()
 
@@ -158,6 +160,8 @@ export function App() {
             onSelect={(id) => setSelection({ kind: "sandbox", id })}
             onCreate={createSandbox}
             onDelete={deleteSandbox}
+            onStart={startSandbox}
+            onStop={stopSandbox}
           />
         ) : null}
       </div>
