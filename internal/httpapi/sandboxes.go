@@ -248,6 +248,28 @@ func (api *API) deleteSandbox(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (api *API) stopSandbox(w http.ResponseWriter, r *http.Request) {
+	api.setSandboxLifecycleStatus(w, r, domain.SandboxStatusStopped)
+}
+
+func (api *API) startSandbox(w http.ResponseWriter, r *http.Request) {
+	api.setSandboxLifecycleStatus(w, r, domain.SandboxStatusPending)
+}
+
+func (api *API) setSandboxLifecycleStatus(w http.ResponseWriter, r *http.Request, status domain.SandboxStatus) {
+	id, ok := parseUUIDParam(r, "sandboxID")
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid sandbox id")
+		return
+	}
+	sandbox, err := api.store.UpdateSandbox(r.Context(), id, domain.SandboxUpdate{Status: &status})
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sandbox)
+}
+
 func validSandboxStatus(status domain.SandboxStatus) bool {
 	switch status {
 	case domain.SandboxStatusPending,

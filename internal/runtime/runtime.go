@@ -105,6 +105,8 @@ type ExecOptions struct {
 
 type Adapter interface {
 	CreateRuntime(ctx context.Context, request CreateRequest) (domain.RuntimeRef, error)
+	StartRuntime(ctx context.Context, ref domain.RuntimeRef) error
+	StopRuntime(ctx context.Context, ref domain.RuntimeRef) error
 	DeleteRuntime(ctx context.Context, ref domain.RuntimeRef) error
 	GetRuntimeStatus(ctx context.Context, ref domain.RuntimeRef) (Status, error)
 }
@@ -124,6 +126,14 @@ func (NoopAdapter) CreateRuntime(context.Context, CreateRequest) (domain.Runtime
 }
 
 func (NoopAdapter) DeleteRuntime(context.Context, domain.RuntimeRef) error {
+	return nil
+}
+
+func (NoopAdapter) StartRuntime(context.Context, domain.RuntimeRef) error {
+	return nil
+}
+
+func (NoopAdapter) StopRuntime(context.Context, domain.RuntimeRef) error {
 	return nil
 }
 

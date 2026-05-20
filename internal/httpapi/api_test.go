@@ -122,6 +122,57 @@ func TestSandboxLifecycle(t *testing.T) {
 	}
 }
 
+func TestSandboxStartStopRoutesSetLifecycleStatus(t *testing.T) {
+	store := newFakeStore()
+	api := New(store)
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+	sandbox, err := store.CreateSandbox(context.Background(), domain.SandboxCreate{
+		ProjectID:          project.ID,
+		TemplateID:         template.ID,
+		Name:               "Dev",
+		Slug:               "dev",
+		Namespace:          "mbox-demo",
+		ServiceAccountName: "mbox-sandbox",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRef := &domain.RuntimeRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "SandboxClaim",
+		Namespace: "mbox-demo",
+		Name:      "dev",
+	}
+	running := domain.SandboxStatusRunning
+	if _, err := store.UpdateSandbox(context.Background(), sandbox.ID, domain.SandboxUpdate{
+		Status:     &running,
+		RuntimeRef: &runtimeRef,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	stopRes := request(api, http.MethodPost, "/v1/sandboxes/"+sandbox.ID.String()+"/stop", nil)
+	if stopRes.Code != http.StatusOK {
+		t.Fatalf("expected stop status %d, got %d: %s", http.StatusOK, stopRes.Code, stopRes.Body.String())
+	}
+	var stopped domain.Sandbox
+	decodeResponse(t, stopRes, &stopped)
+	if stopped.Status != domain.SandboxStatusStopped || stopped.RuntimeRef == nil {
+		t.Fatalf("expected stopped sandbox with runtime ref, got %+v", stopped)
+	}
+
+	startRes := request(api, http.MethodPost, "/v1/sandboxes/"+sandbox.ID.String()+"/start", nil)
+	if startRes.Code != http.StatusOK {
+		t.Fatalf("expected start status %d, got %d: %s", http.StatusOK, startRes.Code, startRes.Body.String())
+	}
+	var pending domain.Sandbox
+	decodeResponse(t, startRes, &pending)
+	if pending.Status != domain.SandboxStatusPending || pending.RuntimeRef == nil {
+		t.Fatalf("expected pending sandbox with runtime ref, got %+v", pending)
+	}
+}
+
 func TestCreateSandboxUsesProjectDefaults(t *testing.T) {
 	store := newFakeStore()
 	api := New(store)

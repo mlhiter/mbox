@@ -103,8 +103,74 @@ func TestReconcilerDeletesRuntimeForDeletedSandbox(t *testing.T) {
 	}
 }
 
+func TestReconcilerStopsRuntimeForStoppedSandbox(t *testing.T) {
+	store := newFakeStore()
+	adapter := &fakeAdapter{}
+	project := store.mustProject()
+	template := store.mustTemplate(&project.ID)
+	sandbox := store.mustSandbox(project.ID, template.ID)
+	ref := domain.RuntimeRef{Adapter: "agent-sandbox", Kind: "SandboxClaim", Namespace: sandbox.Namespace, Name: "runtime"}
+	refPtr := &ref
+	stopped := domain.SandboxStatusStopped
+	if _, err := store.UpdateSandbox(context.Background(), sandbox.ID, domain.SandboxUpdate{
+		Status:     &stopped,
+		RuntimeRef: &refPtr,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	reconciler := NewSandboxReconciler(store, adapter, time.Second, nil)
+	if err := reconciler.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := store.GetSandbox(context.Background(), sandbox.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status != domain.SandboxStatusStopped || updated.RuntimeRef == nil {
+		t.Fatalf("expected stopped sandbox to keep runtime ref, got %+v", updated)
+	}
+	if adapter.stopCalls != 1 {
+		t.Fatalf("expected 1 stop call, got %d", adapter.stopCalls)
+	}
+	if adapter.statusCalls != 0 {
+		t.Fatalf("expected no status calls while stopped, got %d", adapter.statusCalls)
+	}
+}
+
+func TestReconcilerStartsRuntimeForPendingSandboxWithRuntimeRef(t *testing.T) {
+	store := newFakeStore()
+	adapter := &fakeAdapter{}
+	project := store.mustProject()
+	template := store.mustTemplate(&project.ID)
+	sandbox := store.mustSandbox(project.ID, template.ID)
+	ref := domain.RuntimeRef{Adapter: "agent-sandbox", Kind: "SandboxClaim", Namespace: sandbox.Namespace, Name: "runtime"}
+	refPtr := &ref
+	if _, err := store.UpdateSandbox(context.Background(), sandbox.ID, domain.SandboxUpdate{RuntimeRef: &refPtr}); err != nil {
+		t.Fatal(err)
+	}
+
+	reconciler := NewSandboxReconciler(store, adapter, time.Second, nil)
+	if err := reconciler.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if adapter.startCalls != 1 {
+		t.Fatalf("expected 1 start call, got %d", adapter.startCalls)
+	}
+	if adapter.statusCalls != 1 {
+		t.Fatalf("expected 1 status call, got %d", adapter.statusCalls)
+	}
+	if adapter.createCalls != 0 {
+		t.Fatalf("expected no create calls, got %d", adapter.createCalls)
+	}
+}
+
 type fakeAdapter struct {
 	createCalls int
+	startCalls  int
+	stopCalls   int
 	statusCalls int
 	deleteCalls int
 	status      mboxruntime.Status
@@ -122,6 +188,16 @@ func (a *fakeAdapter) CreateRuntime(context.Context, mboxruntime.CreateRequest) 
 
 func (a *fakeAdapter) DeleteRuntime(context.Context, domain.RuntimeRef) error {
 	a.deleteCalls++
+	return nil
+}
+
+func (a *fakeAdapter) StartRuntime(context.Context, domain.RuntimeRef) error {
+	a.startCalls++
+	return nil
+}
+
+func (a *fakeAdapter) StopRuntime(context.Context, domain.RuntimeRef) error {
+	a.stopCalls++
 	return nil
 }
 
@@ -307,7 +383,7 @@ func (s *fakeStore) DeleteSandbox(_ context.Context, id uuid.UUID) error {
 func (s *fakeStore) ListSandboxesForReconcile(context.Context) ([]domain.Sandbox, error) {
 	items := []domain.Sandbox{}
 	for _, sandbox := range s.sandboxes {
-		if sandbox.Status == domain.SandboxStatusPending || sandbox.Status == domain.SandboxStatusRunning || sandbox.Status == domain.SandboxStatusFailed || (sandbox.DeletedAt != nil && sandbox.RuntimeRef != nil) {
+		if sandbox.Status == domain.SandboxStatusPending || sandbox.Status == domain.SandboxStatusRunning || sandbox.Status == domain.SandboxStatusFailed || (sandbox.Status == domain.SandboxStatusStopped && sandbox.RuntimeRef != nil) || (sandbox.DeletedAt != nil && sandbox.RuntimeRef != nil) {
 			items = append(items, sandbox)
 		}
 	}

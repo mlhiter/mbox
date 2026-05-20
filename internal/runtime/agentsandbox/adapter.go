@@ -145,6 +145,14 @@ func (a *Adapter) DeleteRuntime(ctx context.Context, ref domain.RuntimeRef) erro
 	return err
 }
 
+func (a *Adapter) StartRuntime(ctx context.Context, ref domain.RuntimeRef) error {
+	return a.scaleRuntimeSandbox(ctx, ref, 1)
+}
+
+func (a *Adapter) StopRuntime(ctx context.Context, ref domain.RuntimeRef) error {
+	return a.scaleRuntimeSandbox(ctx, ref, 0)
+}
+
 func (a *Adapter) GetRuntimeStatus(ctx context.Context, ref domain.RuntimeRef) (mboxruntime.Status, error) {
 	if ref.Adapter != adapterName || ref.Kind != "SandboxClaim" {
 		return mboxruntime.Status{}, fmt.Errorf("unsupported runtime ref %s/%s", ref.Adapter, ref.Kind)
@@ -230,6 +238,54 @@ func (a *Adapter) ResolveRuntime(ctx context.Context, ref domain.RuntimeRef) (mb
 		Commands:  []string{"/bin/bash", "/bin/sh", "sh"},
 		Storage:   a.runtimeStorage(ctx, pod, container),
 	}, nil
+}
+
+func (a *Adapter) scaleRuntimeSandbox(ctx context.Context, ref domain.RuntimeRef, replicas int64) error {
+	if ref.Adapter != adapterName || ref.Kind != "SandboxClaim" {
+		return fmt.Errorf("unsupported runtime ref %s/%s", ref.Adapter, ref.Kind)
+	}
+	if replicas < 0 {
+		return fmt.Errorf("runtime replicas cannot be negative")
+	}
+	sandboxName, err := a.resolvedSandboxName(ctx, ref)
+	if err != nil {
+		return err
+	}
+	if sandboxName == "" {
+		return nil
+	}
+	runtimeSandbox, err := a.client.Resource(sandboxesGVR).Namespace(ref.Namespace).Get(ctx, sandboxName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	currentReplicas, ok, err := unstructured.NestedInt64(runtimeSandbox.Object, "spec", "replicas")
+	if err != nil {
+		return err
+	}
+	if ok && currentReplicas == replicas {
+		return nil
+	}
+	_ = unstructured.SetNestedField(runtimeSandbox.Object, replicas, "spec", "replicas")
+	_, err = a.client.Resource(sandboxesGVR).Namespace(ref.Namespace).Update(ctx, runtimeSandbox, metav1.UpdateOptions{})
+	return err
+}
+
+func (a *Adapter) resolvedSandboxName(ctx context.Context, ref domain.RuntimeRef) (string, error) {
+	claim, err := a.client.Resource(claimsGVR).Namespace(ref.Namespace).Get(ctx, ref.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	sandboxName, _, _ := unstructured.NestedString(claim.Object, "status", "sandbox", "name")
+	if sandboxName == "" {
+		return "", nil
+	}
+	return sandboxName, nil
 }
 
 func (a *Adapter) ReadLogs(ctx context.Context, ref domain.RuntimeRef, options mboxruntime.LogOptions) (mboxruntime.LogResult, error) {

@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/mlhiter/mbox/internal/domain"
 	mboxruntime "github.com/mlhiter/mbox/internal/runtime"
@@ -176,6 +177,119 @@ func TestGetRuntimeStatusMapsReadyCondition(t *testing.T) {
 	}
 	if len(status.Ports) != 1 || status.Ports[0].Port != 3000 || status.Ports[0].PreviewURL == "" {
 		t.Fatalf("expected runtime ports, got %+v", status.Ports)
+	}
+}
+
+func TestStartStopRuntimeScalesResolvedSandbox(t *testing.T) {
+	scheme := runtime.NewScheme()
+	claim := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": apiVersion,
+		"kind":       "SandboxClaim",
+		"metadata": map[string]any{
+			"name":      "claim",
+			"namespace": "mbox-demo",
+		},
+		"status": map[string]any{
+			"sandbox": map[string]any{
+				"name": "resolved-sandbox",
+			},
+		},
+	}}
+	runtimeSandbox := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "agents.x-k8s.io/v1alpha1",
+		"kind":       "Sandbox",
+		"metadata": map[string]any{
+			"name":      "resolved-sandbox",
+			"namespace": "mbox-demo",
+		},
+		"spec": map[string]any{
+			"replicas": int64(1),
+		},
+	}}
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		claimsGVR:    "SandboxClaimList",
+		sandboxesGVR: "SandboxList",
+	}, claim)
+	if _, err := client.Resource(sandboxesGVR).Namespace("mbox-demo").Create(context.Background(), runtimeSandbox, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	adapter := NewWithClient(client, Config{})
+	ref := domain.RuntimeRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "SandboxClaim",
+		Namespace: "mbox-demo",
+		Name:      "claim",
+	}
+
+	if err := adapter.StopRuntime(context.Background(), ref); err != nil {
+		t.Fatal(err)
+	}
+	stopped, err := client.Resource(sandboxesGVR).Namespace("mbox-demo").Get(context.Background(), "resolved-sandbox", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replicas, ok, _ := unstructured.NestedInt64(stopped.Object, "spec", "replicas")
+	if !ok || replicas != 0 {
+		t.Fatalf("expected stopped replicas 0, got %d ok=%v", replicas, ok)
+	}
+	updateCount := countActions(client.Actions(), "update", sandboxesGVR.Resource)
+	if err := adapter.StopRuntime(context.Background(), ref); err != nil {
+		t.Fatal(err)
+	}
+	if nextUpdateCount := countActions(client.Actions(), "update", sandboxesGVR.Resource); nextUpdateCount != updateCount {
+		t.Fatalf("expected repeated stop to skip update, got %d updates before and %d after", updateCount, nextUpdateCount)
+	}
+
+	if err := adapter.StartRuntime(context.Background(), ref); err != nil {
+		t.Fatal(err)
+	}
+	started, err := client.Resource(sandboxesGVR).Namespace("mbox-demo").Get(context.Background(), "resolved-sandbox", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replicas, ok, _ = unstructured.NestedInt64(started.Object, "spec", "replicas")
+	if !ok || replicas != 1 {
+		t.Fatalf("expected started replicas 1, got %d ok=%v", replicas, ok)
+	}
+}
+
+func countActions(actions []k8stesting.Action, verb string, resource string) int {
+	count := 0
+	for _, action := range actions {
+		if action.GetVerb() == verb && action.GetResource().Resource == resource {
+			count++
+		}
+	}
+	return count
+}
+
+func TestStartStopRuntimeIgnoresUnresolvedClaim(t *testing.T) {
+	scheme := runtime.NewScheme()
+	claim := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": apiVersion,
+		"kind":       "SandboxClaim",
+		"metadata": map[string]any{
+			"name":      "claim",
+			"namespace": "mbox-demo",
+		},
+	}}
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		claimsGVR:    "SandboxClaimList",
+		sandboxesGVR: "SandboxList",
+	}, claim)
+	adapter := NewWithClient(client, Config{})
+	ref := domain.RuntimeRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "SandboxClaim",
+		Namespace: "mbox-demo",
+		Name:      "claim",
+	}
+
+	if err := adapter.StartRuntime(context.Background(), ref); err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.StopRuntime(context.Background(), ref); err != nil {
+		t.Fatal(err)
 	}
 }
 

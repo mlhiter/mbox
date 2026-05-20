@@ -313,7 +313,9 @@ func (s *Store) ListSandboxesForReconcile(ctx context.Context) ([]domain.Sandbox
 		SELECT id, project_id, template_id, name, slug, status, namespace, service_account_name,
 			runtime_ref, ports, metadata, created_at, updated_at, deleted_at
 		FROM sandboxes
-		WHERE status IN ('pending', 'running', 'failed') OR (deleted_at IS NOT NULL AND runtime_ref IS NOT NULL)
+		WHERE status IN ('pending', 'running', 'failed')
+			OR (status = 'stopped' AND runtime_ref IS NOT NULL)
+			OR (deleted_at IS NOT NULL AND runtime_ref IS NOT NULL)
 		ORDER BY created_at ASC
 	`)
 	if err != nil {

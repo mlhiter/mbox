@@ -61,6 +61,8 @@ func (api *API) routes() {
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}", api.getSandbox)
 	api.mux.HandleFunc("PATCH /v1/sandboxes/{sandboxID}", api.updateSandbox)
 	api.mux.HandleFunc("DELETE /v1/sandboxes/{sandboxID}", api.deleteSandbox)
+	api.mux.HandleFunc("POST /v1/sandboxes/{sandboxID}/start", api.startSandbox)
+	api.mux.HandleFunc("POST /v1/sandboxes/{sandboxID}/stop", api.stopSandbox)
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/runtime", api.getSandboxRuntime)
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/logs", api.getSandboxLogs)
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/events", api.getSandboxEvents)

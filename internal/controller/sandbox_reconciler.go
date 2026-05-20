@@ -72,8 +72,18 @@ func (r *SandboxReconciler) reconcileSandbox(ctx context.Context, sandbox domain
 		return r.reconcileDeleted(ctx, sandbox)
 	}
 
+	if sandbox.Status == domain.SandboxStatusStopped {
+		return r.reconcileStopped(ctx, sandbox)
+	}
+
 	if sandbox.RuntimeRef == nil {
 		return r.createRuntime(ctx, sandbox)
+	}
+
+	if sandbox.Status == domain.SandboxStatusPending {
+		if err := r.adapter.StartRuntime(ctx, *sandbox.RuntimeRef); err != nil {
+			return err
+		}
 	}
 
 	status, err := r.adapter.GetRuntimeStatus(ctx, *sandbox.RuntimeRef)
@@ -81,6 +91,13 @@ func (r *SandboxReconciler) reconcileSandbox(ctx context.Context, sandbox domain
 		return err
 	}
 	return r.applyRuntimeStatus(ctx, sandbox, status)
+}
+
+func (r *SandboxReconciler) reconcileStopped(ctx context.Context, sandbox domain.Sandbox) error {
+	if sandbox.RuntimeRef == nil {
+		return nil
+	}
+	return r.adapter.StopRuntime(ctx, *sandbox.RuntimeRef)
 }
 
 func (r *SandboxReconciler) createRuntime(ctx context.Context, sandbox domain.Sandbox) error {
