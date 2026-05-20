@@ -72,9 +72,12 @@ Current operations:
 - list sandboxes
 - launch sandbox after a project and template exist, using only Project, Template, and Name in the user-facing dialog
 - inspect selected sandbox metadata
+- stop and start sandbox runtime compute from compact row actions
 - delete sandbox through a confirmation dialog
 - open runtime workspace for the selected sandbox
 - add or remove declared TCP preview ports from the Preview tab
+
+Stop is a direct action because it pauses runtime compute without deleting the product record. Delete remains confirmation-gated because it removes the sandbox from normal lists and triggers runtime cleanup.
 
 ## Future Navigation Areas
 

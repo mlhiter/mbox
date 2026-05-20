@@ -232,6 +232,7 @@ mbox is flat by default and uses structure before shadow: borders, table divider
 - **Primary:** Runtime Green background and border, Paper text, `0 12px` padding. Use for refresh, launch, create, and final submit actions.
 - **Default / Ghost:** Paper background, Strong Hairline border, Ink text. Use for secondary operations, inspect actions, cancel buttons, and non-destructive toolbar controls.
 - **Danger:** Paper background with Danger Red text at rest, Danger Wash on hover. Use only for destructive actions such as deleting a sandbox.
+- **Row Actions:** Sandbox rows group operational controls into compact bordered clusters. `Workspace` stays text-plus-icon; start/stop and delete use icon buttons with titles/ARIA labels. Stop/start uses neutral runtime ink, not a faint disabled-looking color. Delete stays danger red and confirmation-gated.
 - **Hover / Focus:** Hover uses Hover Paper or Runtime Green Hover. Focus uses a 2px green outline with 2px offset.
 - **Active:** Controls scale down slightly (`0.96` for buttons, `0.98` for nav links) to confirm input without becoming playful.
 

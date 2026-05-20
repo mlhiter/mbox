@@ -42,6 +42,7 @@ Current progress:
 - Done: Node.js workspace template defaults for local terminal and preview testing.
 - Done: pending runtime workspace state with polling before terminal/logs/events/preview runtime calls.
 - Done: manual preview port declaration from the Preview tab.
+- Done: sandbox stop/start lifecycle actions that pause and resume the projected runtime while preserving the product record.
 
 Scope:
 
@@ -226,6 +227,7 @@ First slice status:
 7. Done: preview port entry for declared TCP ports through the API server, including manual port add/remove from the Preview tab.
 8. Done: PVC behavior is covered by runtime metadata and smoke verification.
 9. Done: launch flow hides machine fields from normal users and relies on generated/defaulted slug, namespace, and ServiceAccount values.
-10. Next: richer namespace-scoped RBAC/policy handling.
+10. Done: stop/start distinguishes pausing runtime compute from deleting the sandbox.
+11. Next: richer namespace-scoped RBAC/policy handling.
 
 This slice proves the core product loop before CI/CD expands the surface area.

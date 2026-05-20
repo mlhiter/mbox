@@ -136,6 +136,44 @@ node server.js > server.log 2>&1 &
 
 5. In the Preview tab, add `web` port `3000` if it is not already declared. The Preview tab saves sandbox ports through `PATCH /v1/sandboxes/{id}`. Use `Open` after the sandbox is running.
 
+## Sandbox Stop/Start Check
+
+Use this after changing lifecycle routes, controller reconciliation, or the sandbox row actions.
+
+1. Start runtime mode and launch a sandbox that reaches `running`.
+
+```sh
+MBOX_KUBE_CONTEXT=kind-agent-sandbox ./scripts/dev.sh --runtime
+```
+
+2. Record the sandbox ID and stop it through the API:
+
+```sh
+SANDBOX_ID='<sandbox-id>'
+curl -fsS -X POST "http://127.0.0.1:18080/v1/sandboxes/$SANDBOX_ID/stop"
+```
+
+Expected result:
+
+- API returns the sandbox with `status` set to `stopped`.
+- The mbox record keeps its `runtimeRef`.
+- The controller scales the resolved `agent-sandbox` `Sandbox.spec.replicas` to `0`.
+- The web row shows a start action instead of a stop action.
+
+3. Start it again:
+
+```sh
+curl -fsS -X POST "http://127.0.0.1:18080/v1/sandboxes/$SANDBOX_ID/start"
+```
+
+Expected result:
+
+- API returns the sandbox with `status` set to `pending`.
+- The controller scales the existing runtime `Sandbox.spec.replicas` back to `1`.
+- The sandbox eventually returns to `running`.
+
+Stop/start preserves only data that is on the persistent workspace PVC. Processes and files written to container-local paths can disappear when the Pod is removed and recreated.
+
 ## Troubleshooting
 
 ### Docker Postgres Fails on Port 5432
@@ -185,6 +223,17 @@ Check:
 - a process is actually listening on the target port inside the sandbox
 
 If the terminal command looks concatenated, for example `node server.jsls`, the shell did not receive a newline or the service was started in the foreground. Start the service with a background command such as `node server.js > server.log 2>&1 &`, then run `ls`, `cat server.log`, or `curl 127.0.0.1:3000` as separate commands.
+
+### Sandbox Stop/Start Returns 404
+
+Check that the running API server binary includes the lifecycle routes:
+
+```sh
+curl -i -X POST http://127.0.0.1:18080/v1/sandboxes/not-a-uuid/stop
+curl -i -X POST http://127.0.0.1:18080/v1/sandboxes/not-a-uuid/start
+```
+
+Expected response is `400 Bad Request` with `invalid sandbox id`. A `404 Not Found` usually means Vite is proxying to a stale API process that was started before the route was added. Restart the Go API server or restart `./scripts/dev.sh`.
 
 ### Workspace Storage Does Not Persist
 

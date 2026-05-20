@@ -33,11 +33,15 @@ Runtime reconciliation is disabled by default. When `MBOX_RUNTIME_CONTROLLER_ENA
 5. Creates a `SandboxClaim`.
 6. Stores a `runtimeRef` on the mbox sandbox record.
 7. Maps runtime status and runtime-reported ports back into Postgres.
-8. Deletes the runtime claim when the sandbox is soft-deleted.
+8. Scales the resolved runtime `Sandbox` to zero replicas when the mbox sandbox is `stopped`.
+9. Scales the existing runtime `Sandbox` back to one replica when a stopped sandbox is started and returns to `pending`.
+10. Deletes the runtime claim when the sandbox is soft-deleted.
 
-The generated pod template also disables service account token automount. When a template has `storageRequest`, the generated `SandboxTemplate` includes a `workspace` PVC template mounted at the template `workingDir`, defaulting to `/workspace`.
+The generated pod template also disables service account token automount. When a template has `storageRequest`, the generated `SandboxTemplate` includes a `workspace` PVC template mounted at the template `workingDir`, defaulting to `/workspace`. Stop/start preserves the mbox record and runtime reference, but only PVC-backed workspace data is expected to survive the Pod removal caused by scaling to zero.
 
 A `pending` mbox sandbox can exist before a `runtimeRef` is written and before the Pod is ready. Frontend runtime surfaces should treat that as a starting state, not a failed terminal/runtime request.
+
+A `pending` mbox sandbox can also mean a previously stopped sandbox is starting again. In that case the reconciler does not create a second runtime; it uses the stored `runtimeRef`, scales the existing runtime `Sandbox` back to one replica, and then resumes status mapping.
 
 ## Runtime Access
 
@@ -73,6 +77,7 @@ The current UI is a single operational console with:
 - projects table and create dialog
 - templates table and create dialog
 - sandboxes table and launch dialog
+- compact sandbox row actions for Workspace, start/stop, and delete
 - right metadata detail pane
 - main-area Runtime Workspace for the selected sandbox
 

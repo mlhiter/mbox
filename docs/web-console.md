@@ -10,7 +10,7 @@ The current console supports the first product slice:
 - view-switched left navigation for Projects, Templates, and Sandboxes
 - project list and create dialog
 - template list and create dialog with Node.js workspace defaults
-- sandbox list, simplified guarded launch dialog, and delete confirmation dialog
+- sandbox list, simplified guarded launch dialog, stop/start actions, and delete confirmation dialog
 - selected resource inspection panel for resource identity and metadata
 - main workspace runtime panel for selected sandboxes only in the Sandboxes view
 - browser terminal for ready sandboxes, with a starting state while new runtimes are pending
@@ -80,11 +80,11 @@ Key files:
 - `web/src/app.tsx`: top-level view state, active view copy, selection cleanup, and composition of console modules.
 - `web/src/app.css`: design tokens, layout, rail, table, runtime workspace, detail pane, dialog, and confirmation styling.
 - `web/src/types.ts`: shared frontend types for resources, runtime responses, selection, and forms.
-- `web/src/hooks/use-mbox-data.ts`: API-backed resource loading, create/delete mutations, selection state, counts, and toast feedback.
+- `web/src/hooks/use-mbox-data.ts`: API-backed resource loading, create/delete/start/stop mutations, selection state, counts, and toast feedback.
 - `web/src/lib/api.ts`: typed fetch wrappers for `/healthz` and `/v1/*`.
 - `web/src/lib/resource-utils.ts`: resource naming, runtime text, command/port parsing, storage summaries, and form cleanup helpers.
 - `web/src/components/console/`: app shell, left rail, summary strip, detail pane, table state, status badges, and shared resource cells.
-- `web/src/features/resources/`: project, template, and sandbox tables plus resource create/delete dialogs.
+- `web/src/features/resources/`: project, template, and sandbox tables plus sandbox lifecycle and resource create/delete dialogs.
 - `web/src/features/runtime/`: Runtime Workspace, terminal, storage, preview ports, logs, and events panels.
 - `web/src/components/ui/`: local shadcn source components.
 - `web/vite.config.ts`: Vite, Tailwind, alias, dev port, and API proxy configuration.
@@ -162,6 +162,7 @@ Useful manual checks:
 - Sandbox launch is disabled until at least one project and one template exist.
 - The launch dialog only asks for Project, Template, and Name.
 - Sandbox deletion opens a confirmation dialog and does not delete from the row button directly.
+- Sandbox stop/start is available from the sandbox row. Stop is direct because it pauses runtime compute without deleting the sandbox.
 - Selecting a ready sandbox opens a main Runtime Workspace with terminal, storage, preview ports, logs, and Kubernetes events as tabs.
 - Selecting a pending sandbox shows a starting Runtime Workspace and does not surface a terminal error.
 - The Storage tab shows the workspace mount path, PVC name, bound phase, capacity, and storage class when a template has `storageRequest`.

@@ -60,6 +60,8 @@ All responses are JSON unless the route returns `204 No Content`.
 | `GET` | `/v1/sandboxes/{sandboxID}` | Gets one non-deleted sandbox. |
 | `PATCH` | `/v1/sandboxes/{sandboxID}` | Updates mutable sandbox fields. |
 | `DELETE` | `/v1/sandboxes/{sandboxID}` | Soft-deletes a sandbox. |
+| `POST` | `/v1/sandboxes/{sandboxID}/stop` | Marks the sandbox `stopped`; the controller pauses the runtime when it reconciles. |
+| `POST` | `/v1/sandboxes/{sandboxID}/start` | Marks the sandbox `pending`; the controller resumes or creates runtime resources when it reconciles. |
 | `GET` | `/v1/sandboxes/{sandboxID}/runtime` | Resolves the runtime Pod target for a ready sandbox. Requires runtime access. |
 | `GET` | `/v1/sandboxes/{sandboxID}/logs` | Returns recent logs from the runtime Pod. Optional `tailLines`, default `200`. |
 | `GET` | `/v1/sandboxes/{sandboxID}/events` | Returns Kubernetes events for the runtime Pod. |
@@ -164,9 +166,11 @@ For each reconciled sandbox:
 5. It creates a namespaced `SandboxClaim`.
 6. It stores a `runtimeRef` pointing at the `SandboxClaim`.
 7. It maps the `SandboxClaim` Ready condition to mbox sandbox status.
-8. If the mbox sandbox is soft-deleted, it deletes the `SandboxClaim` and clears the `runtimeRef`.
+8. If the mbox sandbox is stopped, it resolves the runtime `Sandbox` from the `SandboxClaim` and scales it to zero replicas.
+9. If a stopped sandbox is started, it marks the record `pending` and scales the existing runtime `Sandbox` back to one replica.
+10. If the mbox sandbox is soft-deleted, it deletes the `SandboxClaim` and clears the `runtimeRef`.
 
-When `EnvironmentTemplate.storageRequest` is set, the adapter adds a `workspace` `volumeClaimTemplates` entry and mounts it into the workspace container at the template `workingDir`, defaulting to `/workspace`. This is the Phase 1 persistence contract: workspace data should survive runtime Pod replacement while the sandbox exists. PVC deletion behavior after sandbox deletion is owned by the runtime controller and must be checked in smoke tests for the target cluster.
+When `EnvironmentTemplate.storageRequest` is set, the adapter adds a `workspace` `volumeClaimTemplates` entry and mounts it into the workspace container at the template `workingDir`, defaulting to `/workspace`. This is the Phase 1 persistence contract: workspace data should survive runtime Pod replacement and sandbox stop/start while the sandbox exists. Files written outside persistent workspace storage are container-local and can be lost when a stopped sandbox's Pod is removed. PVC deletion behavior after sandbox deletion is owned by the runtime controller and must be checked in smoke tests for the target cluster.
 
 Runtime reference shape:
 

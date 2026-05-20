@@ -149,7 +149,7 @@ Human-facing console for:
 
 The UI should be operational and dense enough for repeated use. Avoid landing-page style composition in the app surface.
 
-Current implemented console scope is intentionally narrower than the long-term product: list and create projects, templates, and sandboxes; inspect selected resource IDs and runtime state; open a main-workspace browser terminal for ready sandboxes; show resolved workspace PVC storage metadata; show declared preview ports through the API server's Pod proxy path; show lightweight runtime logs and Kubernetes events in runtime tabs; show API health and request errors. Pipelines, deployments, credentials, and policy screens are still roadmap work.
+Current implemented console scope is intentionally narrower than the long-term product: list and create projects, templates, and sandboxes; inspect selected resource IDs and runtime state; stop, start, and delete sandboxes from compact row actions; open a main-workspace browser terminal for ready sandboxes; show resolved workspace PVC storage metadata; show declared preview ports through the API server's Pod proxy path; show lightweight runtime logs and Kubernetes events in runtime tabs; show API health and request errors. Pipelines, deployments, credentials, and policy screens are still roadmap work.
 
 ### Controller / Reconciler
 
@@ -285,7 +285,7 @@ The implemented data model currently covers the first sandbox control-plane slic
 - template id
 - name
 - slug
-- status
+- status: `pending`, `running`, `stopped`, `failed`, or `deleted`
 - namespace
 - service account name
 - runtime reference
@@ -381,9 +381,11 @@ Do not couple product APIs to `SandboxClaim` directly. Store mbox product record
 
 The implemented runtime controller is intentionally opt-in through `MBOX_RUNTIME_CONTROLLER_ENABLED=true`. With the controller disabled, the server only writes mbox product records in Postgres. With it enabled, the reconciler projects eligible sandbox records into Kubernetes by creating or updating a namespace, scoped ServiceAccount, `SandboxTemplate`, and `SandboxClaim`.
 
+Stop/start is represented as product lifecycle state on the mbox sandbox record rather than direct UI access to runtime CRDs. `POST /v1/sandboxes/{id}/stop` marks the sandbox `stopped`; the reconciler keeps the `runtimeRef`, skips runtime status polling, resolves `SandboxClaim.status.sandbox.name`, and scales the resolved `agent-sandbox` `Sandbox.spec.replicas` to `0`. `POST /v1/sandboxes/{id}/start` marks the sandbox `pending`; when the sandbox already has a `runtimeRef`, the reconciler scales the same runtime `Sandbox` back to `1` replica before status mapping. Delete remains a separate soft-delete path that removes the `SandboxClaim` and clears `runtimeRef`.
+
 The generated sandbox ServiceAccount and pod template both set token automount to false. Runtime credentials should be introduced later as narrow, explicit capabilities rather than inherited cluster access.
 
-When an environment template includes `storageRequest`, the adapter projects a `workspace` `volumeClaimTemplates` entry into the generated `SandboxTemplate` and mounts it at the template `workingDir`, defaulting to `/workspace`. This is the current persistence contract for interactive sandboxes: workspace data should survive runtime Pod replacement while the sandbox exists.
+When an environment template includes `storageRequest`, the adapter projects a `workspace` `volumeClaimTemplates` entry into the generated `SandboxTemplate` and mounts it at the template `workingDir`, defaulting to `/workspace`. This is the current persistence contract for interactive sandboxes: workspace data should survive runtime Pod replacement and stop/start while the sandbox exists. Files written outside the persistent workspace are container-local and can be lost when stop/start removes and recreates the Pod.
 
 Runtime access is intentionally gated separately from reconciliation through `MBOX_RUNTIME_ACCESS_ENABLED=true`. Enabling reconciliation alone may create or delete Kubernetes runtime resources, but it does not expose terminal, logs, events, or runtime target APIs. When runtime access is enabled, the server resolves a running mbox sandbox through `Sandbox.runtimeRef`, `SandboxClaim.status.sandbox.name`, `Sandbox.status.selector`, and the matching Pod, preferring the `workspace` container when present.
 

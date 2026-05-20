@@ -47,6 +47,7 @@ Implemented resources:
 - `Sandbox`
 - Vite console views for listing and creating projects, templates, and sandboxes
 - simplified sandbox launch that asks for project, template, and name while deriving slug, namespace, and ServiceAccount defaults
+- sandbox stop/start actions that pause and resume the projected runtime without deleting the product record
 - browser terminal, workspace storage, manually declared preview ports, and lightweight logs/events for ready sandbox runtimes
 
 This slice persists mbox product state in Postgres. When the runtime controller is explicitly enabled, it reconciles `Sandbox` records into `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources.
@@ -125,6 +126,8 @@ Optional runtime settings:
 - `MBOX_AGENT_SANDBOX_WARM_POOL`: `agent-sandbox` warm pool policy, for example `none` or `default`.
 
 When enabled, mbox ensures the sandbox namespace exists, creates a scoped sandbox ServiceAccount with token automount disabled, creates or updates a `SandboxTemplate`, and creates a `SandboxClaim` in that namespace. The generated pod template uses the configured sandbox ServiceAccount and also disables token automount. If the template has `storageRequest`, mbox projects a `workspace` PVC template and mounts it at the template working directory, defaulting to `/workspace`. The mbox Postgres record remains the product source of truth; Kubernetes resources are the runtime projection.
+
+Stopping a sandbox pauses the projected runtime by scaling the resolved `agent-sandbox` `Sandbox` to zero replicas. This releases the Pod and running processes while keeping the mbox record and runtime reference. Workspace data is preserved only when it lives on the persistent workspace PVC; files written to container-local paths can be lost during stop/start. Starting a stopped sandbox marks it `pending` and scales the runtime back to one replica.
 
 `MBOX_RUNTIME_ACCESS_ENABLED=true` enables `/v1/sandboxes/{id}/terminal`, `/runtime`, `/logs`, `/events`, and `/ports`. The terminal route is a WebSocket proxy from the browser to Kubernetes `pods/exec`; declared TCP preview ports are proxied through the mbox API server to the resolved runtime Pod. Ordinary sandbox pods still do not receive broad Kubernetes credentials.
 
