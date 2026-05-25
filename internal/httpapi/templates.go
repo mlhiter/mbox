@@ -24,6 +24,7 @@ type createTemplateRequest struct {
 	SecretRefs      []domain.SecretRef    `json:"secretRefs"`
 	NetworkPolicy   string                `json:"networkPolicy"`
 	LifecyclePolicy json.RawMessage       `json:"lifecyclePolicy"`
+	Metadata        json.RawMessage       `json:"metadata"`
 }
 
 type updateTemplateRequest struct {
@@ -39,6 +40,7 @@ type updateTemplateRequest struct {
 	SecretRefs      *[]domain.SecretRef    `json:"secretRefs"`
 	NetworkPolicy   *string                `json:"networkPolicy"`
 	LifecyclePolicy *json.RawMessage       `json:"lifecyclePolicy"`
+	Metadata        *json.RawMessage       `json:"metadata"`
 }
 
 func (api *API) listTemplates(w http.ResponseWriter, r *http.Request) {
@@ -86,6 +88,7 @@ func (api *API) createTemplate(w http.ResponseWriter, r *http.Request) {
 		SecretRefs:      req.SecretRefs,
 		NetworkPolicy:   req.NetworkPolicy,
 		LifecyclePolicy: req.LifecyclePolicy,
+		Metadata:        req.Metadata,
 	})
 	if err != nil {
 		writeStoreError(w, err)
@@ -144,6 +147,11 @@ func (api *API) updateTemplate(w http.ResponseWriter, r *http.Request) {
 		raw := []byte(*req.LifecyclePolicy)
 		lifecyclePolicy = &raw
 	}
+	var metadata *[]byte
+	if req.Metadata != nil {
+		raw := []byte(*req.Metadata)
+		metadata = &raw
+	}
 
 	template, err := api.store.UpdateTemplate(r.Context(), id, domain.TemplateUpdate{
 		Name:            req.Name,
@@ -158,6 +166,7 @@ func (api *API) updateTemplate(w http.ResponseWriter, r *http.Request) {
 		SecretRefs:      req.SecretRefs,
 		NetworkPolicy:   req.NetworkPolicy,
 		LifecyclePolicy: lifecyclePolicy,
+		Metadata:        metadata,
 	})
 	if err != nil {
 		writeStoreError(w, err)

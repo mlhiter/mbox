@@ -302,6 +302,7 @@ func (s *fakeStore) CreateTemplate(_ context.Context, input domain.TemplateCreat
 		Slug:       input.Slug,
 		Image:      input.Image,
 		WorkingDir: input.WorkingDir,
+		Metadata:   input.Metadata,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}

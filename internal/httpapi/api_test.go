@@ -55,6 +55,48 @@ func TestCreateTemplateRejectsInvalidPort(t *testing.T) {
 	}
 }
 
+func TestTemplateMetadataRoundTrip(t *testing.T) {
+	store := newFakeStore()
+	api := New(store)
+
+	createRes := request(api, http.MethodPost, "/v1/templates", map[string]any{
+		"name":  "Node.js Web App",
+		"slug":  "nodejs-web-app",
+		"image": "node:22-bookworm-slim",
+		"metadata": map[string]any{
+			"runtimeType":      "Node.js",
+			"useCase":          "Web app preview",
+			"resourcePreset":   "Small",
+			"validationStatus": "not_tested",
+		},
+	})
+	if createRes.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, createRes.Code, createRes.Body.String())
+	}
+	var created domain.EnvironmentTemplate
+	decodeResponse(t, createRes, &created)
+	if !strings.Contains(string(created.Metadata), `"runtimeType":"Node.js"`) {
+		t.Fatalf("expected runtime metadata, got %s", created.Metadata)
+	}
+
+	updateRes := request(api, http.MethodPatch, "/v1/templates/"+created.ID.String(), map[string]any{
+		"metadata": map[string]any{
+			"runtimeType":      "Node.js",
+			"useCase":          "API service",
+			"resourcePreset":   "Medium",
+			"validationStatus": "passed",
+		},
+	})
+	if updateRes.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, updateRes.Code, updateRes.Body.String())
+	}
+	var updated domain.EnvironmentTemplate
+	decodeResponse(t, updateRes, &updated)
+	if !strings.Contains(string(updated.Metadata), `"validationStatus":"passed"`) {
+		t.Fatalf("expected updated metadata, got %s", updated.Metadata)
+	}
+}
+
 func TestSandboxLifecycle(t *testing.T) {
 	store := newFakeStore()
 	api := New(store)
@@ -781,6 +823,7 @@ func (s *fakeStore) CreateTemplate(_ context.Context, input domain.TemplateCreat
 		SecretRefs:      input.SecretRefs,
 		NetworkPolicy:   input.NetworkPolicy,
 		LifecyclePolicy: input.LifecyclePolicy,
+		Metadata:        input.Metadata,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
@@ -836,6 +879,9 @@ func (s *fakeStore) UpdateTemplate(_ context.Context, id uuid.UUID, input domain
 	}
 	if input.LifecyclePolicy != nil {
 		template.LifecyclePolicy = *input.LifecyclePolicy
+	}
+	if input.Metadata != nil {
+		template.Metadata = *input.Metadata
 	}
 	s.templates[id] = template
 	return template, nil

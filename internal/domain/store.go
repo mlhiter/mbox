@@ -37,6 +37,7 @@ type TemplateCreate struct {
 	SecretRefs      []SecretRef
 	NetworkPolicy   string
 	LifecyclePolicy []byte
+	Metadata        []byte
 }
 
 type TemplateUpdate struct {
@@ -52,6 +53,7 @@ type TemplateUpdate struct {
 	SecretRefs      *[]SecretRef
 	NetworkPolicy   *string
 	LifecyclePolicy *[]byte
+	Metadata        *[]byte
 }
 
 type SandboxCreate struct {

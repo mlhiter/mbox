@@ -35,6 +35,7 @@ type EnvironmentTemplate struct {
 	SecretRefs      []SecretRef     `json:"secretRefs,omitempty"`
 	NetworkPolicy   string          `json:"networkPolicy,omitempty"`
 	LifecyclePolicy json.RawMessage `json:"lifecyclePolicy,omitempty"`
+	Metadata        json.RawMessage `json:"metadata,omitempty"`
 	CreatedAt       time.Time       `json:"createdAt"`
 	UpdatedAt       time.Time       `json:"updatedAt"`
 }

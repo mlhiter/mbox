@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS environment_templates (
     secret_refs JSONB NOT NULL DEFAULT '[]'::jsonb,
     network_policy TEXT NOT NULL DEFAULT 'default',
     lifecycle_policy JSONB NOT NULL DEFAULT '{}'::jsonb,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

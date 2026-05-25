@@ -118,7 +118,7 @@ func (s *Store) ListTemplates(ctx context.Context, projectID *uuid.UUID) ([]doma
 	query := `
 		SELECT id, project_id, name, slug, image, startup_command, working_dir, cpu_request,
 			memory_request, storage_request, exposed_ports, env, secret_refs, network_policy,
-			lifecycle_policy, created_at, updated_at
+			lifecycle_policy, metadata, created_at, updated_at
 		FROM environment_templates
 	`
 	args := []any{}
@@ -159,15 +159,15 @@ func (s *Store) CreateTemplate(ctx context.Context, input domain.TemplateCreate)
 		INSERT INTO environment_templates (
 			project_id, name, slug, image, startup_command, working_dir, cpu_request,
 			memory_request, storage_request, exposed_ports, env, secret_refs, network_policy,
-			lifecycle_policy
+			lifecycle_policy, metadata
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING id, project_id, name, slug, image, startup_command, working_dir, cpu_request,
 			memory_request, storage_request, exposed_ports, env, secret_refs, network_policy,
-			lifecycle_policy, created_at, updated_at
+			lifecycle_policy, metadata, created_at, updated_at
 	`, input.ProjectID, input.Name, input.Slug, input.Image, stringSliceDefault(input.StartupCommand), defaultString(input.WorkingDir, "/workspace"),
 		input.CPURequest, input.MemoryRequest, input.StorageRequest, exposedPorts, jsonDefaultObject(input.Env), secretRefs,
-		defaultString(input.NetworkPolicy, "default"), jsonDefaultObject(input.LifecyclePolicy))
+		defaultString(input.NetworkPolicy, "default"), jsonDefaultObject(input.LifecyclePolicy), jsonDefaultObject(input.Metadata))
 
 	template, err := scanTemplate(row)
 	return template, mapWriteError(err)
@@ -177,7 +177,7 @@ func (s *Store) GetTemplate(ctx context.Context, id uuid.UUID) (domain.Environme
 	row := s.pool.QueryRow(ctx, `
 		SELECT id, project_id, name, slug, image, startup_command, working_dir, cpu_request,
 			memory_request, storage_request, exposed_ports, env, secret_refs, network_policy,
-			lifecycle_policy, created_at, updated_at
+			lifecycle_policy, metadata, created_at, updated_at
 		FROM environment_templates
 		WHERE id = $1
 	`, id)
@@ -203,6 +203,7 @@ func (s *Store) UpdateTemplate(ctx context.Context, id uuid.UUID, input domain.T
 	secretRefs := template.SecretRefs
 	networkPolicy := template.NetworkPolicy
 	lifecyclePolicy := []byte(template.LifecyclePolicy)
+	metadata := []byte(template.Metadata)
 
 	if input.Name != nil {
 		name = *input.Name
@@ -240,6 +241,9 @@ func (s *Store) UpdateTemplate(ctx context.Context, id uuid.UUID, input domain.T
 	if input.LifecyclePolicy != nil {
 		lifecyclePolicy = *input.LifecyclePolicy
 	}
+	if input.Metadata != nil {
+		metadata = *input.Metadata
+	}
 
 	exposedPortsJSON, err := json.Marshal(exposedPorts)
 	if err != nil {
@@ -254,13 +258,14 @@ func (s *Store) UpdateTemplate(ctx context.Context, id uuid.UUID, input domain.T
 		UPDATE environment_templates
 		SET name = $2, image = $3, startup_command = $4, working_dir = $5, cpu_request = $6,
 			memory_request = $7, storage_request = $8, exposed_ports = $9, env = $10,
-			secret_refs = $11, network_policy = $12, lifecycle_policy = $13
+			secret_refs = $11, network_policy = $12, lifecycle_policy = $13, metadata = $14
 		WHERE id = $1
 		RETURNING id, project_id, name, slug, image, startup_command, working_dir, cpu_request,
 			memory_request, storage_request, exposed_ports, env, secret_refs, network_policy,
-			lifecycle_policy, created_at, updated_at
+			lifecycle_policy, metadata, created_at, updated_at
 	`, id, name, image, startupCommand, workingDir, cpuRequest, memoryRequest, storageRequest,
-		exposedPortsJSON, jsonDefaultObject(env), secretRefsJSON, networkPolicy, jsonDefaultObject(lifecyclePolicy))
+		exposedPortsJSON, jsonDefaultObject(env), secretRefsJSON, networkPolicy, jsonDefaultObject(lifecyclePolicy),
+		jsonDefaultObject(metadata))
 
 	updated, err := scanTemplate(row)
 	return updated, mapWriteError(err)

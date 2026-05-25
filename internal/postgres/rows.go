@@ -75,6 +75,7 @@ func scanTemplate(row scanner) (domain.EnvironmentTemplate, error) {
 		&secretRefs,
 		&template.NetworkPolicy,
 		&template.LifecyclePolicy,
+		&template.Metadata,
 		&template.CreatedAt,
 		&template.UpdatedAt,
 	)
