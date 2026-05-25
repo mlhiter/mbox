@@ -93,6 +93,19 @@ export type Template = {
   memoryRequest?: string
   storageRequest?: string
   exposedPorts?: Array<{ name: string; port: number; protocol: string }>
+  env?: Record<string, string>
+  secretRefs?: Array<{ name: string; key?: string }>
+  networkPolicy?: string
+  lifecyclePolicy?: Record<string, unknown>
+  metadata?: {
+    runtimeType?: string
+    useCase?: string
+    resourcePreset?: string
+    validationStatus?: string
+    [key: string]: unknown
+  }
+  createdAt?: string
+  updatedAt?: string
 }
 
 export type Sandbox = {

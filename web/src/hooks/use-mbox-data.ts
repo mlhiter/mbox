@@ -13,13 +13,13 @@ import {
   startSandbox as startSandboxRequest,
   stopSandbox as stopSandboxRequest,
   updateProject,
+  updateTemplate as updateTemplateRequest,
 } from "@/lib/api"
 import {
   compactObject,
-  parseCommand,
-  parsePorts,
   slugFromName,
   stringValue,
+  templatePayloadFromForm,
 } from "@/lib/resource-utils"
 import type {
   APIStatus,
@@ -105,25 +105,27 @@ export function useMboxData() {
 
   const createTemplate = useCallback(
     async (data: FormRecord) => {
-      const projectId = stringValue(data.projectId)
-      const payload = compactObject({
-        projectId,
-        name: stringValue(data.name),
-        slug: stringValue(data.slug),
-        image: stringValue(data.image),
-        startupCommand: parseCommand(stringValue(data.startupCommand)),
-        workingDir: stringValue(data.workingDir),
-        cpuRequest: stringValue(data.cpuRequest),
-        memoryRequest: stringValue(data.memoryRequest),
-        storageRequest: stringValue(data.storageRequest),
-        exposedPorts: parsePorts(stringValue(data.exposedPorts)),
-      })
+      const parsed = templatePayloadFromForm(data)
+      const projectId = parsed.projectId
+      const payload = compactObject(parsed)
       const template = await createTemplateRequest(payload)
       if (data.setDefault === "on" && projectId && projectId !== "global") {
         await updateProject(projectId, { defaultTemplateId: template.id })
       }
       await loadAll()
       toast.success("Template created")
+    },
+    [loadAll],
+  )
+
+  const updateTemplate = useCallback(
+    async (id: string, data: FormRecord) => {
+      const parsed = templatePayloadFromForm(data)
+      const { projectId: _projectId, slug: _slug, ...payload } = parsed
+      await updateTemplateRequest(id, payload)
+      await loadAll()
+      setSelection({ kind: "template", id })
+      toast.success("Template updated")
     },
     [loadAll],
   )
@@ -220,5 +222,6 @@ export function useMboxData() {
     startSandbox,
     stopSandbox,
     templates,
+    updateTemplate,
   }
 }

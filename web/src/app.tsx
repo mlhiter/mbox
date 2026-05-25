@@ -20,7 +20,7 @@ const workspaceCopy: Record<WorkspaceView, { eyebrow: string; title: string; not
   templates: {
     eyebrow: "Launch shape",
     title: "Templates",
-    note: "Define reusable images, commands, resources, storage, and exposed ports for sandboxes.",
+    note: "Manage ready-to-run environments that users launch into sandboxes.",
   },
   sandboxes: {
     eyebrow: "Execution",
@@ -50,6 +50,7 @@ export function App() {
     startSandbox,
     stopSandbox,
     templates,
+    updateTemplate,
   } = useMboxData()
 
   const activeCopy = workspaceCopy[activeView]
@@ -147,6 +148,7 @@ export function App() {
             selection={selection}
             onSelect={(id) => setSelection({ kind: "template", id })}
             onCreate={createTemplate}
+            onUpdate={updateTemplate}
           />
         ) : null}
         {activeView === "sandboxes" ? (

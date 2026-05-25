@@ -61,6 +61,13 @@ export function createTemplate(payload: Partial<Template>) {
   })
 }
 
+export function updateTemplate(id: string, payload: Partial<Template>) {
+  return request<Template>(`/v1/templates/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  })
+}
+
 export function updateProject(id: string, payload: Partial<Project>) {
   return request<Project>(`/v1/projects/${id}`, {
     method: "PATCH",

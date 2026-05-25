@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 import type { FormRecord } from "@/types"
 
 export function ResourceDialog({
@@ -36,6 +37,7 @@ export function ResourceDialog({
   trigger,
   submitLabel,
   onSubmit,
+  onOpenChange,
   children,
 }: {
   title: string
@@ -43,18 +45,25 @@ export function ResourceDialog({
   trigger: ReactNode
   submitLabel: string
   onSubmit: (data: FormRecord) => Promise<void>
+  onOpenChange?: (open: boolean) => void
   children: ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
+  function setDialogOpen(nextOpen: boolean) {
+    setOpen(nextOpen)
+    onOpenChange?.(nextOpen)
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    const form = event.currentTarget
     setSubmitting(true)
     try {
-      await onSubmit(Object.fromEntries(new FormData(event.currentTarget).entries()))
-      event.currentTarget.reset()
-      setOpen(false)
+      await onSubmit(Object.fromEntries(new FormData(form).entries()))
+      form.reset()
+      setDialogOpen(false)
     } catch (submitError) {
       toast.error(submitError instanceof Error ? submitError.message : "Request failed")
     } finally {
@@ -63,7 +72,7 @@ export function ResourceDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setDialogOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="dialog-content">
         <form className="dialog-grid" onSubmit={handleSubmit}>
@@ -104,24 +113,44 @@ export function TextField({
   )
 }
 
+export function TextareaField({
+  name,
+  label,
+  ...props
+}: React.ComponentProps<typeof Textarea> & {
+  name: string
+  label: string
+}) {
+  return (
+    <Field>
+      <FieldLabel htmlFor={name}>{label}</FieldLabel>
+      <Textarea id={name} name={name} autoComplete="off" {...props} />
+    </Field>
+  )
+}
+
 export function SelectField({
   name,
   label,
   items,
   defaultValue,
   required,
+  value,
+  onValueChange,
 }: {
   name: string
   label: string
   items: Array<{ value: string; label: string }>
   defaultValue?: string
   required?: boolean
+  value?: string
+  onValueChange?: (value: string) => void
 }) {
-  const value = defaultValue || items[0]?.value || ""
+  const fallbackValue = defaultValue || items[0]?.value || ""
   return (
     <Field>
       <FieldLabel>{label}</FieldLabel>
-      <Select name={name} defaultValue={value} required={required}>
+      <Select name={name} defaultValue={value === undefined ? fallbackValue : undefined} value={value} onValueChange={onValueChange} required={required}>
         <SelectTrigger className="w-full">
           <SelectValue placeholder={`Select ${label.toLowerCase()}`} />
         </SelectTrigger>
