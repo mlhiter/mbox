@@ -275,6 +275,14 @@ mbox is flat by default and uses structure before shadow: borders, table divider
 - **Cells:** `13px`, `12px 18px` padding, top hairline dividers.
 - **Selection:** Selected rows use Selection Blue Wash. Hover must not override selected state.
 - **Actions:** Keep row actions right-aligned. Destructive actions remain visually quiet until hover.
+- **Template Library Table:** Lead with Environment, Use case, Entrypoints, Preset, and Status. The base image can appear as quiet mono support text, but the table should not read like a Kubernetes parameter spreadsheet.
+
+### Template Forms
+
+- **Essentials First:** Template create/edit dialogs should show scope, template name, alias, runtime, resource preset, use case, entrypoints, and workspace storage before anything else.
+- **Advanced Settings:** Keep base image, startup command, working directory, CPU, memory, environment variables, secret references, network policy, and lifecycle JSON in a collapsed advanced section.
+- **Validation Feedback:** Invalid entrypoint ports and malformed lifecycle JSON should block submission with a direct toast error instead of silently normalizing or dropping input.
+- **Preset Truthfulness:** If CPU or memory no longer matches a named preset, show and save the preset as Custom.
 
 ### Loading, Empty, and Error States
 

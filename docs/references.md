@@ -10,6 +10,12 @@ This file records external and internal references that shape mbox. It is not a 
 
 See `docs/research-agent-sandbox.md` for the current local research notes and version observations.
 
+## Product Interaction References
+
+- E2B product/docs: reference for treating sandboxes as ready-to-run environments selected by purpose and runtime rather than exposing raw infrastructure first.
+- mbox should copy the product clarity, not the implementation boundary. mbox remains Kubernetes-native, namespace-scoped, and backed by Postgres product records plus `agent-sandbox` runtime projection.
+- The current template library follows this reference by showing Environment, Use case, Entrypoints, Preset, and Status first, while keeping image, command, env, secret refs, network policy, and lifecycle JSON available under Advanced settings.
+
 ## Kubernetes Primitives
 
 The runtime implementation currently depends on:

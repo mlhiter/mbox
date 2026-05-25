@@ -60,9 +60,11 @@ Current operations:
 Current operations:
 
 - list templates
-- create template
-- start from a Node.js workspace default template
-- capture exposed ports with entries such as `web:3000`
+- create and edit ready-to-run environment templates
+- start from a Node.js web-app default template
+- choose runtime type, use case, resource preset, entrypoints, and workspace storage from Essentials
+- edit image, startup command, working directory, CPU, memory, env, secret refs, network policy, and lifecycle JSON from Advanced settings
+- capture exposed ports with entries such as `web:3000`, rejecting invalid ports instead of dropping them silently
 - inspect selected template metadata
 
 ### Sandboxes

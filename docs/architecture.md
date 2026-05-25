@@ -15,12 +15,14 @@ The API server owns product records. Kubernetes resources are runtime projection
 ## Implemented Product Records
 
 - `Project`: codebase or product scope with a default namespace and optional default template.
-- `EnvironmentTemplate`: reusable sandbox launch shape with image, command, working directory, resource requests, storage request, and exposed ports.
+- `EnvironmentTemplate`: reusable sandbox launch shape with image, command, working directory, resource requests, storage request, exposed ports, env, secret refs, network/lifecycle policy, and product-facing metadata.
 - `Sandbox`: product-level runtime request with namespace, service account, status, runtime reference, and declared preview ports.
 
 Postgres migrations live in `internal/postgres/migrations`. Startup requires `DATABASE_URL` and runs embedded migrations before serving HTTP.
 
 Create routes can derive slugs from names. The normal sandbox launch path is product-oriented: users provide project, template, and name; mbox fills namespace from the project and uses the default sandbox ServiceAccount unless an API client deliberately overrides those fields.
+
+Template metadata exists to support the environment-library product surface. The current metadata keys are `runtimeType`, `useCase`, `resourcePreset`, and `validationStatus`. They describe how users choose and trust a template; they do not replace the concrete runtime fields that the adapter projects into `agent-sandbox`.
 
 ## Runtime Projection
 
@@ -75,7 +77,7 @@ The console is a separate Vite app. It consumes `/healthz` and `/v1/*` through t
 The current UI is a single operational console with:
 
 - projects table and create dialog
-- templates table and create dialog
+- templates table plus create/edit dialog for ready-to-run environments
 - sandboxes table and launch dialog
 - compact sandbox row actions for Workspace, start/stop, and delete
 - right metadata detail pane
@@ -83,7 +85,7 @@ The current UI is a single operational console with:
 
 The Runtime Workspace has tabs for Terminal, Storage, Preview, Logs, and Events. Terminal is intentionally treated as a primary workspace surface, not as right-sidebar metadata.
 
-The template creation flow defaults to a Node.js workspace (`node:22-bookworm-slim`, `/workspace`, `web:3000`) so a fresh local sandbox can immediately prove terminal plus preview behavior without users hand-writing the low-level template shape.
+The template flow follows the same product direction as E2B-style sandboxes: users pick a ready environment by runtime, use case, entrypoints, resource preset, and validation status. mbox keeps Kubernetes-specific details available under Advanced settings because those fields still drive runtime projection. The default template is a Node.js web app workspace (`node:22-bookworm-slim`, `/workspace`, `web:3000`) so a fresh local sandbox can immediately prove terminal plus preview behavior without users hand-writing the low-level template shape.
 
 ## Safety Boundaries
 

@@ -47,6 +47,7 @@ A project represents a codebase or deployable application. It binds together a G
 
 An environment template defines how a sandbox should start:
 
+- runtime type and use case
 - base image
 - installed tools
 - startup command
@@ -58,8 +59,9 @@ An environment template defines how a sandbox should start:
 - secret references
 - network policy
 - lifecycle policy
+- validation status
 
-Templates should be reusable but still editable by humans through the UI.
+Templates should be reusable but still editable by humans through the UI. The first screen should sell the launch intent: runtime, use case, entrypoints, resource/storage fit, and whether the template has been validated. Raw image, command, policy, and JSON details remain available for platform users, but they should not be the first thing ordinary sandbox users must understand.
 
 ### Sandbox
 

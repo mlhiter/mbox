@@ -101,6 +101,26 @@ Slugs must match:
 
 `defaultTemplateId` is nullable. If the field is absent, the existing value is kept. If it is `null`, the default template reference is cleared.
 
+`POST /v1/templates` and `PATCH /v1/templates/{templateID}` accept these template fields:
+
+- `name`
+- `image`
+- `startupCommand`
+- `workingDir`
+- `cpuRequest`
+- `memoryRequest`
+- `storageRequest`
+- `exposedPorts`
+- `env`
+- `secretRefs`
+- `networkPolicy`
+- `lifecyclePolicy`
+- `metadata`
+
+Template `metadata` currently stores the product-facing template library fields: `runtimeType`, `useCase`, `resourcePreset`, and `validationStatus`. Runtime projection still uses the concrete fields such as image, command, resources, ports, storage, env, secrets, network policy, and lifecycle policy.
+
+`validationStatus` is informational for the current UI. Saving a template through the web console resets it to `not_tested` because any edit can invalidate a previous launch validation.
+
 `PATCH /v1/sandboxes/{sandboxID}` accepts:
 
 - `name`
@@ -150,6 +170,7 @@ Important constraints:
 - Active sandboxes have unique `(project_id, slug)` where `deleted_at IS NULL`.
 - `sandboxes` are soft-deleted by setting `status = 'deleted'` and `deleted_at = now()`.
 - `updated_at` is maintained by Postgres triggers.
+- `environment_templates.metadata` is `JSONB NOT NULL DEFAULT '{}'::jsonb`; existing databases receive it through `002_template_metadata.sql`.
 
 Product records stay separate from Kubernetes runtime resources. Postgres remains the product source of truth.
 

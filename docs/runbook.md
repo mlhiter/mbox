@@ -49,6 +49,17 @@ If local port `5432` is already used by another container, either point `DATABAS
 MBOX_POSTGRES_PORT=15432 ./scripts/dev.sh
 ```
 
+When reusing a previous Docker Postgres container, do not assume its host port stayed at `5432`. Recover the live port before using `--no-docker`:
+
+```sh
+docker start mbox-postgres-dev
+docker port mbox-postgres-dev 5432/tcp
+pg_isready -h 127.0.0.1 -p <host-port> -U mbox -d mbox
+DATABASE_URL='postgres://mbox:mbox@127.0.0.1:<host-port>/mbox?sslmode=disable' ./scripts/dev.sh --runtime --no-docker
+```
+
+If startup fails with `dial tcp 127.0.0.1:<port>: connect: connection refused`, the API never reached migrations; the configured `DATABASE_URL` points at a port with no live Postgres listener.
+
 ## Manual Startup
 
 API only:
@@ -88,6 +99,13 @@ go test ./...
 cd web && npm run build
 git diff --check
 ```
+
+For frontend template-library changes, also run a browser check against the Templates view. At minimum verify:
+
+- the table shows Environment, Use case, Entrypoints, Preset, and Status
+- creating a template defaults to the Node.js web-app environment
+- invalid entrypoint text such as `web:abc` blocks save
+- editing CPU or memory to a non-preset value saves `metadata.resourcePreset` as `Custom`
 
 Postgres integration tests are opt-in and write to the configured test database:
 
@@ -254,3 +272,13 @@ curl -fsS http://127.0.0.1:18080/healthz
 ```
 
 If the API uses another address, restart Vite with `MBOX_API_PROXY_TARGET`.
+
+### Template Preset Looks Wrong
+
+Template table presets are derived from metadata when present, otherwise from concrete CPU and memory requests. If the user edits CPU or memory manually, the expected saved preset is `Custom` unless the pair exactly matches:
+
+- Small: `250m` and `512Mi`
+- Medium: `500m` and `1Gi`
+- Large: `1000m` and `2Gi`
+
+If the table says Small while the API payload has custom resource values, inspect the `PATCH /v1/templates/{templateID}` request body and confirm `metadata.resourcePreset` matches the final CPU and memory fields.

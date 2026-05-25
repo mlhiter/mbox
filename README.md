@@ -45,7 +45,8 @@ Implemented resources:
 - `Project`
 - `EnvironmentTemplate`
 - `Sandbox`
-- Vite console views for listing and creating projects, templates, and sandboxes
+- Vite console views for listing projects, creating/editing templates, and launching sandboxes
+- template library for ready-to-run environments, with user-facing runtime type, use case, entrypoints, resource preset, validation status, and advanced image/command/policy fields
 - simplified sandbox launch that asks for project, template, and name while deriving slug, namespace, and ServiceAccount defaults
 - sandbox stop/start actions that pause and resume the projected runtime without deleting the product record
 - browser terminal, workspace storage, manually declared preview ports, and lightweight logs/events for ready sandbox runtimes
@@ -174,7 +175,13 @@ curl -sS -X POST http://127.0.0.1:18080/v1/templates \
     "storageRequest": "2Gi",
     "exposedPorts": [
       {"name": "web", "port": 3000, "protocol": "TCP"}
-    ]
+    ],
+    "metadata": {
+      "runtimeType": "Node.js",
+      "useCase": "Web app preview",
+      "resourcePreset": "Small",
+      "validationStatus": "not_tested"
+    }
   }'
 ```
 

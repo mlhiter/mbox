@@ -275,8 +275,11 @@ The implemented data model currently covers the first sandbox control-plane slic
 - secret references
 - network policy
 - lifecycle policy
+- metadata
 - created at
 - updated at
+
+Template metadata is product-facing library metadata, not runtime configuration. The current web console stores `runtimeType`, `useCase`, `resourcePreset`, and `validationStatus` there so users can choose templates by environment intent. The runtime adapter must continue to project the concrete template fields into Kubernetes resources.
 
 ### Sandbox
 

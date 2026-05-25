@@ -43,6 +43,7 @@ Current progress:
 - Done: pending runtime workspace state with polling before terminal/logs/events/preview runtime calls.
 - Done: manual preview port declaration from the Preview tab.
 - Done: sandbox stop/start lifecycle actions that pause and resume the projected runtime while preserving the product record.
+- Done: E2B-style template library surface that treats templates as ready-to-run environments, with Essentials first and raw image/command/policy fields behind Advanced settings.
 
 Scope:
 
@@ -228,6 +229,7 @@ First slice status:
 8. Done: PVC behavior is covered by runtime metadata and smoke verification.
 9. Done: launch flow hides machine fields from normal users and relies on generated/defaulted slug, namespace, and ServiceAccount values.
 10. Done: stop/start distinguishes pausing runtime compute from deleting the sandbox.
-11. Next: richer namespace-scoped RBAC/policy handling.
+11. Done: template metadata for runtime type, use case, resource preset, and validation status now persists with the product record.
+12. Next: richer namespace-scoped RBAC/policy handling.
 
 This slice proves the core product loop before CI/CD expands the surface area.

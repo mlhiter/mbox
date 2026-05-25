@@ -9,7 +9,8 @@ The current console supports the first product slice:
 - API health check through `/healthz`
 - view-switched left navigation for Projects, Templates, and Sandboxes
 - project list and create dialog
-- template list and create dialog with Node.js workspace defaults
+- template library for ready-to-run environments, with create/edit dialogs that foreground runtime type, use case, entrypoints, resource preset, and workspace storage
+- advanced template settings for image, startup command, working directory, CPU, memory, env, secret refs, network preset, and lifecycle JSON
 - sandbox list, simplified guarded launch dialog, stop/start actions, and delete confirmation dialog
 - selected resource inspection panel for resource identity and metadata
 - main workspace runtime panel for selected sandboxes only in the Sandboxes view
@@ -96,13 +97,28 @@ The app uses shadcn source components rather than a published component package.
 
 ## Resource Workflows
 
-Template creation defaults to a usable Node.js workspace:
+Templates are presented as ready-to-run environments, not as a raw Kubernetes parameter sheet. The table is optimized for the questions a sandbox user asks before launch:
+
+- What runtime is this?
+- What is it for?
+- How do I enter it?
+- What resource/storage shape will it use?
+- Has it been validated?
+
+Template creation defaults to a usable Node.js web-app environment:
 
 - image: `node:22-bookworm-slim`
 - startup command: `sh -c 'mkdir -p /workspace && cd /workspace && echo mbox node sandbox ready && tail -f /dev/null'`
 - working directory: `/workspace`
 - resources: `250m` CPU, `512Mi` memory, `2Gi` storage
 - exposed port: `web:3000`
+
+The create/edit dialog has two layers:
+
+- Essentials: scope, template name, alias, runtime, resource preset, use case, entrypoints, and workspace storage.
+- Advanced settings: base image, startup command, working directory, CPU, memory, environment variables, secret references, network policy, and lifecycle policy JSON.
+
+Runtime, use case, resource preset, and validation status are stored in template metadata. Resource presets also write the actual CPU and memory requests, so the visible product choice matches the runtime projection. If CPU or memory is manually edited away from a preset, the saved metadata preset becomes `Custom`. Invalid entrypoint ports are rejected instead of silently dropped. Editing resets `validationStatus` to `not_tested`, does not move a template between global and project scope, and does not relaunch existing sandboxes. Newly launched sandboxes inherit the saved template shape.
 
 Sandbox launch is intentionally short. The dialog asks for Project, Template, and Name. The frontend derives the slug from the name, and the API fills namespace from the project plus the default sandbox ServiceAccount `mbox-sandbox`.
 
@@ -157,6 +173,12 @@ Useful manual checks:
 - `http://127.0.0.1:5174/` loads the console.
 - API status shows healthy when the Go server is running.
 - Project, template, and sandbox create dialogs fill the modal width on desktop and mobile.
+- Templates table shows Environment, Use case, Entrypoints, Preset, and Status rather than leading with raw image/resource fields.
+- Template create/edit opens from the Templates row action with Essentials visible and Advanced settings collapsed by default.
+- Runtime selection updates the default image, use case, and entrypoints for new templates; resource preset updates the saved CPU and memory requests.
+- Manual CPU/memory edits save `metadata.resourcePreset` as `Custom` when the values do not match Small, Medium, or Large.
+- Invalid entrypoint text such as `web:abc` shows an error and does not save a template with missing ports.
+- Template create/edit can still save advanced image, command, resources, ports, env, secret refs, network policy, and lifecycle JSON.
 - Left rail buttons switch between Projects, Templates, and Sandboxes instead of scrolling a combined page.
 - Switching away from Sandboxes clears sandbox selection and hides the Runtime Workspace.
 - Sandbox launch is disabled until at least one project and one template exist.
