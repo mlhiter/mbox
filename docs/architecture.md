@@ -2,6 +2,8 @@
 
 This guide is the short external handoff for the implemented mbox slice. The fuller product architecture remains in `ARCHITECTURE.md`.
 
+mbox is a Kubernetes execution platform, not an agent product and not primarily a CI/CD product. External agents, IDEs, CI systems, release tools, and humans call mbox to create sandboxes, connect runtime sessions, run controlled work, inspect previews/artifacts, and clean up resources.
+
 ## Current Shape
 
 mbox is split into three active layers:
@@ -69,6 +71,18 @@ The terminal is a WebSocket bridge to Kubernetes `pods/exec`. It only opens for 
 Preview ports are product declarations stored on the mbox sandbox record. Template `exposedPorts` seed the list at creation time, and the Preview tab can patch the sandbox list when a user starts an additional service in the terminal. Preview links are allowed only when the port is declared, the sandbox is running, and the protocol is TCP. The first implementation proxies through the mbox API server to the resolved Kubernetes Pod proxy path.
 
 Runtime target responses include PVC-backed storage metadata by inspecting the resolved Pod's `workspace` container volume mounts and matching PersistentVolumeClaims. The Storage tab uses this to show mount path, claim name, bound phase, capacity, and storage class without exposing raw Kubernetes access to the browser.
+
+## Platform Primitives
+
+The implemented slice covers projects, templates, and sandboxes. The next product layer should stay below agent and CI semantics:
+
+- Runtime sessions: terminal, IDE, notebook, browser, command, and custom client attachments to a sandbox.
+- Execution tasks: controlled commands or workloads with status, logs, exit result, cancellation, cleanup, and runtime reference.
+- Previews: inspectable runtime endpoints or rendered outputs.
+- Artifacts: logs, files, reports, screenshots, build outputs, images, or links produced by runtime work.
+- Policies and credential references: explicit boundaries for resources, network, secrets, lifecycle, and output retention.
+
+Pipeline, deployment, release, and autonomous agent workflows can be built on these primitives later. They should reference sessions, tasks, previews, and artifacts rather than becoming the base runtime model.
 
 ## Web Console
 

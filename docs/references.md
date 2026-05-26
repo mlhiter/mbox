@@ -16,6 +16,12 @@ See `docs/research-agent-sandbox.md` for the current local research notes and ve
 - mbox should copy the product clarity, not the implementation boundary. mbox remains Kubernetes-native, namespace-scoped, and backed by Postgres product records plus `agent-sandbox` runtime projection.
 - The current template library follows this reference by showing Environment, Use case, Entrypoints, Preset, and Status first, while keeping image, command, env, secret refs, network policy, and lifecycle JSON available under Advanced settings.
 
+## Product Boundary References
+
+- mbox is the execution platform that external agents, IDEs, CI systems, release tools, and humans call.
+- mbox should not include the agent brain, planner, reviewer, autonomous coding loop, CI workflow engine, or deployment release manager as base product primitives.
+- Runtime sessions, execution tasks, previews, artifacts, policies, and credential references are lower-level platform primitives. Pipeline and deployment workflows are upper-layer integrations that can compose those primitives later.
+
 ## Kubernetes Primitives
 
 The runtime implementation currently depends on:

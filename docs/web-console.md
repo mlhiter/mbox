@@ -21,7 +21,7 @@ The current console supports the first product slice:
 - toast feedback for API failures and successful writes
 - runtime readiness notices when terminal access is blocked by missing runtime projection or non-running sandbox status
 
-The console does not yet provide pipeline editing, deployments, credentials, or policy management. Those remain roadmap items.
+The console does not yet provide runtime session history, execution tasks, artifacts, credentials, or policy management. Those remain roadmap items. Pipeline and deployment screens should be treated as upper-layer integrations, not as the base console model.
 
 ## Local Development
 

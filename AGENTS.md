@@ -2,9 +2,11 @@
 
 ## Project Identity
 
-mbox is an independent Kubernetes sandbox and CI/CD control plane for people and automation.
+mbox is an independent Kubernetes execution platform for programmable sandboxes, runtime sessions, previews, artifacts, and policy boundaries.
 
-The product surface is human-first: environment templates, sandboxes, pipelines, deployments, policies, credentials, logs, and operational state.
+The product surface is human-legible and automation-first: environment templates, sandboxes, runtime sessions, execution tasks, previews, artifacts, policies, credentials, logs, and operational state.
+
+mbox serves external agents, IDEs, CI systems, release tools, and human operators. It is not itself an agent platform, and it should not be shaped primarily as a CI/CD product.
 
 Long-term technical surfaces:
 
@@ -21,18 +23,20 @@ Build:
 - Kubernetes-backed sandbox management.
 - Human-facing web console.
 - Environment template management.
-- CI/CD pipeline configuration and execution.
-- Deployment targets and preview/staging workflows.
+- Runtime session and execution task primitives.
+- Preview and artifact surfaces.
+- Upper-layer workflow integration points for CI, deployment, IDEs, and agents without making those workflows the base product model.
 - Namespace-scoped policy, RBAC, credentials, quota, lifecycle, and observability.
 
-Keep the product centered on the mbox primitives above. New modules should directly strengthen sandbox creation, environment configuration, pipeline execution, deployment operation, policy enforcement, credential handling, or observability.
+Do not add an agent brain, planner, reviewer, autonomous coding loop, or full CI/CD workflow engine as a base primitive. New modules should directly strengthen sandbox creation, environment configuration, runtime access, task execution, preview/artifact inspection, policy enforcement, credential handling, or observability.
 
 ## Architecture Principles
 
 - Use `agent-sandbox` as the selected interactive sandbox runtime adapter, not as the product API.
 - Treat server API, web app, CLI, API docs, and SDK package as coordinated surfaces over the same product model.
 - Keep mbox product records separate from Kubernetes runtime resources.
-- Keep interactive sandboxes and CI/CD pipeline jobs related but not identical.
+- Keep interactive sandboxes, runtime sessions, execution tasks, and upper-layer workflows related but not identical.
+- Treat agents, CI systems, deployment tools, and IDEs as clients of mbox, not as internal product actors.
 - Prefer namespace-scoped isolation inside a shared Kubernetes cluster.
 - Use Kubernetes resources, events, logs, RBAC, and NetworkPolicy as first-class primitives.
 - Keep runtime credentials narrow and scoped.
@@ -98,8 +102,10 @@ Core UI areas:
 - Projects
 - Sandboxes
 - Templates
-- Pipelines
-- Deployments
+- Runtime Sessions
+- Execution Tasks
+- Previews
+- Artifacts
 - Policies
 - Credentials
 - Admin / Settings
@@ -147,9 +153,11 @@ For runtime changes, verify with real Kubernetes resources when feasible:
 
 For frontend changes, run the local app and inspect it in the Codex in-app browser when the route is known.
 
-For pipeline changes, include at least:
+For execution task changes, include at least:
 
 - success path
 - failing command path
 - cancellation path
 - cleanup path
+
+For upper-layer workflow integrations such as CI or deployment, keep the workflow as a client of sessions, tasks, previews, and artifacts unless the product model has been deliberately updated.

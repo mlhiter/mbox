@@ -2,9 +2,9 @@
 
 ## Architecture Goal
 
-mbox should provide a product-level control plane for Kubernetes-backed sandboxes, pipelines, and deployments while keeping the product contract decoupled from runtime CRDs.
+mbox should provide a product-level Kubernetes execution platform for programmable sandboxes, runtime sessions, controlled tasks, previews, artifacts, and policy boundaries while keeping the product contract decoupled from runtime CRDs.
 
-The selected interactive sandbox runtime is `kubernetes-sigs/agent-sandbox`. mbox still owns the product API, permissions, UI, and pipeline orchestration.
+The selected interactive sandbox runtime is `kubernetes-sigs/agent-sandbox`. mbox still owns the product API, permissions, UI, runtime lifecycle, and execution records. It should not become an agent platform or a CI/CD platform; agents, CI systems, IDEs, and release tools are clients of the execution platform.
 
 Current implementation status:
 
@@ -22,16 +22,16 @@ See `docs/server-api.md` for the current concrete API and configuration contract
 
 ```text
 Client Surfaces
-  Web console, CLI, API docs, SDK packages
+  Web console, CLI, API docs, SDK packages, external agents, IDEs, CI systems
 
 Control Plane
   Go API server, Auth, RBAC, state, scheduling decisions, audit, lifecycle management
 
-Pipeline Orchestrator
-  Step state machine, logs, retries, cancellation, artifacts, deployments
+Execution Control
+  Runtime sessions, command/task records, logs, cancellation, previews, artifacts
 
 Runtime Adapter
-  agent-sandbox for interactive sandboxes, Kubernetes Job where CI steps need isolated execution
+  agent-sandbox for interactive sandboxes, Kubernetes Job or future adapters for isolated batch tasks
 
 Kubernetes
   agent-sandbox CRDs, Namespaces, Pods, PVCs, Services, Ingress/Gateway, NetworkPolicy, RBAC
@@ -50,14 +50,14 @@ The server side includes:
 - `agent-sandbox` integration for interactive sandbox runtime.
 - Kubernetes resources, RBAC, NetworkPolicy, PVCs, Services, Gateway or Ingress, logs, and events.
 
-The server is the source of truth for projects, templates, sandboxes, pipelines, deployment targets, policies, credentials, audit, and runtime state mapping.
+The server is the source of truth for projects, templates, sandboxes, runtime sessions, execution tasks, previews, artifacts, policies, credentials, audit, and runtime state mapping.
 
 ### Web App
 
 The web app is the human-facing console for daily operation:
 
-- project, sandbox, template, pipeline, deployment, policy, and credential management
-- terminal, IDE, notebook, preview port, logs, events, and status views
+- project, sandbox, template, runtime session, task, preview, artifact, policy, and credential management
+- terminal, IDE, notebook, browser, command, preview port, logs, events, and status views
 - dense operational workflows for repeated use
 
 The web app should consume the same product APIs as the CLI and SDK. It should not depend on private controller behavior or raw Kubernetes objects as its main contract.
@@ -70,11 +70,11 @@ The CLI should provide scriptable access to the same core workflows:
 
 - project and template inspection
 - sandbox create, enter, list, stop, delete
-- port and log access
-- pipeline run, watch, cancel, retry
-- deployment status and rollback
+- session, port, log, event, and artifact access
+- command/task run, watch, cancel, and inspect
+- upper-layer workflow integration points without owning CI or deployment logic
 
-The CLI should be suitable for local developer use, CI scripts, and operational debugging. It should be a first-class API client, not a separate control path.
+The CLI should be suitable for local developer use, agent/tool integration, CI scripts, and operational debugging. It should be a first-class API client, not a separate control path.
 
 ### API Docs
 
@@ -93,7 +93,7 @@ The API docs should track the server API version and SDK generation boundary.
 
 mbox should provide at least one official SDK/package for automation clients. The first package can be Node.js or Go, depending on the first integration audience.
 
-The SDK should wrap the public product API for common workflows while keeping raw API access possible for advanced clients. It should share API schemas with the server and API docs where practical.
+The SDK should wrap the public product API for common runtime workflows while keeping raw API access possible for advanced clients. It should share API schemas with the server and API docs where practical.
 
 ## Runtime Boundary
 
@@ -117,7 +117,7 @@ GetRuntimeStatus
 
 For interactive sandboxes, the adapter creates `SandboxClaim` resources and maps them to mbox `Sandbox` records.
 
-For CI/CD jobs, mbox can use sandbox-backed execution when the run needs an interactive or stateful workspace. Short, isolated, repeatable steps can use ordinary Kubernetes Jobs.
+For isolated batch tasks, mbox can use sandbox-backed execution when the run needs an interactive or stateful workspace. Short, isolated, repeatable commands can use ordinary Kubernetes Jobs or a future batch adapter.
 
 ## Core Components
 
@@ -128,9 +128,10 @@ Owns product APIs:
 - projects
 - templates
 - sandboxes
-- pipeline definitions
-- pipeline runs
-- deployment targets
+- runtime sessions
+- execution tasks
+- previews
+- artifacts
 - policies
 - credentials and secret references
 - audit records
@@ -143,13 +144,12 @@ Human-facing console for:
 
 - creating and entering sandboxes
 - editing environment templates
-- managing pipelines
-- observing deployment state
+- inspecting runtime sessions, tasks, previews, artifacts, logs, and events
 - managing resource and security policies
 
 The UI should be operational and dense enough for repeated use. Avoid landing-page style composition in the app surface.
 
-Current implemented console scope is intentionally narrower than the long-term product: list and create projects, templates, and sandboxes; inspect selected resource IDs and runtime state; stop, start, and delete sandboxes from compact row actions; open a main-workspace browser terminal for ready sandboxes; show resolved workspace PVC storage metadata; show declared preview ports through the API server's Pod proxy path; show lightweight runtime logs and Kubernetes events in runtime tabs; show API health and request errors. Pipelines, deployments, credentials, and policy screens are still roadmap work.
+Current implemented console scope is intentionally narrower than the long-term product: list and create projects, templates, and sandboxes; inspect selected resource IDs and runtime state; stop, start, and delete sandboxes from compact row actions; open a main-workspace browser terminal for ready sandboxes; show resolved workspace PVC storage metadata; show declared preview ports through the API server's Pod proxy path; show lightweight runtime logs and Kubernetes events in runtime tabs; show API health and request errors. Runtime sessions, execution tasks, artifacts, credentials, and policy screens are still roadmap work. Pipeline and deployment products may be built later as clients of these primitives rather than as the base architecture.
 
 ### Controller / Reconciler
 
@@ -166,19 +166,21 @@ Reconciles mbox product records to Kubernetes resources:
 
 The reconciler must be idempotent and safe under retries.
 
-### Pipeline Orchestrator
+### Execution Controller
 
-Owns pipeline run state:
+Owns runtime work state:
 
 - queued
 - running
 - succeeded
 - failed
 - canceled
-- waiting for approval
-- rolling back
+- timed out
+- cleanup pending
 
-Each pipeline step should have explicit status, timing, logs, retry count, runtime reference, and failure reason.
+Each execution task should have explicit status, timing, command or workload metadata, logs, retry or restart count when applicable, runtime reference, artifacts, cancellation state, and failure reason.
+
+The execution controller is deliberately lower-level than CI. A CI pipeline, coding agent, IDE action, notebook runner, or release workflow can create tasks through the public API, but mbox should not need to understand their business-level plan to provide useful execution records.
 
 ### Runtime Adapter
 
@@ -187,7 +189,7 @@ The runtime adapter translates product intent into concrete execution resources.
 Selected runtime adapters:
 
 - `agent-sandbox` for interactive, stateful, singleton sandbox environments.
-- Kubernetes Job for isolated, repeatable CI steps when a full sandbox is unnecessary.
+- Kubernetes Job for isolated, repeatable batch tasks when a full sandbox is unnecessary.
 - Future custom runner for specialized build or deployment execution if required.
 
 ## Kubernetes Model
@@ -207,18 +209,17 @@ Recommended starting model:
 Use scoped service accounts:
 
 - user sandbox service account
-- pipeline execution service account
-- deployment service account per target
+- execution task service account
 - controller service account
 
-Do not mount broad kubeconfigs into user sandboxes. Deployment permissions should be target-scoped.
+Do not mount broad kubeconfigs into user sandboxes or task runtimes. Upper-layer deployment tools must use explicit, narrow credential references if they call mbox for deployment-related execution.
 
 ### Storage Strategy
 
 Support both:
 
 - persistent workspace volume for interactive sandboxes
-- ephemeral volumes for CI steps
+- ephemeral volumes for isolated batch tasks
 
 Long-lived volumes need cleanup rules, quota visibility, and ownership metadata.
 
@@ -238,15 +239,15 @@ Common policies:
 Credentials should be injected narrowly:
 
 - Git credentials are repo-scoped.
-- Registry credentials are project- or pipeline-scoped.
-- Kubernetes deployment credentials are target-scoped.
+- Registry credentials are project- or task-scoped.
+- Kubernetes credentials are explicit references for specific upper-layer workflows.
 - Production credentials require explicit permission and audit.
 
 Prefer short-lived tokens and secret references over copying long-lived credentials into runtime filesystems.
 
 ## Data Model Draft
 
-The implemented data model currently covers the first sandbox control-plane slice. Pipeline, deployment, policy, credential, audit, and observability records below are still roadmap items.
+The implemented data model currently covers the first sandbox control-plane slice. Runtime session, execution task, artifact, policy, credential, audit, and observability records below are still roadmap items.
 
 ### Project
 
@@ -307,38 +308,57 @@ Implemented Postgres constraints:
 - Sandbox deletion is soft deletion through `deleted_at`.
 - `updated_at` is maintained by database triggers.
 
-### PipelineDefinition
+### RuntimeSession
 
 - id
+- sandbox id
 - project id
-- name
-- trigger mode
-- steps
-- default runtime policy
-- allowed targets
-
-### PipelineRun
-
-- id
-- pipeline definition id
-- project id
+- kind: terminal, IDE, notebook, browser, command, or custom
+- client identity
 - status
-- current step
-- runtime references
-- logs
-- artifacts
+- connected at
+- disconnected at
+- metadata
+
+### ExecutionTask
+
+- id
+- project id
+- sandbox id, optional for batch-only runtimes
+- kind
+- status
+- command or workload reference
+- runtime reference
+- log references
+- artifact references
+- exit code
+- failure reason
 - started at
 - finished at
 
-### DeploymentTarget
+### Artifact
 
 - id
 - project id
+- sandbox id, optional
+- task id, optional
+- kind
 - name
-- namespace or cluster reference
-- service account reference
-- approval policy
-- allowed users and groups
+- URI or storage reference
+- metadata
+- created at
+
+### UpperLayerWorkflow
+
+This is intentionally not a required base table. CI pipelines, deployment flows, and agent task plans may be represented by future integrations once the lower-level runtime primitives are stable. If mbox stores them later, they should reference sandboxes, sessions, tasks, previews, and artifacts rather than replacing those primitives.
+
+Potential future workflow records:
+
+- pipeline definition
+- pipeline run
+- deployment target
+- deployment run
+- approval gate
 
 ### Policy
 
@@ -355,11 +375,11 @@ Implemented Postgres constraints:
 
 - Default namespace isolation.
 - No cluster-admin credentials in ordinary runtime environments.
-- Separate human, pipeline, deployment, and controller permissions.
-- Explicit audit for secret use and deployment actions.
+- Separate human, external client, execution task, and controller permissions.
+- Explicit audit for secret use, runtime access, task execution, and cleanup actions.
 - NetworkPolicy enabled for sandbox namespaces.
 - RuntimeClass support for stronger isolation when available.
-- Image provenance and digest display for deployments.
+- Artifact provenance for generated outputs.
 - Cleanup controller for stale sandboxes and volumes.
 
 ## Observability Requirements
@@ -368,10 +388,12 @@ The product should expose:
 
 - sandbox phase and pod status
 - container logs
-- pipeline step logs
+- runtime session status
+- execution task logs
 - Kubernetes events
 - resource usage
-- deployment rollout status
+- preview status
+- artifact metadata
 - failed scheduling reasons
 - image pull errors
 - quota and policy denial reasons

@@ -2,13 +2,13 @@
 
 ## Phase 0: Product and Technical Validation
 
-Goal: confirm the product boundary for an independent Kubernetes sandbox and CI/CD control plane built on `agent-sandbox` for interactive runtimes.
+Goal: confirm the product boundary for an independent Kubernetes execution platform built on `agent-sandbox` for interactive runtimes.
 
 Deliverables:
 
 - Product documents in this repo.
 - Runtime integration plan for `agent-sandbox`.
-- Kubernetes Job usage boundary for CI steps that do not need an interactive sandbox.
+- Kubernetes Job usage boundary for isolated batch tasks that do not need an interactive sandbox.
 - Long-term technical surface split: server, web app, CLI, API docs, and SDK package.
 - Minimum supported Kubernetes version decision.
 - Initial namespace, RBAC, storage, and network policy model.
@@ -16,9 +16,9 @@ Deliverables:
 
 Exit criteria:
 
-- Clear product boundary around environment, sandbox, pipeline, deployment, and policy.
+- Clear product boundary around environment templates, sandboxes, runtime sessions, execution tasks, previews, artifacts, and policy.
 - Confirmed first runtime adapter boundary around `agent-sandbox`.
-- MVP scope small enough to implement without building a full CI platform at once.
+- MVP scope small enough to implement without building an agent platform or a full CI/CD platform.
 
 ## Phase 1: Core Sandbox MVP
 
@@ -65,6 +65,7 @@ Out of scope:
 
 - Full pipeline editor.
 - Production deployment target.
+- Agent planning or autonomous coding workflow.
 - Full SDK package.
 - Multi-cluster support.
 - Billing.
@@ -99,45 +100,43 @@ Exit criteria:
 - Sandboxes respect resource and lifecycle policies.
 - Secret references are visible as references, not leaked values.
 
-## Phase 3: Pipeline MVP
+## Phase 3: Runtime Sessions and Execution Tasks
 
-Goal: run repeatable CI-style workflows in controlled Kubernetes execution environments.
+Goal: make mbox useful as a programmable execution substrate for external agents, developer tools, CI systems, and human operators without making mbox own those upper-layer workflows.
 
 Scope:
 
-- Pipeline definition model.
-- Pipeline run model.
-- Step runner.
-- Step logs.
-- Retry and cancel.
-- Git checkout step.
-- Test step.
-- Build image step.
-- Push image step.
-- Artifact and image digest recording.
-- UI for run status and step logs.
+- Runtime session model for terminal, IDE, notebook, browser, command, and custom clients.
+- Execution task model for controlled command or workload execution.
+- Task status, logs, exit code, cancellation, timeout, and cleanup state.
+- Artifact records for files, reports, screenshots, logs, build outputs, images, or links.
+- Preview records beyond raw sandbox port declarations when useful.
+- API and UI for inspecting sessions, tasks, logs, previews, and artifacts.
+- Kubernetes Job adapter for isolated batch tasks when a full interactive sandbox is unnecessary.
 
 Execution model:
 
 - Interactive sandboxes remain stateful.
-- Pipeline steps can use Kubernetes Jobs by default.
-- Long-running or debugging-oriented pipeline runs can optionally attach to a sandbox.
+- Sessions attach to sandboxes.
+- Tasks can run inside a sandbox when they need shared workspace state.
+- Tasks can run as Kubernetes Jobs when they are isolated and repeatable.
+- External agents, CI systems, IDEs, and release tools decide why work is running; mbox records and controls where and how it runs.
 
 Exit criteria:
 
-- A user can configure and run a simple test/build/push pipeline.
-- A failed step shows readable failure reason and logs.
-- A canceled run stops its runtime resources.
-- Image output is recorded by digest.
+- A client can start a task against a sandbox and watch its status, logs, exit result, and artifacts through the API.
+- A user can inspect active sessions and task history from the console.
+- A canceled or timed-out task cleans up its runtime resources.
+- Preview links and artifacts are attached to the runtime or task that produced them.
 
 ## Phase 3.5: CLI and SDK Foundation
 
-Goal: make mbox usable outside the web console by developers, automation clients, and CI scripts.
+Goal: make mbox usable outside the web console by developers, external agents, automation clients, and CI scripts.
 
 Scope:
 
 - CLI authentication and context selection.
-- CLI commands for project, template, sandbox, logs, ports, and pipeline runs.
+- CLI commands for project, template, sandbox, session, task, logs, ports, previews, and artifacts.
 - API schema publication for implemented resources.
 - API documentation site or generated docs for public endpoints.
 - First official SDK package, either Node.js or Go.
@@ -146,31 +145,30 @@ Scope:
 Exit criteria:
 
 - A user can create, inspect, enter, and delete a sandbox from the CLI.
-- A CI script can trigger and watch a pipeline run through the CLI or SDK.
+- An external client can start and watch a task through the CLI or SDK.
 - API docs match the implemented server behavior.
-- The SDK can authenticate and call the core sandbox and pipeline APIs.
+- The SDK can authenticate and call the core sandbox, session, task, preview, and artifact APIs.
 
-## Phase 4: Deployment Targets
+## Phase 4: Upper-layer Workflow Integrations
 
-Goal: deploy pipeline output to controlled preview or staging environments.
+Goal: prove that the execution platform can support CI, preview deployment, and release automation without making those workflows the base product model.
 
 Scope:
 
-- Deployment target model.
-- Target-scoped service accounts.
-- Preview namespace deployment.
-- Rollout status.
-- Service endpoint display.
-- Rollback.
-- Deployment logs and events.
-- Approval gate for sensitive targets.
+- Optional pipeline definition and pipeline run integration.
+- Optional deployment target and deployment run integration.
+- Target-scoped credential references.
+- Preview namespace or staging namespace execution patterns.
+- Build output and image digest artifacts.
+- Rollout status and service endpoint artifacts when a deployment workflow is used.
+- Approval gate integration for sensitive upper-layer workflows.
 
 Exit criteria:
 
-- A user can deploy a built image to a preview target.
-- The UI shows rollout status and access URL.
-- A user can rollback to a prior revision.
-- Production-like targets require explicit permission.
+- A CI system can use mbox to run a test/build flow and collect logs plus artifacts.
+- A release tool can use mbox to run a preview deployment workflow with target-scoped permissions.
+- Upper-layer workflow records reference sessions, tasks, previews, and artifacts rather than bypassing them.
+- Production-like targets require explicit permission and audit.
 
 ## Phase 5: Operational Hardening
 
@@ -205,7 +203,7 @@ Candidate features:
 - Browser and notebook sandbox templates.
 - GPU templates.
 - Multi-cluster deployment targets.
-- YAML import/export for templates and pipelines.
+- YAML import/export for templates and upper-layer workflow integrations.
 - Git provider integrations.
 - Registry browsing and image promotion.
 - Fine-grained approval workflows.
@@ -230,6 +228,6 @@ First slice status:
 9. Done: launch flow hides machine fields from normal users and relies on generated/defaulted slug, namespace, and ServiceAccount values.
 10. Done: stop/start distinguishes pausing runtime compute from deleting the sandbox.
 11. Done: template metadata for runtime type, use case, resource preset, and validation status now persists with the product record.
-12. Next: richer namespace-scoped RBAC/policy handling.
+12. Next: richer namespace-scoped RBAC/policy handling, then runtime sessions and execution task records.
 
-This slice proves the core product loop before CI/CD expands the surface area.
+This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

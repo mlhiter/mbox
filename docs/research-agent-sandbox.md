@@ -39,12 +39,16 @@ mbox should own:
 - web console
 - user and project model
 - template UX
-- pipeline orchestration
-- deployment targets
+- runtime sessions
+- execution tasks
+- previews and artifacts
+- upper-layer integration boundaries for CI and deployment clients
 - policy and credential model
 - audit and observability model
 
 Do not expose `SandboxClaim` as the only product API. Map mbox records to runtime resources through an adapter.
+
+mbox should also stay separate from agent products. External agents can call mbox to create sandboxes, connect sessions, run tasks, inspect previews, collect artifacts, and clean up resources. mbox should not contain the agent brain, planner, reviewer, or autonomous coding loop.
 
 ## Kubernetes Version Notes
 
@@ -102,6 +106,6 @@ Runtime access is intentionally separate from runtime reconciliation. `MBOX_RUNT
 - Does `agent-sandbox` support all required pause/resume semantics for long-lived human sandboxes?
 - Should command execution remain on Kubernetes `pods/exec` for the MVP, or move to a sidecar/gateway when authentication, auditing, or multiplexing requirements grow?
 - How should web IDE, notebook, and preview ports be exposed?
-- Which CI steps should use `agent-sandbox` and which should stay as plain Kubernetes Jobs?
+- Which execution tasks should use `agent-sandbox` and which should stay as plain Kubernetes Jobs?
 - How mature are warm pools for production startup latency requirements?
 - How should PVC lifecycle and cleanup be coordinated between mbox and the runtime controller?

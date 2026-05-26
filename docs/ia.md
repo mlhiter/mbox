@@ -2,6 +2,8 @@
 
 This document captures the current web-console information architecture. It is intentionally narrower than the long-term product navigation in `PRODUCT.md`.
 
+The long-term navigation should reflect mbox as a Kubernetes execution platform. Agent products, CI pipelines, and deployment flows are clients or upper-layer integrations, not the core IA.
+
 ## Current App Shell
 
 The current console is a state-switched operational surface:
@@ -85,10 +87,14 @@ Stop is a direct action because it pauses runtime compute without deleting the p
 
 These are product concepts but not implemented screens yet:
 
-- Pipelines
-- Deployments
+- Runtime Sessions
+- Execution Tasks
+- Previews
+- Artifacts
 - Policies
 - Credentials
 - Admin / Settings
+
+Pipeline and deployment screens should appear only when there is useful upper-layer integration behavior behind them. They should not replace sessions, tasks, previews, and artifacts as the base navigation model.
 
 Do not add empty navigation entries for these until there is useful implemented behavior behind them.

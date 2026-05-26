@@ -1,6 +1,6 @@
 ---
 name: mbox Console
-description: Human-first Kubernetes sandbox operations console.
+description: Human-legible Kubernetes execution platform console.
 colors:
   canvas: "oklch(0.982 0.006 82)"
   paper: "oklch(0.996 0.004 82)"
@@ -132,9 +132,9 @@ components:
 
 **Creative North Star: "The Operations Notebook"**
 
-mbox should feel like a Notion-adjacent operations workspace for real Kubernetes-backed execution, not a decorative SaaS dashboard. The interface is warm, calm, dense, and legible. It uses paper-like surfaces, restrained green state color, precise table structure, a main-area Runtime Workspace for selected sandboxes, and a persistent detail pane so operators can inspect metadata without losing context.
+mbox should feel like a Notion-adjacent operations workspace for real Kubernetes-backed execution, not a decorative SaaS dashboard or CI pipeline product. The interface is warm, calm, dense, and legible. It uses paper-like surfaces, restrained green state color, precise table structure, a main-area Runtime Workspace for selected sandboxes, and a persistent detail pane so operators can inspect metadata without losing context.
 
-The design serves repeated work: creating projects, shaping templates, launching sandboxes, inspecting runtime state, and catching API failures quickly. It should avoid marketing composition, oversized cards, ornamental gradients, and vague empty states. Every screen should make the current resource, state, permission boundary, or next operation visible.
+The design serves repeated work: creating projects, shaping templates, launching sandboxes, connecting sessions, inspecting runtime state, reviewing previews/artifacts, and catching API failures quickly. It should avoid marketing composition, oversized cards, ornamental gradients, and vague empty states. Every screen should make the current resource, state, permission boundary, output, or next operation visible.
 
 **Key Characteristics:**
 

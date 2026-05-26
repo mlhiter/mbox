@@ -2,6 +2,8 @@
 
 This document describes the currently implemented mbox server slice. It is intentionally narrower than the long-term product model in `PRODUCT.md` and `ARCHITECTURE.md`.
 
+Long-term, the API should expose lower-level execution-platform primitives: sandboxes, runtime sessions, execution tasks, previews, artifacts, policies, and credential references. Agent products, CI systems, and deployment tools should call those APIs rather than being built into this server slice as the base model.
+
 ## Current Scope
 
 The server is a Go HTTP API backed by Postgres. It stores mbox product records for:

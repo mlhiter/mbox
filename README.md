@@ -1,10 +1,10 @@
 # mbox
 
-mbox is a Kubernetes-native sandbox and CI/CD workspace for people and automation.
+mbox is a Kubernetes-native execution platform for programmable sandboxes, runtime sessions, previews, artifacts, and policy boundaries.
 
-The product provides a web console and API for creating runnable development sandboxes, configuring environment templates, running CI/CD pipelines, deploying preview or staged environments, and managing the policies that make those workflows safe in a shared Kubernetes cluster.
+The product provides a web console and API for creating runnable development sandboxes, configuring environment templates, connecting runtime sessions, exposing previews, collecting execution outputs, and managing the policies that make those workflows safe in a shared Kubernetes cluster.
 
-The project is independent at the product layer. Its core language is environment, sandbox, pipeline, deployment, policy, and credential management. Automation clients can use the same runtime APIs as human users and CI processes.
+The project is independent at the product layer. Its core language is environment template, sandbox, runtime session, execution task, preview, artifact, policy, and credential boundary. External agents, IDEs, CI systems, release tools, and human operators are clients of the platform; mbox does not include an agent brain and is not primarily a CI/CD product.
 
 Long term, mbox should have several coordinated technical surfaces:
 
@@ -18,8 +18,9 @@ Long term, mbox should have several coordinated technical surfaces:
 
 - People can create and enter sandboxes through terminal, IDE, notebook, browser, or preview endpoints.
 - Platform users can define templates for language stacks, tools, startup commands, resources, storage, network access, and lifecycle rules.
-- Teams can configure CI/CD pipelines that run inside controlled Kubernetes execution environments.
-- Deployments can target preview, staging, or production-like namespaces with explicit permissions.
+- External clients can run controlled sessions and tasks inside Kubernetes execution environments.
+- Previews and artifacts make runtime outputs inspectable without exposing direct Kubernetes access.
+- CI and deployment systems can be built as upper-layer clients after the lower-level runtime primitives are stable.
 - Operators can enforce quota, RBAC, network policy, credential boundaries, and cleanup rules.
 
 ## Core Documents
