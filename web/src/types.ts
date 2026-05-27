@@ -12,6 +12,7 @@ export type ResourceKind = "project" | "template" | "sandbox"
 export type WorkspaceView = "projects" | "templates" | "sandboxes"
 
 export type RuntimeRef = {
+  adapter?: string
   kind: string
   namespace: string
   name: string
@@ -126,7 +127,60 @@ export type Selection = {
   id: string
 }
 
-export type RuntimeTab = "terminal" | "storage" | "preview" | "logs" | "events"
+export type ExecutionTaskStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "canceled"
+  | "timed_out"
+
+export type ExecutionTask = {
+  id: string
+  projectId: string
+  sandboxId: string
+  status: ExecutionTaskStatus
+  command: string[]
+  timeoutSeconds: number
+  exitCode?: number
+  stdout: string
+  stderr: string
+  outputTruncated: boolean
+  error?: string
+  runtimeRef?: RuntimeRef
+  metadata?: Record<string, unknown>
+  startedAt?: string
+  finishedAt?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type ArtifactKind =
+  | "file"
+  | "directory"
+  | "log"
+  | "report"
+  | "screenshot"
+  | "image"
+  | "link"
+  | "other"
+
+export type Artifact = {
+  id: string
+  projectId: string
+  sandboxId: string
+  taskId?: string
+  kind: ArtifactKind
+  name: string
+  uri: string
+  contentType?: string
+  sizeBytes?: number
+  metadata?: Record<string, unknown>
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type RuntimeTab = "terminal" | "storage" | "preview" | "tasks" | "artifacts" | "logs" | "events"
 
 export type ListResponse<T> = {
   items?: T[]

@@ -99,7 +99,7 @@ Current implemented runtime resolution path:
 3. `Sandbox.status.selector`
 4. matching Pod, preferring the `workspace` container when present
 
-Runtime access is intentionally separate from runtime reconciliation. `MBOX_RUNTIME_CONTROLLER_ENABLED=true` controls Kubernetes resource projection, while `MBOX_RUNTIME_ACCESS_ENABLED=true` controls terminal, logs, events, and runtime target API routes.
+Runtime access is intentionally separate from runtime reconciliation. `MBOX_RUNTIME_CONTROLLER_ENABLED=true` controls Kubernetes resource projection, while `MBOX_RUNTIME_ACCESS_ENABLED=true` controls terminal, execution tasks, logs, events, and runtime target API routes.
 
 ## Open Questions
 

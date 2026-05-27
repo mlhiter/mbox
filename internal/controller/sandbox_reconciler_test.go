@@ -397,3 +397,31 @@ func (s *fakeStore) MarkSandboxRuntimeDeleted(_ context.Context, id uuid.UUID) e
 	s.sandboxes[id] = sandbox
 	return nil
 }
+
+func (s *fakeStore) ListExecutionTasks(context.Context, uuid.UUID) ([]domain.ExecutionTask, error) {
+	return nil, nil
+}
+
+func (s *fakeStore) CreateExecutionTask(context.Context, domain.ExecutionTaskCreate) (domain.ExecutionTask, error) {
+	return domain.ExecutionTask{}, nil
+}
+
+func (s *fakeStore) GetExecutionTask(context.Context, uuid.UUID) (domain.ExecutionTask, error) {
+	return domain.ExecutionTask{}, domain.ErrNotFound
+}
+
+func (s *fakeStore) UpdateExecutionTask(context.Context, uuid.UUID, domain.ExecutionTaskUpdate) (domain.ExecutionTask, error) {
+	return domain.ExecutionTask{}, nil
+}
+
+func (s *fakeStore) ListArtifacts(context.Context, uuid.UUID, *uuid.UUID) ([]domain.Artifact, error) {
+	return nil, nil
+}
+
+func (s *fakeStore) CreateArtifact(context.Context, domain.ArtifactCreate) (domain.Artifact, error) {
+	return domain.Artifact{}, nil
+}
+
+func (s *fakeStore) GetArtifact(context.Context, uuid.UUID) (domain.Artifact, error) {
+	return domain.Artifact{}, domain.ErrNotFound
+}

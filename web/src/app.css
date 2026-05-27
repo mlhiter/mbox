@@ -1058,7 +1058,16 @@
   min-height: 320px;
 }
 
-.preview-port-form {
+.runtime-tasks,
+.runtime-artifacts {
+  display: grid;
+  gap: 8px;
+  min-height: 320px;
+}
+
+.preview-port-form,
+.runtime-task-form,
+.runtime-artifact-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 120px auto;
   gap: 10px;
@@ -1069,27 +1078,49 @@
   padding: 10px;
 }
 
-.preview-port-form > div {
+.runtime-task-form {
+  grid-template-columns: minmax(0, 1fr) 110px auto auto;
+}
+
+.runtime-artifact-form {
+  grid-template-columns: 112px minmax(0, 1fr) minmax(0, 1.4fr);
+}
+
+.preview-port-form > div,
+.runtime-task-form > div,
+.runtime-artifact-form > div {
   display: grid;
   min-width: 0;
   gap: 6px;
 }
 
-.preview-port-form [data-slot="label"] {
+.preview-port-form [data-slot="label"],
+.runtime-task-form [data-slot="label"],
+.runtime-artifact-form [data-slot="label"] {
   color: var(--muted-copy);
   font-size: 12px;
   font-weight: 600;
 }
 
-.preview-port-form [data-slot="input"] {
+.preview-port-form [data-slot="input"],
+.runtime-task-form [data-slot="input"],
+.runtime-artifact-form [data-slot="input"],
+.runtime-artifact-form select {
   height: 34px;
+  width: 100%;
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
   background: var(--paper);
+  color: var(--ink);
   font-size: 13px;
+  padding: 0 9px;
 }
 
 .preview-port-note,
-.preview-port-error {
+.preview-port-error,
+.runtime-task-note,
+.runtime-task-error,
+.runtime-artifact-error {
   margin: 0;
   border-radius: 6px;
   font-size: 12px;
@@ -1103,10 +1134,18 @@
   color: var(--info-ink);
 }
 
-.preview-port-error {
+.preview-port-error,
+.runtime-task-error,
+.runtime-artifact-error {
   border: 1px solid var(--danger-soft);
   background: var(--danger-soft);
   color: var(--danger);
+}
+
+.runtime-task-note {
+  border: 1px solid var(--line);
+  background: var(--info-soft);
+  color: var(--info-ink);
 }
 
 .runtime-storage {
@@ -1115,7 +1154,9 @@
   min-height: 320px;
 }
 
-.preview-ports p {
+.preview-ports p,
+.runtime-tasks p,
+.runtime-artifacts p {
   margin: 0;
   color: var(--muted-copy);
   font-size: 12px;
@@ -1128,6 +1169,8 @@
 }
 
 .preview-ports ul,
+.runtime-tasks ul,
+.runtime-artifacts ul,
 .runtime-storage ul {
   display: grid;
   gap: 8px;
@@ -1137,6 +1180,8 @@
 }
 
 .preview-ports li,
+.runtime-tasks li,
+.runtime-artifacts li,
 .runtime-storage li {
   display: grid;
   align-items: center;
@@ -1149,6 +1194,15 @@
   padding: 10px;
 }
 
+.runtime-tasks li {
+  align-items: stretch;
+  grid-template-columns: 1fr;
+}
+
+.runtime-artifacts li {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
 .runtime-storage li {
   align-items: stretch;
   display: grid;
@@ -1156,6 +1210,8 @@
 }
 
 .preview-ports li > div,
+.runtime-tasks li > div,
+.runtime-artifacts li > div,
 .runtime-storage li > div {
   display: grid;
   min-width: 0;
@@ -1163,6 +1219,8 @@
 }
 
 .preview-ports strong,
+.runtime-tasks strong,
+.runtime-artifacts strong,
 .runtime-storage strong {
   color: var(--ink);
   font-size: 13px;
@@ -1172,6 +1230,10 @@
 
 .preview-ports span,
 .preview-ports small,
+.runtime-tasks span,
+.runtime-tasks small,
+.runtime-artifacts span,
+.runtime-artifacts small,
 .runtime-storage span,
 .runtime-storage small {
   color: var(--muted-copy);
@@ -1179,6 +1241,77 @@
     monospace;
   font-size: 11px;
   overflow-wrap: anywhere;
+}
+
+.runtime-artifacts a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+}
+
+.runtime-artifacts a:hover {
+  background: var(--runtime-soft);
+}
+
+.runtime-artifacts a svg {
+  width: 14px;
+  height: 14px;
+}
+
+.runtime-artifacts time {
+  color: var(--faint);
+  font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
+    monospace;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.runtime-task-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.runtime-task-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.runtime-task-row-actions [data-slot="button"] {
+  height: 28px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.runtime-task-row-head time {
+  color: var(--faint);
+  font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
+    monospace;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.runtime-tasks pre {
+  max-height: 260px;
+  margin: 6px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: oklch(0.984 0.004 82);
+  color: var(--ink);
+  font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
+    monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow: auto;
+  padding: 8px;
+  white-space: pre-wrap;
 }
 
 .runtime-storage small {
@@ -1518,8 +1651,20 @@
   }
 
   .preview-port-form,
-  .preview-ports li {
+  .runtime-task-form,
+  .runtime-artifact-form,
+  .preview-ports li,
+  .runtime-artifacts li {
     grid-template-columns: 1fr;
+  }
+
+  .runtime-task-row-head {
+    display: grid;
+  }
+
+  .runtime-task-row-actions {
+    align-items: start;
+    display: grid;
   }
 
   .runtime-tab-panel {

@@ -1,4 +1,7 @@
 import type {
+  Artifact,
+  ArtifactKind,
+  ExecutionTask,
   ListResponse,
   LogResult,
   PreviewPortsResult,
@@ -119,4 +122,46 @@ export function getRuntimeEvents(sandboxID: string) {
 
 export function getPreviewPorts(sandboxID: string) {
   return request<PreviewPortsResult>(`/v1/sandboxes/${sandboxID}/ports`)
+}
+
+export function listExecutionTasks(sandboxID: string) {
+  return request<ListResponse<ExecutionTask>>(`/v1/sandboxes/${sandboxID}/tasks`)
+}
+
+export function listArtifacts(sandboxID: string) {
+  return request<ListResponse<Artifact>>(`/v1/sandboxes/${sandboxID}/artifacts`)
+}
+
+export function createArtifact(
+  sandboxID: string,
+  payload: {
+    kind: ArtifactKind
+    name: string
+    uri: string
+    taskId?: string
+    contentType?: string
+    sizeBytes?: number
+    metadata?: Record<string, unknown>
+  },
+) {
+  return request<Artifact>(`/v1/sandboxes/${sandboxID}/artifacts`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+export function createExecutionTask(
+  sandboxID: string,
+  payload: { command: string[]; timeoutSeconds?: number; metadata?: Record<string, unknown> },
+) {
+  return request<ExecutionTask>(`/v1/sandboxes/${sandboxID}/tasks`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+export function cancelExecutionTask(taskID: string) {
+  return request<ExecutionTask>(`/v1/tasks/${taskID}/cancel`, {
+    method: "POST",
+  })
 }

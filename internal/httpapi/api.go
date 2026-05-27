@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/google/uuid"
@@ -19,9 +20,11 @@ import (
 )
 
 type API struct {
-	store  domain.Store
-	access mboxruntime.Access
-	mux    *http.ServeMux
+	store       domain.Store
+	access      mboxruntime.Access
+	mux         *http.ServeMux
+	taskMu      sync.Mutex
+	taskCancels map[uuid.UUID]context.CancelFunc
 }
 
 func New(store domain.Store) *API {
@@ -30,9 +33,10 @@ func New(store domain.Store) *API {
 
 func NewWithRuntimeAccess(store domain.Store, access mboxruntime.Access) *API {
 	api := &API{
-		store:  store,
-		access: access,
-		mux:    http.NewServeMux(),
+		store:       store,
+		access:      access,
+		mux:         http.NewServeMux(),
+		taskCancels: map[uuid.UUID]context.CancelFunc{},
 	}
 	api.routes()
 	return api
@@ -69,6 +73,14 @@ func (api *API) routes() {
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/ports", api.getSandboxPorts)
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/ports/{port}/proxy/", api.proxySandboxPort)
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/terminal", api.connectSandboxTerminal)
+	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/tasks", api.listExecutionTasks)
+	api.mux.HandleFunc("POST /v1/sandboxes/{sandboxID}/tasks", api.createExecutionTask)
+	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/artifacts", api.listSandboxArtifacts)
+	api.mux.HandleFunc("POST /v1/sandboxes/{sandboxID}/artifacts", api.createSandboxArtifact)
+	api.mux.HandleFunc("GET /v1/tasks/{taskID}", api.getExecutionTask)
+	api.mux.HandleFunc("POST /v1/tasks/{taskID}/cancel", api.cancelExecutionTask)
+	api.mux.HandleFunc("GET /v1/tasks/{taskID}/artifacts", api.listTaskArtifacts)
+	api.mux.HandleFunc("GET /v1/artifacts/{artifactID}", api.getArtifact)
 }
 
 func (api *API) healthz(w http.ResponseWriter, _ *http.Request) {

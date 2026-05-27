@@ -46,11 +46,12 @@ Implemented resources:
 - `Project`
 - `EnvironmentTemplate`
 - `Sandbox`
+- TypeScript SDK package under `sdk/typescript` for external automation clients
 - Vite console views for listing projects, creating/editing templates, and launching sandboxes
 - template library for ready-to-run environments, with user-facing runtime type, use case, entrypoints, resource preset, validation status, and advanced image/command/policy fields
 - simplified sandbox launch that asks for project, template, and name while deriving slug, namespace, and ServiceAccount defaults
 - sandbox stop/start actions that pause and resume the projected runtime without deleting the product record
-- browser terminal, workspace storage, manually declared preview ports, and lightweight logs/events for ready sandbox runtimes
+- browser terminal, workspace storage, manually declared preview ports, asynchronous execution tasks with cancellation, artifact reference records, and lightweight logs/events for ready sandbox runtimes
 
 This slice persists mbox product state in Postgres. When the runtime controller is explicitly enabled, it reconciles `Sandbox` records into `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources.
 
@@ -64,7 +65,7 @@ Start the full local development stack:
 
 This starts local Postgres, the Go API server, and the Vite web console. Open `http://127.0.0.1:5174`.
 
-Runtime access is disabled by default so ordinary local startup does not write Kubernetes resources. To enable the `agent-sandbox` controller, terminal, logs, events, and preview proxy:
+Runtime access is disabled by default so ordinary local startup does not write Kubernetes resources. To enable the `agent-sandbox` controller, terminal, execution tasks, logs, events, and preview proxy:
 
 ```sh
 MBOX_KUBE_CONTEXT=kind-agent-sandbox ./scripts/dev.sh --runtime
@@ -124,20 +125,21 @@ go run ./cmd/mbox-server
 Optional runtime settings:
 
 - `MBOX_RUNTIME_RECONCILE_INTERVAL`: reconcile loop interval, for example `5s`.
-- `MBOX_RUNTIME_ACCESS_ENABLED`: enables terminal, logs, events, and runtime target routes when set to `true`.
+- `MBOX_RUNTIME_ACCESS_ENABLED`: enables terminal, task execution, logs, events, and runtime target routes when set to `true`.
 - `MBOX_AGENT_SANDBOX_WARM_POOL`: `agent-sandbox` warm pool policy, for example `none` or `default`.
 
 When enabled, mbox ensures the sandbox namespace exists, creates a scoped sandbox ServiceAccount with token automount disabled, creates or updates a `SandboxTemplate`, and creates a `SandboxClaim` in that namespace. The generated pod template uses the configured sandbox ServiceAccount and also disables token automount. If the template has `storageRequest`, mbox projects a `workspace` PVC template and mounts it at the template working directory, defaulting to `/workspace`. The mbox Postgres record remains the product source of truth; Kubernetes resources are the runtime projection.
 
 Stopping a sandbox pauses the projected runtime by scaling the resolved `agent-sandbox` `Sandbox` to zero replicas. This releases the Pod and running processes while keeping the mbox record and runtime reference. Workspace data is preserved only when it lives on the persistent workspace PVC; files written to container-local paths can be lost during stop/start. Starting a stopped sandbox marks it `pending` and scales the runtime back to one replica.
 
-`MBOX_RUNTIME_ACCESS_ENABLED=true` enables `/v1/sandboxes/{id}/terminal`, `/runtime`, `/logs`, `/events`, and `/ports`. The terminal route is a WebSocket proxy from the browser to Kubernetes `pods/exec`; declared TCP preview ports are proxied through the mbox API server to the resolved runtime Pod. Ordinary sandbox pods still do not receive broad Kubernetes credentials.
+`MBOX_RUNTIME_ACCESS_ENABLED=true` enables `/v1/sandboxes/{id}/terminal`, `/tasks`, `/runtime`, `/logs`, `/events`, and `/ports`. The terminal route is a WebSocket proxy from the browser to Kubernetes `pods/exec`; execution tasks enqueue non-interactive `pods/exec` commands, persist output records, and can be canceled while running on the current API server; declared TCP preview ports are proxied through the mbox API server to the resolved runtime Pod. Artifact routes are product metadata routes for registering output references and do not require direct runtime access. Ordinary sandbox pods still do not receive broad Kubernetes credentials.
 
 Run tests:
 
 ```sh
 go test ./...
 cd web && npm run build
+cd sdk/typescript && npm install && npm run build
 ```
 
 Postgres integration tests are opt-in because they write to the configured test database:
@@ -223,6 +225,67 @@ curl -sS http://127.0.0.1:18080/v1/templates
 curl -sS http://127.0.0.1:18080/v1/sandboxes
 ```
 
+Run a controlled task after the sandbox reaches `running` with runtime access enabled:
+
+```sh
+curl -sS -X POST http://127.0.0.1:18080/v1/sandboxes/<sandbox-id>/tasks \
+  -H 'content-type: application/json' \
+  -d '{
+    "command": ["sh", "-lc", "pwd && ls -la"],
+    "timeoutSeconds": 60
+  }'
+
+curl -sS http://127.0.0.1:18080/v1/sandboxes/<sandbox-id>/tasks
+
+curl -sS -X POST http://127.0.0.1:18080/v1/tasks/<task-id>/cancel
+
+curl -sS -X POST http://127.0.0.1:18080/v1/sandboxes/<sandbox-id>/artifacts \
+  -H 'content-type: application/json' \
+  -d '{
+    "taskId": "<task-id>",
+    "kind": "report",
+    "name": "Test report",
+    "uri": "workspace:///workspace/reports/test.json",
+    "contentType": "application/json"
+  }'
+```
+
+## TypeScript SDK
+
+The first SDK package lives in `sdk/typescript`. It is a thin client for the public HTTP API, aimed at agents, IDE integrations, CI scripts, release tools, and other external callers. It does not run an agent loop inside mbox; it only makes the platform primitives easier to call.
+
+Build it locally:
+
+```sh
+cd sdk/typescript
+npm install
+npm run build
+```
+
+Run a task and register a referenced artifact:
+
+```ts
+import { MboxClient } from "@mbox/sdk"
+
+const mbox = new MboxClient({ baseUrl: "http://127.0.0.1:18080" })
+
+const task = await mbox.createExecutionTask("<sandbox-id>", {
+  command: ["sh", "-lc", "npm test -- --reporter=json > /workspace/reports/test.json"],
+  timeoutSeconds: 300,
+  metadata: { caller: "external-agent" },
+})
+
+const finished = await mbox.waitForTask(task.id)
+
+await mbox.createArtifact("<sandbox-id>", {
+  taskId: finished.id,
+  kind: "report",
+  name: "Test report",
+  uri: "workspace:///workspace/reports/test.json",
+  contentType: "application/json",
+})
+```
+
 ## Runtime Smoke Test
 
 With the server running and both `MBOX_RUNTIME_CONTROLLER_ENABLED=true` and `MBOX_RUNTIME_ACCESS_ENABLED=true`, run the cluster smoke test against a kubeconfig context that already has `agent-sandbox` installed:
@@ -238,7 +301,7 @@ The smoke test creates a project, a BusyBox terminal template, and a sandbox thr
 
 ## Node Preview Smoke
 
-With runtime mode enabled, launch a sandbox from the Node.js workspace template and wait for it to reach `running`. The Runtime Workspace shows a starting panel while the `SandboxClaim` and Pod are still pending, then enables Terminal, Logs, Events, Storage, and Preview.
+With runtime mode enabled, launch a sandbox from the Node.js workspace template and wait for it to reach `running`. The Runtime Workspace shows a starting panel while the `SandboxClaim` and Pod are still pending, then enables Terminal, Logs, Events, Storage, Preview, and Tasks.
 
 In the terminal tab, start a service in the background:
 

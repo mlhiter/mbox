@@ -42,10 +42,11 @@ Tabs:
 - Terminal
 - Storage
 - Preview
+- Tasks
 - Logs
 - Events
 
-Terminal is the primary operation entry for a running sandbox. Storage shows resolved workspace PVC mount path, claim, bound phase, capacity, and storage class when available. Preview lists declared TCP ports and opens API-proxied links. Logs and Events expose lightweight runtime observability.
+Terminal is the primary operation entry for a running sandbox. Storage shows resolved workspace PVC mount path, claim, bound phase, capacity, and storage class when available. Preview lists declared TCP ports and opens API-proxied links. Tasks runs controlled sandbox commands and shows recorded output. Logs and Events expose lightweight runtime observability.
 
 If runtime access is blocked because the sandbox has no runtime reference or is not `running`, the workspace shows a starting/blocker state and keeps runtime actions disabled. New sandboxes can be `pending` while `agent-sandbox` creates the `SandboxClaim` and Pod; that state belongs in the workspace instead of surfacing as a terminal error.
 
@@ -80,6 +81,8 @@ Current operations:
 - delete sandbox through a confirmation dialog
 - open runtime workspace for the selected sandbox
 - add or remove declared TCP preview ports from the Preview tab
+- run, poll, cancel, and inspect asynchronous command tasks from the Tasks tab
+- register and inspect output references from the Artifacts tab
 
 Stop is a direct action because it pauses runtime compute without deleting the product record. Delete remains confirmation-gated because it removes the sandbox from normal lists and triggers runtime cleanup.
 
@@ -88,9 +91,7 @@ Stop is a direct action because it pauses runtime compute without deleting the p
 These are product concepts but not implemented screens yet:
 
 - Runtime Sessions
-- Execution Tasks
 - Previews
-- Artifacts
 - Policies
 - Credentials
 - Admin / Settings

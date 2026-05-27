@@ -11,12 +11,16 @@ The server is a Go HTTP API backed by Postgres. It stores mbox product records f
 - projects
 - environment templates
 - sandboxes
+- execution tasks
+- artifacts
 
 `DATABASE_URL` is required. Startup connects to Postgres, runs embedded migrations from `internal/postgres/migrations`, and then serves the API.
 
 The runtime controller is disabled by default. When explicitly enabled, it reconciles mbox `Sandbox` records into `agent-sandbox` runtime resources.
 
 The web console is a separate Vite app under `web/`. In development, Vite proxies `/healthz` and `/v1/*` to the Go API server. See `docs/web-console.md` for frontend structure and verification.
+
+The first SDK surface is a TypeScript package under `sdk/typescript`. It is a thin client over these same HTTP routes for external agents, IDE integrations, CI scripts, release tools, and other automation clients. The SDK does not add agent or workflow semantics to the server; it helps callers compose the lower-level primitives.
 
 ## Configuration
 
@@ -25,7 +29,7 @@ The web console is a separate Vite app under `web/`. In development, Vite proxie
 | `DATABASE_URL` | yes | none | Postgres connection string for product state. |
 | `MBOX_LISTEN_ADDR` | no | `127.0.0.1:18080` | HTTP listen address. |
 | `MBOX_RUNTIME_CONTROLLER_ENABLED` | no | `false` | Enables Kubernetes runtime reconciliation when set to true. |
-| `MBOX_RUNTIME_ACCESS_ENABLED` | no | `false` | Enables runtime access routes for terminal, logs, events, preview ports, and runtime target resolution. |
+| `MBOX_RUNTIME_ACCESS_ENABLED` | no | `false` | Enables runtime access routes for terminal, execution tasks, logs, events, preview ports, and runtime target resolution. |
 | `MBOX_RUNTIME_RECONCILE_INTERVAL` | no | `5s` | Sandbox reconciler polling interval. |
 | `MBOX_KUBECONFIG` | no | in-cluster or default client behavior | Kubeconfig path used by the runtime controller. |
 | `MBOX_KUBE_CONTEXT` | no | current context | Kubeconfig context used by the runtime controller. |
@@ -70,6 +74,14 @@ All responses are JSON unless the route returns `204 No Content`.
 | `GET` | `/v1/sandboxes/{sandboxID}/ports` | Returns declared sandbox preview ports plus API proxy URLs when available. |
 | `GET` | `/v1/sandboxes/{sandboxID}/ports/{port}/proxy/*` | Proxies a declared TCP port on a running sandbox Pod through the API server. |
 | `GET` | `/v1/sandboxes/{sandboxID}/terminal` | WebSocket terminal proxy to the runtime Pod shell. |
+| `GET` | `/v1/sandboxes/{sandboxID}/tasks` | Lists execution tasks recorded for a sandbox. |
+| `POST` | `/v1/sandboxes/{sandboxID}/tasks` | Creates one asynchronous command task in a running sandbox and records output. Requires runtime access. |
+| `GET` | `/v1/sandboxes/{sandboxID}/artifacts` | Lists artifact references recorded for a sandbox. |
+| `POST` | `/v1/sandboxes/{sandboxID}/artifacts` | Creates an artifact reference for a sandbox, optionally linked to a task. |
+| `GET` | `/v1/tasks/{taskID}` | Gets one execution task. |
+| `POST` | `/v1/tasks/{taskID}/cancel` | Cancels a queued or running execution task on the current API server. |
+| `GET` | `/v1/tasks/{taskID}/artifacts` | Lists artifact references linked to one execution task. |
+| `GET` | `/v1/artifacts/{artifactID}` | Gets one artifact reference. |
 
 Errors use:
 
@@ -154,6 +166,69 @@ Valid sandbox statuses are:
 - `failed`
 - `deleted`
 
+`POST /v1/sandboxes/{sandboxID}/tasks` accepts:
+
+- `command`: required string array. Shell features require an explicit shell, for example `["sh", "-lc", "npm test"]`.
+- `timeoutSeconds`: optional, defaults to `60`, maximum `600`.
+- `metadata`: optional JSON object for client metadata.
+
+The route creates a queued task and returns immediately. The API server then runs the command asynchronously through runtime access. Clients can poll `GET /v1/tasks/{taskID}` or `GET /v1/sandboxes/{sandboxID}/tasks` until the task reaches a terminal status. The route only runs for sandboxes whose mbox status is `running` and whose `runtimeRef` is ready. It captures stdout and stderr separately with a per-stream size cap and returns an `outputTruncated` marker when output was clipped.
+
+`POST /v1/tasks/{taskID}/cancel` cancels a queued or running task when that task is currently running on the same API server process. Finished tasks return `409`. If a task is still marked active in Postgres but the current server has no in-memory cancel handle for it, the route also returns `409`; a later execution controller should make this restart-safe.
+
+Valid execution task statuses are:
+
+- `queued`
+- `running`
+- `succeeded`
+- `failed`
+- `canceled`
+- `timed_out`
+
+`POST /v1/sandboxes/{sandboxID}/artifacts` accepts:
+
+- `kind`: required. One of `file`, `directory`, `log`, `report`, `screenshot`, `image`, `link`, or `other`.
+- `name`: required display name.
+- `uri`: required output reference, for example `workspace:///workspace/reports/test.json`, an HTTPS URL, or an object-store URI.
+- `taskId`: optional execution task ID. When present, the task must belong to the same sandbox.
+- `contentType`: optional media type.
+- `sizeBytes`: optional non-negative byte size.
+- `metadata`: optional JSON object for client metadata.
+
+Artifacts are product metadata records in the current slice. The API does not upload, download, hash, retain, or authorize file bytes yet; it stores inspectable references that external agents, SDK clients, CI systems, and humans can follow according to their own credentials and runtime access.
+
+## SDK Client
+
+The TypeScript SDK in `sdk/typescript` wraps the current HTTP API with exported resource types and a `MboxClient`.
+
+The package currently includes:
+
+- health, project, template, and sandbox CRUD helpers
+- sandbox lifecycle helpers for start and stop
+- runtime target, log, event, and preview-port readers
+- execution task create/list/get/cancel helpers
+- `waitForTask(taskId)` polling convenience for external clients
+- sandbox artifact create/list helpers
+- task artifact list and artifact get helpers
+- `MboxAPIError` with HTTP status and response body details
+
+Example:
+
+```ts
+import { MboxClient } from "@mbox/sdk"
+
+const mbox = new MboxClient({ baseUrl: "http://127.0.0.1:18080" })
+
+const task = await mbox.createExecutionTask("<sandbox-id>", {
+  command: ["sh", "-lc", "pwd && echo ok"],
+  timeoutSeconds: 60,
+})
+
+const finished = await mbox.waitForTask(task.id)
+```
+
+SDK methods map directly to public API resources. Upper-layer agent, CI, deploy, or IDE workflows should live in their own clients and store their own workflow semantics while referencing mbox sandboxes, tasks, previews, and artifacts.
+
 ## Data Model
 
 The first migration creates:
@@ -163,6 +238,14 @@ The first migration creates:
 - `sandboxes`
 - `schema_migrations`
 
+The third migration adds:
+
+- `execution_tasks`
+
+The fourth migration adds:
+
+- `artifacts`
+
 Important constraints:
 
 - UUID primary keys use `pgcrypto` `gen_random_uuid()`.
@@ -171,6 +254,8 @@ Important constraints:
 - Project templates have unique `(project_id, slug)` where `project_id IS NOT NULL`.
 - Active sandboxes have unique `(project_id, slug)` where `deleted_at IS NULL`.
 - `sandboxes` are soft-deleted by setting `status = 'deleted'` and `deleted_at = now()`.
+- `execution_tasks` belong to one project and one sandbox in the current sandbox-backed task MVP.
+- `artifacts` belong to one project and one sandbox, and may reference one execution task from that sandbox.
 - `updated_at` is maintained by Postgres triggers.
 - `environment_templates.metadata` is `JSONB NOT NULL DEFAULT '{}'::jsonb`; existing databases receive it through `002_template_metadata.sql`.
 
@@ -210,7 +295,7 @@ The generated pod template sets `serviceAccountName` and `automountServiceAccoun
 
 ## Runtime Access
 
-Runtime access routes are available only when `MBOX_RUNTIME_ACCESS_ENABLED=true`, because the server needs explicit permission to proxy terminal, logs, events, and runtime target reads through its Kubernetes client.
+Runtime access routes are available only when `MBOX_RUNTIME_ACCESS_ENABLED=true`, because the server needs explicit permission to proxy terminal, execution tasks, logs, events, and runtime target reads through its Kubernetes client.
 
 The terminal route upgrades to WebSocket and proxies browser input/output to Kubernetes `pods/exec` for the resolved sandbox Pod. The server resolves the runtime target through:
 
@@ -250,6 +335,8 @@ The preview port route exposes only sandbox ports declared in the mbox sandbox r
 ```
 
 This keeps the browser using the mbox API surface instead of direct Kubernetes access. Gateway, Ingress, and public preview URLs remain future exposure mechanisms.
+
+Execution tasks reuse the same runtime access path as terminal, but without TTY. The server calls Kubernetes `pods/exec` through the runtime adapter, records command metadata, status, timing, stdout, stderr, exit code when Kubernetes reports one, timeout or cancellation state, and the runtime reference used for the run. This is an execution-platform primitive, not a CI pipeline model: agents, CLI tools, IDEs, and CI systems decide why to run the command.
 
 ## Verification
 

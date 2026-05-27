@@ -132,3 +132,57 @@ func scanSandbox(row scanner) (domain.Sandbox, error) {
 	}
 	return sandbox, nil
 }
+
+func scanExecutionTask(row scanner) (domain.ExecutionTask, error) {
+	var task domain.ExecutionTask
+	var runtimeRef *json.RawMessage
+	err := row.Scan(
+		&task.ID,
+		&task.ProjectID,
+		&task.SandboxID,
+		&task.Status,
+		&task.Command,
+		&task.TimeoutSeconds,
+		&task.ExitCode,
+		&task.Stdout,
+		&task.Stderr,
+		&task.OutputTruncated,
+		&task.Error,
+		&runtimeRef,
+		&task.Metadata,
+		&task.StartedAt,
+		&task.FinishedAt,
+		&task.CreatedAt,
+		&task.UpdatedAt,
+	)
+	if err != nil {
+		return domain.ExecutionTask{}, err
+	}
+	if runtimeRef != nil && len(*runtimeRef) > 0 {
+		var ref domain.RuntimeRef
+		if err := json.Unmarshal(*runtimeRef, &ref); err != nil {
+			return domain.ExecutionTask{}, err
+		}
+		task.RuntimeRef = &ref
+	}
+	return task, nil
+}
+
+func scanArtifact(row scanner) (domain.Artifact, error) {
+	var artifact domain.Artifact
+	err := row.Scan(
+		&artifact.ID,
+		&artifact.ProjectID,
+		&artifact.SandboxID,
+		&artifact.TaskID,
+		&artifact.Kind,
+		&artifact.Name,
+		&artifact.URI,
+		&artifact.ContentType,
+		&artifact.SizeBytes,
+		&artifact.Metadata,
+		&artifact.CreatedAt,
+		&artifact.UpdatedAt,
+	)
+	return artifact, err
+}

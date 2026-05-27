@@ -19,6 +19,7 @@ The API server owns product records. Kubernetes resources are runtime projection
 - `Project`: codebase or product scope with a default namespace and optional default template.
 - `EnvironmentTemplate`: reusable sandbox launch shape with image, command, working directory, resource requests, storage request, exposed ports, env, secret refs, network/lifecycle policy, and product-facing metadata.
 - `Sandbox`: product-level runtime request with namespace, service account, status, runtime reference, and declared preview ports.
+- `ExecutionTask`: sandbox-backed command run with command metadata, status, timing, stdout, stderr, exit result, timeout/cancellation state, and runtime reference.
 
 Postgres migrations live in `internal/postgres/migrations`. Startup requires `DATABASE_URL` and runs embedded migrations before serving HTTP.
 
@@ -58,6 +59,7 @@ Runtime access is separately gated by `MBOX_RUNTIME_ACCESS_ENABLED=true`. This e
 - declared preview port listing
 - API-proxied preview port access
 - browser terminal
+- asynchronous sandbox command tasks
 
 The runtime target resolution path is:
 
@@ -72,14 +74,19 @@ Preview ports are product declarations stored on the mbox sandbox record. Templa
 
 Runtime target responses include PVC-backed storage metadata by inspecting the resolved Pod's `workspace` container volume mounts and matching PersistentVolumeClaims. The Storage tab uses this to show mount path, claim name, bound phase, capacity, and storage class without exposing raw Kubernetes access to the browser.
 
+Execution tasks reuse the same runtime access boundary as terminal, but they run non-interactive `pods/exec` commands and persist the result in Postgres. The current task MVP is asynchronous and sandbox-backed: it requires a running sandbox with a runtime reference, creates a queued task record, runs the command in the API server background, captures stdout and stderr with output caps, records exit code when available, and marks timeout or explicit cancellation. It is deliberately lower-level than CI or agent planning.
+
+Artifacts are product metadata records for outputs produced by sandboxes or tasks. They store kind, name, URI, optional task linkage, content type, size, and metadata. The first implementation does not move bytes; it gives external agents, SDK clients, CI systems, and humans a stable place to register output references such as workspace paths, HTTP URLs, reports, screenshots, images, and logs.
+
 ## Platform Primitives
 
-The implemented slice covers projects, templates, and sandboxes. The next product layer should stay below agent and CI semantics:
+The implemented slice covers projects, templates, sandboxes, sandbox-backed execution tasks, and artifact references. The next product layer should stay below agent and CI semantics:
 
+- SDK: typed external-client access to sandbox, task, preview, and artifact primitives without making mbox itself an agent runtime.
 - Runtime sessions: terminal, IDE, notebook, browser, command, and custom client attachments to a sandbox.
-- Execution tasks: controlled commands or workloads with status, logs, exit result, cancellation, cleanup, and runtime reference.
+- Execution tasks: extend the current sandbox command MVP toward watch/streaming semantics, cleanup handling, artifact automation, and optional batch runtimes.
 - Previews: inspectable runtime endpoints or rendered outputs.
-- Artifacts: logs, files, reports, screenshots, build outputs, images, or links produced by runtime work.
+- Artifacts: extend the current reference registry with retrieval, retention, integrity, and storage-provider integration.
 - Policies and credential references: explicit boundaries for resources, network, secrets, lifecycle, and output retention.
 
 Pipeline, deployment, release, and autonomous agent workflows can be built on these primitives later. They should reference sessions, tasks, previews, and artifacts rather than becoming the base runtime model.
@@ -97,7 +104,7 @@ The current UI is a single operational console with:
 - right metadata detail pane
 - main-area Runtime Workspace for the selected sandbox
 
-The Runtime Workspace has tabs for Terminal, Storage, Preview, Logs, and Events. Terminal is intentionally treated as a primary workspace surface, not as right-sidebar metadata.
+The Runtime Workspace has tabs for Terminal, Storage, Preview, Tasks, Artifacts, Logs, and Events. Terminal is intentionally treated as a primary workspace surface, not as right-sidebar metadata.
 
 The template flow follows the same product direction as E2B-style sandboxes: users pick a ready environment by runtime, use case, entrypoints, resource preset, and validation status. mbox keeps Kubernetes-specific details available under Advanced settings because those fields still drive runtime projection. The default template is a Node.js web app workspace (`node:22-bookworm-slim`, `/workspace`, `web:3000`) so a fresh local sandbox can immediately prove terminal plus preview behavior without users hand-writing the low-level template shape.
 

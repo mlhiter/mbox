@@ -17,11 +17,13 @@ The current console supports the first product slice:
 - browser terminal for ready sandboxes, with a starting state while new runtimes are pending
 - workspace storage tab showing resolved PVC mounts and capacity
 - preview port list with manual add/remove controls and API-proxied open links for declared TCP ports
+- execution task tab for running asynchronous commands in a ready sandbox, polling task state, canceling active tasks, and inspecting output
+- artifact tab for registering and inspecting sandbox or task output references
 - lightweight runtime logs and Kubernetes events in runtime tabs
 - toast feedback for API failures and successful writes
 - runtime readiness notices when terminal access is blocked by missing runtime projection or non-running sandbox status
 
-The console does not yet provide runtime session history, execution tasks, artifacts, credentials, or policy management. Those remain roadmap items. Pipeline and deployment screens should be treated as upper-layer integrations, not as the base console model.
+The console does not yet provide runtime session history, artifact file transfer, credentials, or policy management. Those remain roadmap items. Pipeline and deployment screens should be treated as upper-layer integrations, not as the base console model.
 
 ## Local Development
 
@@ -31,7 +33,7 @@ Preferred one-command startup:
 ./scripts/dev.sh
 ```
 
-Use runtime mode when you want the Kubernetes controller, terminal, logs, events, and preview proxy to exercise the real `agent-sandbox` path:
+Use runtime mode when you want the Kubernetes controller, terminal, execution tasks, logs, events, and preview proxy to exercise the real `agent-sandbox` path:
 
 ```sh
 MBOX_KUBE_CONTEXT=kind-agent-sandbox ./scripts/dev.sh --runtime
@@ -86,7 +88,7 @@ Key files:
 - `web/src/lib/resource-utils.ts`: resource naming, runtime text, command/port parsing, storage summaries, and form cleanup helpers.
 - `web/src/components/console/`: app shell, left rail, summary strip, detail pane, table state, status badges, and shared resource cells.
 - `web/src/features/resources/`: project, template, and sandbox tables plus sandbox lifecycle and resource create/delete dialogs.
-- `web/src/features/runtime/`: Runtime Workspace, terminal, storage, preview ports, logs, and events panels.
+- `web/src/features/runtime/`: Runtime Workspace, terminal, storage, preview ports, execution tasks, logs, and events panels.
 - `web/src/components/ui/`: local shadcn source components.
 - `web/vite.config.ts`: Vite, Tailwind, alias, dev port, and API proxy configuration.
 - `web/components.json`: shadcn project configuration.
@@ -122,9 +124,13 @@ Runtime, use case, resource preset, and validation status are stored in template
 
 Sandbox launch is intentionally short. The dialog asks for Project, Template, and Name. The frontend derives the slug from the name, and the API fills namespace from the project plus the default sandbox ServiceAccount `mbox-sandbox`.
 
-When a sandbox is selected, the Runtime Workspace should not treat `pending` as an error. It shows a starting panel, polls the sandbox record, and waits until the sandbox is `running` with a `runtimeRef` before calling terminal, logs, events, runtime target, or runtime preview routes.
+When a sandbox is selected, the Runtime Workspace should not treat `pending` as an error. It shows a starting panel, polls the sandbox record, and waits until the sandbox is `running` with a `runtimeRef` before calling terminal, tasks, logs, events, runtime target, or runtime preview routes.
 
 The Preview tab edits the sandbox's declared `ports` list. A user can start a service in Terminal, add its TCP port in Preview, and open the API-proxied URL once the sandbox is running.
+
+The Tasks tab creates controlled command tasks through `POST /v1/sandboxes/{sandboxID}/tasks`. It stays disabled until the sandbox is `running` with a `runtimeRef`, then polls active tasks, exposes cancel for `queued` and `running` tasks, and records status, command, stdout, stderr, exit result, timeout, and truncation state. The UI input is intentionally simple; API and CLI clients should use array-form commands directly, and shell behavior should be explicit through commands such as `sh -lc`.
+
+The Artifacts tab registers output references through `POST /v1/sandboxes/{sandboxID}/artifacts` and lists the sandbox's artifact history. It can link an artifact to an existing task, but it does not upload or download file bytes in this slice. Use references such as `workspace:///workspace/out.txt`, HTTPS URLs, object-store URIs, or log/report identifiers.
 
 ## Design System
 
@@ -138,7 +144,7 @@ Current design principles:
 - compact abstract grid brand mark in the rail, not a serif letter tile
 - dense tables and split detail panes
 - terminal as a primary workspace surface, not a narrow metadata sidebar
-- runtime storage state visible beside terminal, preview, logs, and events
+- runtime storage state visible beside terminal, preview, tasks, logs, and events
 - cards only for repeated records and modal surfaces
 - no nested cards, decorative gradients, or hero-style composition
 
@@ -185,9 +191,10 @@ Useful manual checks:
 - The launch dialog only asks for Project, Template, and Name.
 - Sandbox deletion opens a confirmation dialog and does not delete from the row button directly.
 - Sandbox stop/start is available from the sandbox row. Stop is direct because it pauses runtime compute without deleting the sandbox.
-- Selecting a ready sandbox opens a main Runtime Workspace with terminal, storage, preview ports, logs, and Kubernetes events as tabs.
+- Selecting a ready sandbox opens a main Runtime Workspace with terminal, storage, preview ports, execution tasks, artifacts, logs, and Kubernetes events as tabs.
 - Selecting a pending sandbox shows a starting Runtime Workspace and does not surface a terminal error.
 - The Storage tab shows the workspace mount path, PVC name, bound phase, capacity, and storage class when a template has `storageRequest`.
 - Terminal Connect is disabled until the sandbox has a runtime reference and `running` status, with the blocker visible in the workspace notice and button title.
 - The Preview tab can add and remove TCP ports, and links stay disabled until the sandbox is running.
+- The Tasks tab can run a simple command such as `pwd`, shows stdout/stderr, and keeps task execution disabled until the sandbox is running.
 - No page-level horizontal overflow appears on mobile.

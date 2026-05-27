@@ -2,19 +2,26 @@ import { useEffect, useState } from "react"
 import { RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
+  cancelExecutionTask,
   getPreviewPorts,
   getRuntimeEvents,
   getRuntimeLogs,
   getRuntimeTarget,
+  listArtifacts,
+  listExecutionTasks,
   updateSandboxPorts,
 } from "@/lib/api"
 import { storageSummary } from "@/lib/resource-utils"
 import { cn } from "@/lib/utils"
 import { PreviewPorts } from "@/features/runtime/preview-ports"
+import { RuntimeArtifacts } from "@/features/runtime/runtime-artifacts"
 import { RuntimeEvents, RuntimeLogs } from "@/features/runtime/runtime-observe"
 import { RuntimeStoragePanel } from "@/features/runtime/runtime-storage-panel"
+import { RuntimeTasks } from "@/features/runtime/runtime-tasks"
 import { TerminalPane } from "@/features/runtime/terminal-pane"
 import type {
+  Artifact,
+  ExecutionTask,
   PreviewPort,
   RuntimeEvent,
   RuntimeTab,
@@ -26,6 +33,8 @@ const runtimeTabs: Array<{ id: RuntimeTab; label: string }> = [
   { id: "terminal", label: "Terminal" },
   { id: "storage", label: "Storage" },
   { id: "preview", label: "Preview" },
+  { id: "tasks", label: "Tasks" },
+  { id: "artifacts", label: "Artifacts" },
   { id: "logs", label: "Logs" },
   { id: "events", label: "Events" },
 ]
@@ -71,7 +80,10 @@ export function RuntimeWorkspace({
   const [logs, setLogs] = useState("")
   const [events, setEvents] = useState<RuntimeEvent[]>([])
   const [ports, setPorts] = useState<PreviewPort[]>([])
+  const [tasks, setTasks] = useState<ExecutionTask[]>([])
+  const [artifacts, setArtifacts] = useState<Artifact[]>([])
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
+  const [runtimeAccessReady, setRuntimeAccessReady] = useState(false)
   const [loading, setLoading] = useState(false)
   const runtimeReady = Boolean(sandbox.runtimeRef && sandbox.status === "running")
   const runtimeStarting = sandbox.status === "pending" || !sandbox.runtimeRef
@@ -82,16 +94,39 @@ export function RuntimeWorkspace({
       : undefined
 
   async function loadRuntime() {
+    async function loadTasks() {
+      try {
+        const taskResult = await listExecutionTasks(sandbox.id)
+        setTasks(taskResult.items || [])
+      } catch (requestError) {
+        const message = requestError instanceof Error ? requestError.message : "Task history request failed"
+        setRuntimeError((current) => current || message)
+      }
+    }
+    async function loadArtifacts() {
+      try {
+        const artifactResult = await listArtifacts(sandbox.id)
+        setArtifacts(artifactResult.items || [])
+      } catch (requestError) {
+        const message = requestError instanceof Error ? requestError.message : "Artifact request failed"
+        setRuntimeError((current) => current || message)
+      }
+    }
+
     if (!runtimeReady) {
       setRuntimeError(null)
       setTarget(null)
       setLogs("")
       setEvents([])
+      setRuntimeAccessReady(false)
       setPorts(previewPortsFromSandbox(sandbox, runtimeStarting ? "sandbox is starting" : "sandbox must be running before preview is available"))
+      await loadTasks()
+      await loadArtifacts()
       return
     }
     setLoading(true)
     setRuntimeError(null)
+    setRuntimeAccessReady(false)
     try {
       const [runtimeTarget, logResult, eventResult, portResult] = await Promise.all([
         getRuntimeTarget(sandbox.id),
@@ -103,12 +138,15 @@ export function RuntimeWorkspace({
       setLogs(logResult.logs)
       setEvents(eventResult.items || [])
       setPorts(portResult.items || [])
+      setRuntimeAccessReady(true)
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Runtime request failed"
+      setRuntimeAccessReady(false)
       setRuntimeError(message)
-    } finally {
-      setLoading(false)
     }
+    await loadTasks()
+    await loadArtifacts()
+    setLoading(false)
   }
 
   async function savePreviewPorts(ports: Sandbox["ports"]) {
@@ -121,6 +159,20 @@ export function RuntimeWorkspace({
       setPorts(previewPortsFromSandbox(updated, "sandbox must be running before preview is available"))
     }
     return updated
+  }
+
+  function addTask(task: ExecutionTask) {
+    setTasks((current) => [task, ...current.filter((item) => item.id !== task.id)])
+  }
+
+  function addArtifact(artifact: Artifact) {
+    setArtifacts((current) => [artifact, ...current.filter((item) => item.id !== artifact.id)])
+  }
+
+  async function cancelTask(taskID: string) {
+    const task = await cancelExecutionTask(taskID)
+    addTask(task)
+    return task
   }
 
   useEffect(() => {
@@ -145,6 +197,23 @@ export function RuntimeWorkspace({
       window.clearInterval(timer)
     }
   }, [onSandboxChange, runtimeReady, sandbox.id, sandbox.status])
+
+  useEffect(() => {
+    if (!tasks.some((task) => task.status === "queued" || task.status === "running")) {
+      return
+    }
+    const timer = window.setInterval(() => {
+      void listExecutionTasks(sandbox.id)
+        .then((taskResult) => setTasks(taskResult.items || []))
+        .catch((requestError) => {
+          const message = requestError instanceof Error ? requestError.message : "Task history request failed"
+          setRuntimeError((current) => current || message)
+        })
+    }, 1500)
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [sandbox.id, tasks])
 
   return (
     <section id="runtime-workspace" className="runtime-workspace" aria-label="Sandbox runtime workspace">
@@ -211,6 +280,27 @@ export function RuntimeWorkspace({
             sandboxPorts={sandbox.ports || []}
             sandboxStatus={sandbox.status}
             onSave={savePreviewPorts}
+          />
+        ) : null}
+        {activeTab === "tasks" ? (
+          <RuntimeTasks
+            sandbox={sandbox}
+            tasks={tasks}
+            runtimeReady={runtimeReady && runtimeAccessReady}
+            loading={loading}
+            onRefresh={loadRuntime}
+            onTaskCreated={addTask}
+            onTaskCancel={cancelTask}
+          />
+        ) : null}
+        {activeTab === "artifacts" ? (
+          <RuntimeArtifacts
+            sandbox={sandbox}
+            artifacts={artifacts}
+            tasks={tasks}
+            loading={loading}
+            onRefresh={loadRuntime}
+            onArtifactCreated={addArtifact}
           />
         ) : null}
         {activeTab === "logs" ? <RuntimeLogs logs={logs} /> : null}

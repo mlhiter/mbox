@@ -44,6 +44,8 @@ Current progress:
 - Done: manual preview port declaration from the Preview tab.
 - Done: sandbox stop/start lifecycle actions that pause and resume the projected runtime while preserving the product record.
 - Done: E2B-style template library surface that treats templates as ready-to-run environments, with Essentials first and raw image/command/policy fields behind Advanced settings.
+- Done: sandbox-backed execution tasks with asynchronous command runs, persisted status, stdout/stderr, exit result, timeout/cancellation state, and Runtime Workspace Tasks tab.
+- Done: artifact reference records for sandbox and task outputs, with API and Runtime Workspace registration/listing.
 
 Scope:
 
@@ -60,6 +62,8 @@ Scope:
 - Sandbox lifecycle: create, start, stop, delete.
 - Basic logs and events view.
 - Minimal API documentation for the implemented sandbox endpoints.
+- Asynchronous sandbox-backed execution task API and UI.
+- Artifact reference API and UI for output metadata.
 
 Out of scope:
 
@@ -104,12 +108,20 @@ Exit criteria:
 
 Goal: make mbox useful as a programmable execution substrate for external agents, developer tools, CI systems, and human operators without making mbox own those upper-layer workflows.
 
+Current progress:
+
+- Done: sandbox-backed execution task model and Postgres table.
+- Done: `POST /v1/sandboxes/{sandboxID}/tasks`, `GET /v1/sandboxes/{sandboxID}/tasks`, `GET /v1/tasks/{taskID}`, and `POST /v1/tasks/{taskID}/cancel`.
+- Done: asynchronous command execution path through runtime `pods/exec`, with timeout, cancellation, and output truncation.
+- Done: Runtime Workspace Tasks tab for running, polling, canceling, and inspecting command tasks.
+- Done: artifact records and Runtime Workspace Artifacts tab for registering files, reports, screenshots, logs, images, links, or other output references.
+
 Scope:
 
 - Runtime session model for terminal, IDE, notebook, browser, command, and custom clients.
-- Execution task model for controlled command or workload execution.
-- Task status, logs, exit code, cancellation, timeout, and cleanup state.
-- Artifact records for files, reports, screenshots, logs, build outputs, images, or links.
+- Extend execution tasks beyond the first sandbox command MVP.
+- Task watch/streaming, cleanup state, and richer log streaming.
+- Extend artifact records beyond metadata references into download, retention, and storage-provider integration.
 - Preview records beyond raw sandbox port declarations when useful.
 - API and UI for inspecting sessions, tasks, logs, previews, and artifacts.
 - Kubernetes Job adapter for isolated batch tasks when a full interactive sandbox is unnecessary.
@@ -139,7 +151,7 @@ Scope:
 - CLI commands for project, template, sandbox, session, task, logs, ports, previews, and artifacts.
 - API schema publication for implemented resources.
 - API documentation site or generated docs for public endpoints.
-- First official SDK package, either Node.js or Go.
+- First official SDK package for automation clients.
 - Versioning rules across server API, CLI, docs, and SDK.
 
 Exit criteria:
@@ -148,6 +160,11 @@ Exit criteria:
 - An external client can start and watch a task through the CLI or SDK.
 - API docs match the implemented server behavior.
 - The SDK can authenticate and call the core sandbox, session, task, preview, and artifact APIs.
+
+Current status:
+
+- Started: TypeScript SDK in `sdk/typescript` with typed wrappers for health, projects, templates, sandboxes, runtime target/log/event/port reads, execution tasks, task polling/cancel, and artifact references.
+- Remaining: authentication model, package publication workflow, generated schema alignment, CLI, runtime-session APIs, and broader versioning rules.
 
 ## Phase 4: Upper-layer Workflow Integrations
 
@@ -228,6 +245,8 @@ First slice status:
 9. Done: launch flow hides machine fields from normal users and relies on generated/defaulted slug, namespace, and ServiceAccount values.
 10. Done: stop/start distinguishes pausing runtime compute from deleting the sandbox.
 11. Done: template metadata for runtime type, use case, resource preset, and validation status now persists with the product record.
-12. Next: richer namespace-scoped RBAC/policy handling, then runtime sessions and execution task records.
+12. Done: first execution task API and Runtime Workspace Tasks tab for asynchronous sandbox commands with cancel.
+13. Done: artifact reference registry and Runtime Workspace Artifacts tab.
+14. Next: task watch/streaming plus artifact retrieval/retention, or runtime session records if we want better auditability first.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

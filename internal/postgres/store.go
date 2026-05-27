@@ -454,6 +454,179 @@ func (s *Store) MarkSandboxRuntimeDeleted(ctx context.Context, id uuid.UUID) err
 	return nil
 }
 
+func (s *Store) ListExecutionTasks(ctx context.Context, sandboxID uuid.UUID) ([]domain.ExecutionTask, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, project_id, sandbox_id, status, command, timeout_seconds, exit_code, stdout,
+			stderr, output_truncated, error, runtime_ref, metadata, started_at, finished_at,
+			created_at, updated_at
+		FROM execution_tasks
+		WHERE sandbox_id = $1
+		ORDER BY created_at DESC
+	`, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tasks := []domain.ExecutionTask{}
+	for rows.Next() {
+		task, err := scanExecutionTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, rows.Err()
+}
+
+func (s *Store) CreateExecutionTask(ctx context.Context, input domain.ExecutionTaskCreate) (domain.ExecutionTask, error) {
+	runtimeRefJSON, err := jsonOrNil(input.RuntimeRef)
+	if err != nil {
+		return domain.ExecutionTask{}, err
+	}
+	row := s.pool.QueryRow(ctx, `
+		INSERT INTO execution_tasks (project_id, sandbox_id, command, timeout_seconds, runtime_ref, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, project_id, sandbox_id, status, command, timeout_seconds, exit_code, stdout,
+			stderr, output_truncated, error, runtime_ref, metadata, started_at, finished_at,
+			created_at, updated_at
+	`, input.ProjectID, input.SandboxID, stringSliceDefault(input.Command), input.TimeoutSeconds,
+		runtimeRefJSON, jsonDefaultObject(input.Metadata))
+
+	task, err := scanExecutionTask(row)
+	return task, mapWriteError(err)
+}
+
+func (s *Store) GetExecutionTask(ctx context.Context, id uuid.UUID) (domain.ExecutionTask, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, project_id, sandbox_id, status, command, timeout_seconds, exit_code, stdout,
+			stderr, output_truncated, error, runtime_ref, metadata, started_at, finished_at,
+			created_at, updated_at
+		FROM execution_tasks
+		WHERE id = $1
+	`, id)
+	task, err := scanExecutionTask(row)
+	return task, mapReadError(err)
+}
+
+func (s *Store) UpdateExecutionTask(ctx context.Context, id uuid.UUID, input domain.ExecutionTaskUpdate) (domain.ExecutionTask, error) {
+	task, err := s.GetExecutionTask(ctx, id)
+	if err != nil {
+		return domain.ExecutionTask{}, err
+	}
+
+	status := task.Status
+	exitCode := task.ExitCode
+	stdout := task.Stdout
+	stderr := task.Stderr
+	outputTruncated := task.OutputTruncated
+	taskError := task.Error
+	runtimeRef := task.RuntimeRef
+	startedAt := task.StartedAt
+	finishedAt := task.FinishedAt
+
+	if input.Status != nil {
+		status = *input.Status
+	}
+	if input.ExitCode != nil {
+		exitCode = input.ExitCode
+	}
+	if input.Stdout != nil {
+		stdout = *input.Stdout
+	}
+	if input.Stderr != nil {
+		stderr = *input.Stderr
+	}
+	if input.OutputTruncated != nil {
+		outputTruncated = *input.OutputTruncated
+	}
+	if input.Error != nil {
+		taskError = *input.Error
+	}
+	if input.RuntimeRef != nil {
+		runtimeRef = *input.RuntimeRef
+	}
+	if input.StartedAt != nil {
+		startedAt = input.StartedAt
+	}
+	if input.FinishedAt != nil {
+		finishedAt = input.FinishedAt
+	}
+
+	runtimeRefJSON, err := jsonOrNil(runtimeRef)
+	if err != nil {
+		return domain.ExecutionTask{}, err
+	}
+
+	row := s.pool.QueryRow(ctx, `
+		UPDATE execution_tasks
+		SET status = $2, exit_code = $3, stdout = $4, stderr = $5, output_truncated = $6,
+			error = $7, runtime_ref = $8, started_at = $9, finished_at = $10
+		WHERE id = $1
+		RETURNING id, project_id, sandbox_id, status, command, timeout_seconds, exit_code, stdout,
+			stderr, output_truncated, error, runtime_ref, metadata, started_at, finished_at,
+			created_at, updated_at
+	`, id, status, exitCode, stdout, stderr, outputTruncated, taskError, runtimeRefJSON, startedAt, finishedAt)
+
+	updated, err := scanExecutionTask(row)
+	return updated, mapWriteError(err)
+}
+
+func (s *Store) ListArtifacts(ctx context.Context, sandboxID uuid.UUID, taskID *uuid.UUID) ([]domain.Artifact, error) {
+	query := `
+		SELECT id, project_id, sandbox_id, task_id, kind, name, uri, content_type,
+			size_bytes, metadata, created_at, updated_at
+		FROM artifacts
+		WHERE sandbox_id = $1
+	`
+	args := []any{sandboxID}
+	if taskID != nil {
+		query += ` AND task_id = $2`
+		args = append(args, *taskID)
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	artifacts := []domain.Artifact{}
+	for rows.Next() {
+		artifact, err := scanArtifact(rows)
+		if err != nil {
+			return nil, err
+		}
+		artifacts = append(artifacts, artifact)
+	}
+	return artifacts, rows.Err()
+}
+
+func (s *Store) CreateArtifact(ctx context.Context, input domain.ArtifactCreate) (domain.Artifact, error) {
+	row := s.pool.QueryRow(ctx, `
+		INSERT INTO artifacts (project_id, sandbox_id, task_id, kind, name, uri, content_type, size_bytes, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, project_id, sandbox_id, task_id, kind, name, uri, content_type,
+			size_bytes, metadata, created_at, updated_at
+	`, input.ProjectID, input.SandboxID, input.TaskID, input.Kind, input.Name, input.URI,
+		input.ContentType, input.SizeBytes, jsonDefaultObject(input.Metadata))
+
+	artifact, err := scanArtifact(row)
+	return artifact, mapWriteError(err)
+}
+
+func (s *Store) GetArtifact(ctx context.Context, id uuid.UUID) (domain.Artifact, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, project_id, sandbox_id, task_id, kind, name, uri, content_type,
+			size_bytes, metadata, created_at, updated_at
+		FROM artifacts
+		WHERE id = $1
+	`, id)
+	artifact, err := scanArtifact(row)
+	return artifact, mapReadError(err)
+}
+
 func mapReadError(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.ErrNotFound

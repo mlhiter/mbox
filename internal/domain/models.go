@@ -91,3 +91,62 @@ type SandboxPort struct {
 	Protocol   string `json:"protocol"`
 	PreviewURL string `json:"previewUrl,omitempty"`
 }
+
+type ExecutionTaskStatus string
+
+const (
+	ExecutionTaskStatusQueued    ExecutionTaskStatus = "queued"
+	ExecutionTaskStatusRunning   ExecutionTaskStatus = "running"
+	ExecutionTaskStatusSucceeded ExecutionTaskStatus = "succeeded"
+	ExecutionTaskStatusFailed    ExecutionTaskStatus = "failed"
+	ExecutionTaskStatusCanceled  ExecutionTaskStatus = "canceled"
+	ExecutionTaskStatusTimedOut  ExecutionTaskStatus = "timed_out"
+)
+
+type ExecutionTask struct {
+	ID              uuid.UUID           `json:"id"`
+	ProjectID       uuid.UUID           `json:"projectId"`
+	SandboxID       uuid.UUID           `json:"sandboxId"`
+	Status          ExecutionTaskStatus `json:"status"`
+	Command         []string            `json:"command"`
+	TimeoutSeconds  int                 `json:"timeoutSeconds"`
+	ExitCode        *int                `json:"exitCode,omitempty"`
+	Stdout          string              `json:"stdout"`
+	Stderr          string              `json:"stderr"`
+	OutputTruncated bool                `json:"outputTruncated"`
+	Error           string              `json:"error,omitempty"`
+	RuntimeRef      *RuntimeRef         `json:"runtimeRef,omitempty"`
+	Metadata        json.RawMessage     `json:"metadata,omitempty"`
+	StartedAt       *time.Time          `json:"startedAt,omitempty"`
+	FinishedAt      *time.Time          `json:"finishedAt,omitempty"`
+	CreatedAt       time.Time           `json:"createdAt"`
+	UpdatedAt       time.Time           `json:"updatedAt"`
+}
+
+type ArtifactKind string
+
+const (
+	ArtifactKindFile       ArtifactKind = "file"
+	ArtifactKindDirectory  ArtifactKind = "directory"
+	ArtifactKindLog        ArtifactKind = "log"
+	ArtifactKindReport     ArtifactKind = "report"
+	ArtifactKindScreenshot ArtifactKind = "screenshot"
+	ArtifactKindImage      ArtifactKind = "image"
+	ArtifactKindLink       ArtifactKind = "link"
+	ArtifactKindOther      ArtifactKind = "other"
+)
+
+type Artifact struct {
+	ID          uuid.UUID       `json:"id"`
+	ProjectID   uuid.UUID       `json:"projectId"`
+	SandboxID   uuid.UUID       `json:"sandboxId"`
+	TaskID      *uuid.UUID      `json:"taskId,omitempty"`
+	Kind        ArtifactKind    `json:"kind"`
+	Name        string          `json:"name"`
+	URI         string          `json:"uri"`
+	ContentType string          `json:"contentType,omitempty"`
+	SizeBytes   *int64          `json:"sizeBytes,omitempty"`
+	Metadata    json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt   time.Time       `json:"createdAt"`
+	UpdatedAt   time.Time       `json:"updatedAt"`
+}

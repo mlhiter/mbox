@@ -63,12 +63,12 @@ Do not add an agent brain, planner, reviewer, autonomous coding loop, or full CI
 
 - The current server entrypoint is `cmd/mbox-server`.
 - `DATABASE_URL` is required; startup runs embedded Postgres migrations.
-- The implemented HTTP surface is `GET /healthz`, CRUD for `/v1/projects`, `/v1/templates`, and `/v1/sandboxes`, sandbox lifecycle routes `POST /v1/sandboxes/{id}/stop` and `/start`, plus sandbox runtime target, logs, events, preview ports, preview proxy, and terminal routes under `/v1/sandboxes/{id}`.
+- The implemented HTTP surface is `GET /healthz`, CRUD for `/v1/projects`, `/v1/templates`, and `/v1/sandboxes`, sandbox lifecycle routes `POST /v1/sandboxes/{id}/stop` and `/start`, plus sandbox runtime target, logs, events, preview ports, preview proxy, terminal, execution task routes, and artifact reference routes.
 - The web console is a separate Vite app under `web/`; it is not embedded in the Go server.
 - The API server defaults to `127.0.0.1:18080`; the Vite dev server defaults to `127.0.0.1:5174` and proxies `/healthz` and `/v1/*` to the API target, including WebSocket upgrades for sandbox terminal sessions.
 - `scripts/dev.sh` is the preferred local stack entrypoint. Use `--runtime` to enable Kubernetes reconciliation/access and `--no-docker` when reusing an existing Postgres through `DATABASE_URL`.
 - The runtime controller is disabled by default. It may write Kubernetes resources only when `MBOX_RUNTIME_CONTROLLER_ENABLED=true`.
-- Runtime access is separately disabled by default. Terminal, logs, events, runtime target, and preview port routes require `MBOX_RUNTIME_ACCESS_ENABLED=true`.
+- Runtime access is separately disabled by default. Terminal, execution tasks, logs, events, runtime target, and preview port routes require `MBOX_RUNTIME_ACCESS_ENABLED=true`.
 - When enabled, the controller projects mbox sandboxes into `agent-sandbox` `SandboxTemplate` and `SandboxClaim` resources and keeps Postgres as the product source of truth.
 - Sandbox ServiceAccounts and generated pod templates disable service account token automount by default.
 - Project, template, and sandbox create endpoints can derive `slug` from `name` when omitted. Normal sandbox launch should rely on the project namespace and default `mbox-sandbox` ServiceAccount instead of asking users for those machine fields.
@@ -80,6 +80,8 @@ Do not add an agent brain, planner, reviewer, autonomous coding loop, or full CI
 - Sandbox ports are initialized from template `exposedPorts` and can be manually added or removed from the Runtime Workspace Preview tab. Only declared TCP ports on running sandboxes are previewable through the API proxy.
 - Stopping a sandbox is a direct row action with no confirmation dialog; it marks the mbox record `stopped`, keeps `runtimeRef`, and the controller scales the resolved `agent-sandbox` `Sandbox` to zero replicas. Starting marks it `pending` and scales the existing runtime back to one replica.
 - The browser terminal uses Kubernetes `pods/exec` through the resolved `agent-sandbox` Pod. The terminal route only accepts running sandboxes and only allows `sh` or `bash`.
+- Execution tasks currently run asynchronously inside a running sandbox through non-TTY Kubernetes `pods/exec`. They persist command array, timeout, status, stdout, stderr, exit code when available, timeout/cancellation state, truncation flag, and runtime reference. Task cancel is exposed for active tasks on the current API server process. Shell parsing must be explicit, for example `["sh", "-lc", "npm test"]`.
+- Artifacts currently store metadata references for sandbox and task outputs. They persist kind, name, URI, optional task ID, content type, size, and metadata; they do not upload/download file bytes yet.
 - A newly launched sandbox can stay `pending` before the runtime exists. The Runtime Workspace should show the starting state, poll sandbox status, and avoid calling terminal/logs/events/preview runtime routes until the sandbox is `running` with a `runtimeRef`.
 - The dedicated local smoke target is `MBOX_KUBECONFIG=$HOME/.kube/config` with `MBOX_KUBE_CONTEXT=kind-agent-sandbox`; this cluster is available for mbox runtime smoke tests.
 
@@ -95,7 +97,7 @@ The web console should feel like an operational platform:
 
 Use cards for repeated records and modals, not for every page section. Prefer tables, split panes, detail panels, tabs, and structured forms for operational workflows.
 
-Treat terminal as a primary workspace surface. In the current web console, selected sandboxes open a main-area Runtime Workspace with Terminal, Storage, Preview, Logs, and Events tabs; the right detail pane is metadata-only.
+Treat terminal as a primary workspace surface. In the current web console, selected sandboxes open a main-area Runtime Workspace with Terminal, Storage, Preview, Tasks, Logs, and Events tabs; the right detail pane is metadata-only.
 
 Core UI areas:
 

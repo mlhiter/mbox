@@ -154,6 +154,87 @@ node server.js > server.log 2>&1 &
 
 5. In the Preview tab, add `web` port `3000` if it is not already declared. The Preview tab saves sandbox ports through `PATCH /v1/sandboxes/{id}`. Use `Open` after the sandbox is running.
 
+## Execution Task Check
+
+Use this after changing task APIs, runtime access, or the Runtime Workspace Tasks tab.
+
+1. Start runtime mode and wait for a sandbox to reach `running`.
+
+```sh
+MBOX_KUBE_CONTEXT=kind-agent-sandbox ./scripts/dev.sh --runtime
+```
+
+2. Run a simple task through the API:
+
+```sh
+SANDBOX_ID='<sandbox-id>'
+curl -fsS -X POST "http://127.0.0.1:18080/v1/sandboxes/$SANDBOX_ID/tasks" \
+  -H 'content-type: application/json' \
+  -d '{"command":["sh","-lc","pwd && echo task-ok"],"timeoutSeconds":60}'
+```
+
+Expected result:
+
+- API returns `201 Created`.
+- Task status initially returns as `queued`.
+- Polling eventually shows `succeeded`.
+- `stdout` includes the workspace path and `task-ok`.
+- `exitCode` is `0`.
+
+3. Verify the task history:
+
+```sh
+curl -fsS "http://127.0.0.1:18080/v1/sandboxes/$SANDBOX_ID/tasks"
+```
+
+For a failure path, run `{"command":["sh","-lc","exit 7"]}` and expect polling to show `status` as `failed` with exit code `7` when Kubernetes reports it. For timeout behavior, run a command that exceeds `timeoutSeconds` and expect `timed_out`. For cancellation, start a long command, capture the returned task ID, then run:
+
+```sh
+curl -fsS -X POST "http://127.0.0.1:18080/v1/tasks/$TASK_ID/cancel"
+```
+
+Poll task history until it reports `canceled`.
+
+4. Register an artifact reference for a task output:
+
+```sh
+TASK_ID='<task-id>'
+curl -fsS -X POST "http://127.0.0.1:18080/v1/sandboxes/$SANDBOX_ID/artifacts" \
+  -H 'content-type: application/json' \
+  -d '{"taskId":"'"$TASK_ID"'","kind":"report","name":"Task report","uri":"workspace:///workspace/reports/task.json","contentType":"application/json"}'
+```
+
+Verify the sandbox and task artifact lists:
+
+```sh
+curl -fsS "http://127.0.0.1:18080/v1/sandboxes/$SANDBOX_ID/artifacts"
+curl -fsS "http://127.0.0.1:18080/v1/tasks/$TASK_ID/artifacts"
+```
+
+The current artifact API stores metadata references only. It does not upload or download file bytes.
+
+## TypeScript SDK Check
+
+Use this after changing public API shapes or SDK wrappers.
+
+```sh
+cd sdk/typescript
+npm install
+npm run build
+```
+
+The SDK is a thin external-client package. It should stay aligned with the server routes in `docs/server-api.md` and should not introduce mbox-internal agent or CI workflow semantics. A basic external caller shape is:
+
+```ts
+import { MboxClient } from "@mbox/sdk"
+
+const mbox = new MboxClient({ baseUrl: "http://127.0.0.1:18080" })
+const task = await mbox.createExecutionTask("<sandbox-id>", {
+  command: ["sh", "-lc", "pwd && echo task-ok"],
+})
+const finished = await mbox.waitForTask(task.id)
+```
+
 ## Sandbox Stop/Start Check
 
 Use this after changing lifecycle routes, controller reconciliation, or the sandbox row actions.
