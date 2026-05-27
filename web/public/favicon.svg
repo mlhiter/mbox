@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="mbox">
+  <defs>
+    <linearGradient id="paper" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f7fbf2" />
+      <stop offset="1" stop-color="#d7ead8" />
+    </linearGradient>
+    <linearGradient id="runtime" x1="15" y1="12" x2="49" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6aa678" />
+      <stop offset="1" stop-color="#2f7050" />
+    </linearGradient>
+    <pattern id="grid" width="12" height="12" patternUnits="userSpaceOnUse">
+      <path d="M12 0H0V12" fill="none" stroke="#498260" stroke-opacity="0.2" stroke-width="2" />
+    </pattern>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#f3f1e7" />
+  <rect x="5" y="5" width="54" height="54" rx="12" fill="url(#paper)" stroke="#9bc7a3" stroke-width="2" />
+  <rect x="5" y="5" width="54" height="54" rx="12" fill="url(#grid)" />
+  <rect x="19" y="19" width="26" height="26" rx="4" fill="none" stroke="#255f43" stroke-width="5" />
+  <circle cx="32" cy="32" r="5" fill="url(#runtime)" />
+  <circle cx="20" cy="32" r="4" fill="#4c8b62" />
+  <circle cx="44" cy="32" r="4" fill="#4c8b62" />
+  <circle cx="32" cy="20" r="4" fill="#4c8b62" />
+  <circle cx="32" cy="44" r="4" fill="#4c8b62" />
+</svg>
