@@ -6,21 +6,28 @@ The long-term navigation should reflect mbox as a Kubernetes execution platform.
 
 ## Current App Shell
 
-The current console is a state-switched operational surface:
+The current console is a hash-routable operational surface:
 
 - left rail
 - main workspace
 - right detail pane
 
+The canonical hash locations are:
+
+- `#projects`
+- `#environments`
+- `#sandboxes`
+- `#sandboxes/{sandboxID}`
+
 The left rail switches the active resource view:
 
 - Projects
-- Templates
+- Environments
 - Sandboxes
 
-The main workspace starts with the active view title, active-view record count, and global API/product summary counts. It then shows the selected sandbox Runtime Workspace only when the active view is Sandboxes and a sandbox is selected. Below that, it renders exactly one active resource table, not all resource tables stacked on the same page.
+The main workspace starts with the active view title, active-view record count, and global API/product summary counts. It renders exactly one active resource table, not all resource tables stacked on the same page. Opening a sandbox workspace moves to `#sandboxes/{sandboxID}` and replaces the list with a dedicated sandbox detail page.
 
-The right detail pane is metadata-only. It shows the selected project, template, or sandbox identity and key fields. It should not host the terminal. Changing the active view clears incompatible selection so the detail pane does not show metadata from another view.
+The right detail pane is metadata-only. It shows the selected project, environment, or sandbox identity and key fields in list views. It should not host the terminal. Changing the active view clears incompatible selection so the detail pane does not show metadata from another view. The sandbox detail page hides the global detail pane and owns its own inspector.
 
 ## Main Workspace Sections
 
@@ -33,20 +40,36 @@ Shows current counts:
 - Sandboxes
 - Running
 
+### Sandbox Detail Page
+
+Appears at `#sandboxes/{sandboxID}` after a user opens a sandbox workspace from the Sandboxes table, detail pane, launch flow, or environment validation flow.
+
+The page contains:
+
+- sandbox overview
+- workspace readiness checks
+- runtime workspace
+- metadata inspector
+- validation decision panel when the sandbox is an environment validation run
+
+Workspace readiness checks summarize runtime record projection, preview surface, workspace persistence, and run intent before the user reaches Terminal, Preview, Tasks, Artifacts, Logs, or Events. Runtime access itself is still checked inside the Runtime Workspace because a sandbox can have a running runtime record while terminal/log/preview proxy access is disabled in local development.
+
+The page is recoverable after refresh. If the app opens a sandbox detail hash before data has loaded, it shows a resolving state. If the sandbox cannot be found after loading, it shows an unavailable state with a route back to the Sandboxes list.
+
 ### Runtime Workspace
 
-Appears when the active view is Sandboxes and the selected resource is a sandbox.
+Appears inside the sandbox detail page.
 
 Tabs:
 
 - Terminal
-- Storage
 - Preview
 - Tasks
+- Artifacts
 - Logs
 - Events
 
-Terminal is the primary operation entry for a running sandbox. Storage shows resolved workspace PVC mount path, claim, bound phase, capacity, and storage class when available. Preview lists declared TCP ports and opens API-proxied links. Tasks runs controlled sandbox commands and shows recorded output. Logs and Events expose lightweight runtime observability.
+Terminal is the primary operation entry for a running sandbox. A compact storage summary shows resolved workspace PVC mount path, claim, bound phase, capacity, and storage class when available. Preview lists declared TCP ports and opens API-proxied links. Tasks runs controlled sandbox commands and shows recorded output. Artifacts registers output references. Logs and Events expose lightweight runtime observability.
 
 If runtime access is blocked because the sandbox has no runtime reference or is not `running`, the workspace shows a starting/blocker state and keeps runtime actions disabled. New sandboxes can be `pending` while `agent-sandbox` creates the `SandboxClaim` and Pod; that state belongs in the workspace instead of surfacing as a terminal error.
 
@@ -79,7 +102,7 @@ Current operations:
 - inspect selected sandbox metadata
 - stop and start sandbox runtime compute from compact row actions
 - delete sandbox through a confirmation dialog
-- open runtime workspace for the selected sandbox
+- open a dedicated sandbox detail page with runtime workspace
 - add or remove declared TCP preview ports from the Preview tab
 - run, poll, cancel, and inspect asynchronous command tasks from the Tasks tab
 - register and inspect output references from the Artifacts tab

@@ -7,15 +7,16 @@ This document describes the currently implemented mbox web console. It is a sepa
 The current console supports the first product slice:
 
 - API health check through `/healthz`
-- view-switched left navigation for Projects, Templates, and Sandboxes
+- view-switched left navigation for Projects, Environments, and Sandboxes
+- hash-routable console locations for `#projects`, `#environments`, `#sandboxes`, and `#sandboxes/{sandboxID}`
 - project list and create dialog
 - template library for ready-to-run environments, with create/edit dialogs that foreground runtime type, use case, entrypoints, resource preset, and workspace storage
 - advanced template settings for image, startup command, working directory, CPU, memory, env, secret refs, network preset, and lifecycle JSON
 - sandbox list, simplified guarded launch dialog, stop/start actions, and delete confirmation dialog
 - selected resource inspection panel for resource identity and metadata
-- main workspace runtime panel for selected sandboxes only in the Sandboxes view
+- dedicated sandbox detail page with a main workspace runtime panel and local inspector
 - browser terminal for ready sandboxes, with a starting state while new runtimes are pending
-- workspace storage tab showing resolved PVC mounts and capacity
+- compact workspace storage state showing resolved PVC mounts and capacity
 - preview port list with manual add/remove controls and API-proxied open links for declared TCP ports
 - execution task tab for running asynchronous commands in a ready sandbox, polling task state, canceling active tasks, and inspecting output
 - artifact tab for registering and inspecting sandbox or task output references
@@ -80,7 +81,7 @@ MBOX_WEB_PORT=5175 npm run dev
 
 Key files:
 
-- `web/src/app.tsx`: top-level view state, active view copy, selection cleanup, and composition of console modules.
+- `web/src/app.tsx`: hash-routable top-level view state, active view copy, selection cleanup, and composition of console modules.
 - `web/src/app.css`: design tokens, layout, rail, table, runtime workspace, detail pane, dialog, and confirmation styling.
 - `web/src/types.ts`: shared frontend types for resources, runtime responses, selection, and forms.
 - `web/src/hooks/use-mbox-data.ts`: API-backed resource loading, create/delete/start/stop mutations, selection state, counts, and toast feedback.
@@ -124,7 +125,11 @@ Runtime, use case, resource preset, and validation status are stored in template
 
 Sandbox launch is intentionally short. The dialog asks for Project, Template, and Name. The frontend derives the slug from the name, and the API fills namespace from the project plus the default sandbox ServiceAccount `mbox-sandbox`.
 
-When a sandbox is selected, the Runtime Workspace should not treat `pending` as an error. It shows a starting panel, polls the sandbox record, and waits until the sandbox is `running` with a `runtimeRef` before calling terminal, tasks, logs, events, runtime target, or runtime preview routes.
+Opening a sandbox workspace moves to `#sandboxes/{sandboxID}`. The detail page is recoverable after refresh and replaces the global right detail pane with a local runtime inspector. If a detail hash is opened before data has loaded, the page shows a resolving state; if the sandbox is not present after loading, it shows an unavailable state with a route back to the Sandboxes list.
+
+The sandbox detail page includes workspace readiness checks before the Runtime Workspace. They summarize runtime record projection, declared preview ports, workspace persistence, and run intent so users can understand the sandbox shape before they open Terminal, Preview, Tasks, Artifacts, Logs, or Events. Runtime access itself is checked inside the Runtime Workspace because local development can have a running runtime record while terminal/log/preview proxy access is disabled.
+
+When a sandbox detail page opens, the Runtime Workspace should not treat `pending` as an error. It shows a starting panel, polls the sandbox record, and waits until the sandbox is `running` with a `runtimeRef` before calling terminal, tasks, logs, events, runtime target, or runtime preview routes.
 
 The Preview tab edits the sandbox's declared `ports` list. A user can start a service in Terminal, add its TCP port in Preview, and open the API-proxied URL once the sandbox is running.
 
@@ -150,8 +155,9 @@ Current design principles:
 
 Navigation behavior:
 
-- The left rail uses buttons backed by React view state, not in-page anchor jumps.
+- The left rail uses buttons backed by lightweight hash route state, not in-page anchor jumps.
 - Only the active resource table is visible in the main workspace.
+- Sandbox workspace opens at `#sandboxes/{sandboxID}` and can survive browser refresh.
 - Summary counts remain global, while the topbar count reflects the active view.
 - Changing views clears incompatible selection so the right detail pane and Runtime Workspace cannot describe a resource from another view.
 - The active nav state uses a soft runtime-green background and green ink. Do not use a white active state.
@@ -186,14 +192,16 @@ Useful manual checks:
 - Invalid entrypoint text such as `web:abc` shows an error and does not save a template with missing ports.
 - Template create/edit can still save advanced image, command, resources, ports, env, secret refs, network policy, and lifecycle JSON.
 - Left rail buttons switch between Projects, Templates, and Sandboxes instead of scrolling a combined page.
-- Switching away from Sandboxes clears sandbox selection and hides the Runtime Workspace.
+- Switching away from Sandboxes clears sandbox selection and leaves any sandbox detail hash.
+- Opening a sandbox workspace updates the URL to `#sandboxes/{sandboxID}`; refreshing that URL reopens the detail page after data loads.
+- Sandbox detail shows workspace readiness checks for runtime record projection, preview surface, workspace persistence, and run intent above the Runtime Workspace.
 - Sandbox launch is disabled until at least one project and one template exist.
 - The launch dialog only asks for Project, Template, and Name.
 - Sandbox deletion opens a confirmation dialog and does not delete from the row button directly.
 - Sandbox stop/start is available from the sandbox row. Stop is direct because it pauses runtime compute without deleting the sandbox.
-- Selecting a ready sandbox opens a main Runtime Workspace with terminal, storage, preview ports, execution tasks, artifacts, logs, and Kubernetes events as tabs.
+- Opening a ready sandbox workspace shows terminal, preview ports, execution tasks, artifacts, logs, and Kubernetes events as tabs, with compact storage state near the runtime target strip.
 - Selecting a pending sandbox shows a starting Runtime Workspace and does not surface a terminal error.
-- The Storage tab shows the workspace mount path, PVC name, bound phase, capacity, and storage class when a template has `storageRequest`.
+- The compact storage state shows the workspace mount path, PVC name, bound phase, capacity, and storage class when a template has `storageRequest`.
 - Terminal Connect is disabled until the sandbox has a runtime reference and `running` status, with the blocker visible in the workspace notice and button title.
 - The Preview tab can add and remove TCP ports, and links stay disabled until the sandbox is running.
 - The Tasks tab can run a simple command such as `pwd`, shows stdout/stderr, and keeps task execution disabled until the sandbox is running.
