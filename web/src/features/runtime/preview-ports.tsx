@@ -24,6 +24,7 @@ export function PreviewPorts({
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const declaredPorts = useMemo(() => new Set(sandboxPorts.map((item) => item.port)), [sandboxPorts])
+  const sortedPorts = useMemo(() => [...ports].sort((left, right) => left.port - right.port), [ports])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -65,6 +66,20 @@ export function PreviewPorts({
   return (
     <div className="preview-ports">
       <RuntimeSectionHead eyebrow="Preview" title="Ports" />
+      <div className="runtime-ledger-head preview-port-ledger-head" aria-label="Preview port summary">
+        <div>
+          <span>Declared</span>
+          <strong>{sandboxPorts.length}</strong>
+        </div>
+        <div>
+          <span>Openable</span>
+          <strong>{ports.filter((item) => item.available && item.previewUrl).length}</strong>
+        </div>
+        <div>
+          <span>Runtime state</span>
+          <strong>{sandboxStatus}</strong>
+        </div>
+      </div>
       <form className="preview-port-form" onSubmit={handleSubmit}>
         <div>
           <Label htmlFor="preview-port-name">Name</Label>
@@ -100,40 +115,53 @@ export function PreviewPorts({
       {ports.length === 0 ? (
         <p>No preview ports declared. Start a service in the terminal, then add its TCP port here.</p>
       ) : (
-        <ul>
-          {ports.map((port) => (
-            <li key={`${port.name}-${port.port}`}>
-              <div>
+        <div className="runtime-ledger preview-port-ledger">
+          <div className="runtime-ledger-row runtime-ledger-row-head" aria-hidden="true">
+            <span>Endpoint</span>
+            <span>Address</span>
+            <span>Availability</span>
+            <span>Actions</span>
+          </div>
+          {sortedPorts.map((port) => (
+            <div className="runtime-ledger-row preview-port-row" key={`${port.name}-${port.port}`}>
+              <div className="runtime-ledger-primary">
                 <strong>{port.name}</strong>
-                <span>
-                  {port.protocol || "TCP"} · {port.port}
+                <span>{port.protocol || "TCP"}</span>
+              </div>
+              <code>:{port.port}</code>
+              <div>
+                <span className={`runtime-status-badge ${port.available && port.previewUrl ? "tone-success" : "tone-neutral"}`}>
+                  {port.available && port.previewUrl ? "available" : "declared"}
                 </span>
                 {port.message ? <small>{port.message}</small> : null}
               </div>
-              {port.available && port.previewUrl ? (
-                <Button asChild size="sm" variant="outline">
-                  <a href={port.previewUrl} target="_blank" rel="noreferrer">
-                    <ExternalLink data-icon="inline-start" />
+              <div className="runtime-ledger-actions">
+                {port.available && port.previewUrl ? (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={port.previewUrl} target="_blank" rel="noreferrer">
+                      <ExternalLink data-icon="inline-start" />
+                      Open
+                    </a>
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" disabled>
                     Open
-                  </a>
+                  </Button>
+                )}
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={`Remove ${port.name} preview port`}
+                  title={`Remove ${port.name}`}
+                  disabled={saving}
+                  onClick={() => void removePort(port.port)}
+                >
+                  <Trash2 />
                 </Button>
-              ) : (
-                <Button size="sm" variant="outline" disabled>
-                  Open
-                </Button>
-              )}
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label={`Remove ${port.name} preview port`}
-                disabled={saving}
-                onClick={() => void removePort(port.port)}
-              >
-                <Trash2 />
-              </Button>
-            </li>
+              </div>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   )

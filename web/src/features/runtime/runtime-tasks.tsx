@@ -4,6 +4,15 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { createExecutionTask } from "@/lib/api"
+import {
+  formatClockTime,
+  formatDuration,
+  formatTaskCommand,
+  isActiveTask,
+  shortID,
+  taskStatusLabel,
+  taskStatusTone,
+} from "@/lib/resource-utils"
 import { RuntimeSectionHead } from "@/features/runtime/runtime-section-head"
 import type { ExecutionTask, Sandbox } from "@/types"
 
@@ -27,6 +36,7 @@ export function RuntimeTasks({
   onTaskCancel,
 }: RuntimeTasksProps) {
   const [command, setCommand] = useState("pwd")
+  const [commandMode, setCommandMode] = useState<"shell" | "array">("shell")
   const [timeoutSeconds, setTimeoutSeconds] = useState("60")
   const [submitting, setSubmitting] = useState(false)
   const [cancelingTaskID, setCancelingTaskID] = useState<string | null>(null)
@@ -35,13 +45,22 @@ export function RuntimeTasks({
     () => [...tasks].sort((left, right) => (right.createdAt || "").localeCompare(left.createdAt || "")),
     [tasks],
   )
+  const taskSummary = useMemo(
+    () => ({
+      total: tasks.length,
+      active: tasks.filter(isActiveTask).length,
+      succeeded: tasks.filter((task) => task.status === "succeeded").length,
+      needsReview: tasks.filter((task) => task.status === "failed" || task.status === "timed_out" || task.status === "canceled").length,
+    }),
+    [tasks],
+  )
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const parsedCommand = parseCommand(command)
     const timeout = Number(timeoutSeconds)
-    if (!parsedCommand.length) {
-      setFormError("Command is required.")
+    const parsedCommand = parseCommand(command, commandMode)
+    if (!parsedCommand.ok) {
+      setFormError(parsedCommand.error)
       return
     }
     if (!Number.isInteger(timeout) || timeout < 1 || timeout > 600) {
@@ -52,7 +71,7 @@ export function RuntimeTasks({
     setFormError(null)
     try {
       const task = await createExecutionTask(sandbox.id, {
-        command: parsedCommand,
+        command: parsedCommand.command,
         timeoutSeconds: timeout,
       })
       onTaskCreated(task)
@@ -66,16 +85,46 @@ export function RuntimeTasks({
   return (
     <div className="runtime-tasks">
       <RuntimeSectionHead eyebrow="Execution" title="Tasks" />
+      <div className="runtime-ledger-head runtime-task-ledger-head" aria-label="Task summary">
+        <div>
+          <span>Total</span>
+          <strong>{taskSummary.total}</strong>
+        </div>
+        <div>
+          <span>Active</span>
+          <strong>{taskSummary.active}</strong>
+        </div>
+        <div>
+          <span>Succeeded</span>
+          <strong>{taskSummary.succeeded}</strong>
+        </div>
+        <div>
+          <span>Needs review</span>
+          <strong>{taskSummary.needsReview}</strong>
+        </div>
+      </div>
       <form className="runtime-task-form" onSubmit={handleSubmit}>
         <div>
           <Label htmlFor="runtime-task-command">Command</Label>
           <Input
             id="runtime-task-command"
             value={command}
-            placeholder="npm test"
+            placeholder={commandMode === "shell" ? "npm test" : "[\"npm\", \"test\"]"}
             onChange={(event) => setCommand(event.target.value)}
             disabled={submitting || !runtimeReady}
           />
+        </div>
+        <div>
+          <Label htmlFor="runtime-task-mode">Mode</Label>
+          <select
+            id="runtime-task-mode"
+            value={commandMode}
+            onChange={(event) => setCommandMode(event.target.value as "shell" | "array")}
+            disabled={submitting || !runtimeReady}
+          >
+            <option value="shell">Shell</option>
+            <option value="array">Array</option>
+          </select>
         </div>
         <div>
           <Label htmlFor="runtime-task-timeout">Timeout</Label>
@@ -107,14 +156,17 @@ export function RuntimeTasks({
             <li key={task.id}>
               <div className="runtime-task-row-head">
                 <div>
-                  <strong>{task.command.join(" ")}</strong>
-                  <span>
-                    {task.status}
+                  <code className="runtime-task-command">{formatTaskCommand(task.command)}</code>
+                  <span className="runtime-task-meta">
+                    {shortID(task.id)} · {formatClockTime(task.createdAt)} · {formatDuration(task.startedAt || task.createdAt, task.finishedAt)}
                     {typeof task.exitCode === "number" ? ` · exit ${task.exitCode}` : ""}
                     {task.outputTruncated ? " · truncated" : ""}
                   </span>
                 </div>
                 <div className="runtime-task-row-actions">
+                  <span className={`runtime-status-badge tone-${taskStatusTone(task.status)}`}>
+                    {taskStatusLabel(task.status)}
+                  </span>
                   {isActiveTask(task) ? (
                     <Button
                       type="button"
@@ -127,15 +179,14 @@ export function RuntimeTasks({
                       {cancelingTaskID === task.id ? "Canceling" : "Cancel"}
                     </Button>
                   ) : null}
-                  <time>{formatTaskTime(task.finishedAt || task.createdAt)}</time>
+                  <time>{formatClockTime(task.finishedAt || task.updatedAt || task.createdAt)}</time>
                 </div>
               </div>
               {task.error ? <small>{task.error}</small> : null}
-              {task.stdout || task.stderr ? (
-                <pre>
-                  {[task.stdout, task.stderr].filter(Boolean).join("\n")}
-                </pre>
-              ) : null}
+              <div className="runtime-task-output-grid">
+                <OutputBlock label="stdout" value={task.stdout} />
+                <OutputBlock label="stderr" value={task.stderr} tone="danger" />
+              </div>
             </li>
           ))}
         </ul>
@@ -157,21 +208,30 @@ export function RuntimeTasks({
   }
 }
 
-function parseCommand(command: string) {
-  return command.trim().split(/\s+/).filter(Boolean)
+function OutputBlock({ label, value, tone }: { label: string; value?: string; tone?: "danger" }) {
+  return (
+    <div className={`runtime-output-block ${tone === "danger" ? "tone-danger" : ""}`}>
+      <span>{label}</span>
+      {value ? <pre>{value}</pre> : <small>No output</small>}
+    </div>
+  )
 }
 
-function formatTaskTime(value?: string) {
-  if (!value) {
-    return "-"
+function parseCommand(command: string, mode: "shell" | "array"): { ok: true; command: string[] } | { ok: false; error: string } {
+  const trimmed = command.trim()
+  if (!trimmed) {
+    return { ok: false, error: "Command is required." }
   }
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(value))
-}
-
-function isActiveTask(task: ExecutionTask) {
-  return task.status === "queued" || task.status === "running"
+  if (mode === "shell") {
+    return { ok: true, command: ["sh", "-lc", trimmed] }
+  }
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string") || parsed.length === 0) {
+      return { ok: false, error: "Array mode expects a JSON string array." }
+    }
+    return { ok: true, command: parsed }
+  } catch {
+    return { ok: false, error: "Array mode expects valid JSON, for example [\"npm\", \"test\"]." }
+  }
 }

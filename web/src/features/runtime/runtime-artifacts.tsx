@@ -4,6 +4,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { createArtifact } from "@/lib/api"
+import {
+  artifactKindLabel,
+  formatBytes,
+  formatClockTime,
+  formatTaskCommand,
+  shortID,
+} from "@/lib/resource-utils"
 import { RuntimeSectionHead } from "@/features/runtime/runtime-section-head"
 import type { Artifact, ArtifactKind, ExecutionTask, Sandbox } from "@/types"
 
@@ -42,6 +49,15 @@ export function RuntimeArtifacts({
     () => [...tasks].sort((left, right) => (right.createdAt || "").localeCompare(left.createdAt || "")),
     [tasks],
   )
+  const artifactsByKind = useMemo(() => {
+    const counts = new Map<ArtifactKind, number>()
+    for (const artifact of artifacts) {
+      counts.set(artifact.kind, (counts.get(artifact.kind) || 0) + 1)
+    }
+    return [...counts.entries()].sort((left, right) => right[1] - left[1])
+  }, [artifacts])
+  const linkedArtifacts = useMemo(() => artifacts.filter((artifact) => artifact.taskId).length, [artifacts])
+  const taskById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -53,7 +69,7 @@ export function RuntimeArtifacts({
       return
     }
     if (!cleanURI) {
-      setFormError("URI is required.")
+      setFormError("Output reference is required.")
       return
     }
     if (parsedSize !== undefined && (!Number.isInteger(parsedSize) || parsedSize < 0)) {
@@ -86,6 +102,20 @@ export function RuntimeArtifacts({
   return (
     <div className="runtime-artifacts">
       <RuntimeSectionHead eyebrow="Outputs" title="Artifacts" />
+      <div className="runtime-ledger-head runtime-artifact-ledger-head" aria-label="Artifact summary">
+        <div>
+          <span>Total</span>
+          <strong>{artifacts.length}</strong>
+        </div>
+        <div>
+          <span>Linked tasks</span>
+          <strong>{linkedArtifacts}</strong>
+        </div>
+        <div>
+          <span>Top kind</span>
+          <strong>{artifactsByKind[0] ? artifactKindLabel(artifactsByKind[0][0]) : "-"}</strong>
+        </div>
+      </div>
       <form className="runtime-artifact-form" onSubmit={handleSubmit}>
         <div>
           <Label htmlFor="runtime-artifact-kind">Kind</Label>
@@ -113,7 +143,7 @@ export function RuntimeArtifacts({
           />
         </div>
         <div>
-          <Label htmlFor="runtime-artifact-uri">URI</Label>
+          <Label htmlFor="runtime-artifact-uri">Output reference</Label>
           <Input
             id="runtime-artifact-uri"
             value={uri}
@@ -168,50 +198,49 @@ export function RuntimeArtifacts({
       {sortedArtifacts.length === 0 ? (
         <p>No artifacts have been registered for this sandbox.</p>
       ) : (
-        <ul>
-          {sortedArtifacts.map((artifact) => (
-            <li key={artifact.id}>
-              <div>
-                <strong>{artifact.name}</strong>
-                <span>
-                  {artifact.kind}
-                  {artifact.contentType ? ` · ${artifact.contentType}` : ""}
-                  {typeof artifact.sizeBytes === "number" ? ` · ${formatBytes(artifact.sizeBytes)}` : ""}
-                </span>
-                <small>{artifact.uri}</small>
-                {artifact.taskId ? <small>task {artifact.taskId}</small> : null}
+        <div className="runtime-ledger runtime-artifact-ledger">
+          <div className="runtime-ledger-row runtime-ledger-row-head" aria-hidden="true">
+            <span>Artifact</span>
+            <span>Reference</span>
+            <span>Origin</span>
+            <span>Created</span>
+          </div>
+          {sortedArtifacts.map((artifact) => {
+            const task = artifact.taskId ? taskById.get(artifact.taskId) : undefined
+            return (
+              <div className="runtime-ledger-row runtime-artifact-row" key={artifact.id}>
+                <div className="runtime-ledger-primary">
+                  <strong>{artifact.name}</strong>
+                  <span>
+                    <span className="runtime-artifact-kind">{artifactKindLabel(artifact.kind)}</span>
+                    {artifact.contentType ? ` ${artifact.contentType}` : ""}
+                    {typeof artifact.sizeBytes === "number" ? ` ${formatBytes(artifact.sizeBytes)}` : ""}
+                  </span>
+                </div>
+                <div className="runtime-artifact-reference">
+                  <code>{artifact.uri}</code>
+                  {artifact.uri.startsWith("http://") || artifact.uri.startsWith("https://") ? (
+                    <a href={artifact.uri} target="_blank" rel="noreferrer" aria-label={`Open ${artifact.name}`}>
+                      <ExternalLink aria-hidden="true" />
+                    </a>
+                  ) : null}
+                </div>
+                <div className="runtime-artifact-origin">
+                  {artifact.taskId ? (
+                    <>
+                      <span>task {shortID(artifact.taskId)}</span>
+                      {task ? <small>{formatTaskCommand(task.command)}</small> : null}
+                    </>
+                  ) : (
+                    <span>Manual reference</span>
+                  )}
+                </div>
+                <time>{formatClockTime(artifact.createdAt)}</time>
               </div>
-              {artifact.uri.startsWith("http://") || artifact.uri.startsWith("https://") ? (
-                <a href={artifact.uri} target="_blank" rel="noreferrer" aria-label={`Open ${artifact.name}`}>
-                  <ExternalLink aria-hidden="true" />
-                </a>
-              ) : null}
-              <time>{formatArtifactTime(artifact.createdAt)}</time>
-            </li>
-          ))}
-        </ul>
+            )
+          })}
+        </div>
       )}
     </div>
   )
-}
-
-function formatArtifactTime(value?: string) {
-  if (!value) {
-    return "-"
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(value))
-}
-
-function formatBytes(value: number) {
-  if (value < 1024) {
-    return `${value} B`
-  }
-  if (value < 1024 * 1024) {
-    return `${(value / 1024).toFixed(1)} KiB`
-  }
-  return `${(value / (1024 * 1024)).toFixed(1)} MiB`
 }
