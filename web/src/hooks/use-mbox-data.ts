@@ -13,11 +13,12 @@ import {
   startSandbox as startSandboxRequest,
   stopSandbox as stopSandboxRequest,
   updateProject,
+  updateSandbox as updateSandboxRequest,
   updateTemplate as updateTemplateRequest,
 } from "@/lib/api"
 import {
   compactObject,
-  slugFromName,
+  generatedSlug,
   stringValue,
   templatePayloadFromForm,
 } from "@/lib/resource-utils"
@@ -93,7 +94,7 @@ export function useMboxData() {
     async (data: FormRecord) => {
       await createProjectRequest({
         name: stringValue(data.name),
-        slug: stringValue(data.slug),
+        slug: stringValue(data.slug) || generatedSlug(stringValue(data.name), "project"),
         repositoryUrl: stringValue(data.repositoryUrl),
         defaultNamespace: stringValue(data.defaultNamespace),
       })
@@ -113,7 +114,7 @@ export function useMboxData() {
         await updateProject(projectId, { defaultTemplateId: template.id })
       }
       await loadAll()
-      toast.success("Template created")
+      toast.success("Environment created")
     },
     [loadAll],
   )
@@ -125,7 +126,7 @@ export function useMboxData() {
       await updateTemplateRequest(id, payload)
       await loadAll()
       setSelection({ kind: "template", id })
-      toast.success("Template updated")
+      toast.success("Environment updated")
     },
     [loadAll],
   )
@@ -137,14 +138,58 @@ export function useMboxData() {
         projectId: stringValue(data.projectId),
         templateId: stringValue(data.templateId),
         name,
-        slug: slugFromName(name),
+        slug: generatedSlug(name, "sandbox"),
       })
       const sandbox = await createSandboxRequest(payload)
       await loadAll()
       setSelection({ kind: "sandbox", id: sandbox.id })
       toast.success("Sandbox launched")
+      return sandbox
     },
     [loadAll],
+  )
+
+  const validateTemplate = useCallback(
+    async (id: string) => {
+      try {
+        const template = templates.find((item) => item.id === id)
+        if (!template) {
+          throw new Error("Environment not found")
+        }
+        const project = template.projectId
+          ? projects.find((item) => item.id === template.projectId)
+          : projects[0]
+        if (!project) {
+          throw new Error("Create a project before validating an environment.")
+        }
+        const validationName = `Validate ${template.name}`.slice(0, 58)
+        const sandbox = await createSandboxRequest({
+          projectId: project.id,
+          templateId: template.id,
+          name: validationName,
+          slug: generatedSlug(`${validationName}-${Date.now().toString(36)}`, "validation"),
+          metadata: {
+            purpose: "environment-validation",
+            templateId: template.id,
+          },
+        })
+        await updateTemplateRequest(id, {
+          metadata: {
+            ...(template.metadata || {}),
+            validationStatus: "testing",
+          },
+        })
+        await loadAll()
+        setSelection({ kind: "sandbox", id: sandbox.id })
+        toast.success("Validation sandbox launched")
+        return sandbox
+      } catch (validationError) {
+        const message = validationError instanceof Error ? validationError.message : "Validation launch failed"
+        toast.error(message)
+        throw validationError
+      }
+    },
+    [loadAll, projects, templates],
   )
 
   const deleteSandbox = useCallback(
@@ -163,6 +208,48 @@ export function useMboxData() {
       }
     },
     [loadAll, selection],
+  )
+
+  const decideTemplateValidation = useCallback(
+    async (sandboxID: string, status: "passed" | "failed") => {
+      try {
+        const sandbox = sandboxes.find((item) => item.id === sandboxID)
+        if (!sandbox) {
+          throw new Error("Sandbox not found")
+        }
+        const templateID = typeof sandbox.metadata?.templateId === "string" ? sandbox.metadata.templateId : sandbox.templateId
+        const template = templates.find((item) => item.id === templateID)
+        if (!template || !templateID) {
+          throw new Error("Environment not found for this validation run")
+        }
+        const decidedAt = new Date().toISOString()
+        await updateTemplateRequest(templateID, {
+          metadata: {
+            ...(template.metadata || {}),
+            validationStatus: status,
+            validationSandboxId: sandbox.id,
+            validationDecidedAt: decidedAt,
+          },
+        })
+        await updateSandboxRequest(sandbox.id, {
+          metadata: {
+            ...(sandbox.metadata || {}),
+            purpose: "environment-validation",
+            templateId: templateID,
+            validationResult: status,
+            validationDecidedAt: decidedAt,
+          },
+        })
+        await loadAll()
+        setSelection({ kind: "sandbox", id: sandbox.id })
+        toast.success(status === "passed" ? "Environment marked validated" : "Environment marked failed")
+      } catch (validationError) {
+        const message = validationError instanceof Error ? validationError.message : "Could not update validation result"
+        toast.error(message)
+        throw validationError
+      }
+    },
+    [loadAll, sandboxes, templates],
   )
 
   const stopSandbox = useCallback(
@@ -209,6 +296,7 @@ export function useMboxData() {
     createProject,
     createSandbox,
     createTemplate,
+    decideTemplateValidation,
     deleteSandbox,
     error,
     loadAll,
@@ -223,5 +311,6 @@ export function useMboxData() {
     stopSandbox,
     templates,
     updateTemplate,
+    validateTemplate,
   }
 }

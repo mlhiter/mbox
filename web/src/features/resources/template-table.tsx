@@ -1,3 +1,4 @@
+import { FlaskConical } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -17,7 +18,9 @@ import {
   templatePersistence,
   templateResourcePreset,
   templateRuntimeType,
+  templateValidationHint,
   templateUseCase,
+  templateValidationTone,
   templateValidationText,
 } from "@/lib/resource-utils"
 import { cn } from "@/lib/utils"
@@ -32,12 +35,13 @@ export function TemplateTable(props: {
   onSelect: (id: string) => void
   onCreate: (data: FormRecord) => Promise<void>
   onUpdate: (id: string, data: FormRecord) => Promise<void>
+  onValidate: (id: string) => Promise<void>
 }) {
   return (
     <ConsolePanel
       id="templates"
       eyebrow="Launch shape"
-      title="Templates"
+      title="Environments"
       action={<TemplateDialog projects={props.projects} onSubmit={props.onCreate} />}
     >
       <Table className="resource-table template-library-table">
@@ -45,8 +49,8 @@ export function TemplateTable(props: {
           <TableRow>
             <TableHead>Environment</TableHead>
             <TableHead>Use case</TableHead>
-            <TableHead>Entrypoints</TableHead>
-            <TableHead>Preset</TableHead>
+            <TableHead>Preview ports</TableHead>
+            <TableHead>Size</TableHead>
             <TableHead>Status</TableHead>
             <TableHead />
           </TableRow>
@@ -55,9 +59,9 @@ export function TemplateTable(props: {
           {props.loading ? (
             <SkeletonRows columns={6} />
           ) : props.error ? (
-            <EmptyRow columns={6} title="Could not load templates" detail="Check the API server and refresh." />
+            <EmptyRow columns={6} title="Could not load environments" detail="Check the API server and refresh." />
           ) : props.templates.length === 0 ? (
-            <EmptyRow columns={6} title="No templates yet" detail="Create a ready-to-run environment before launching sandboxes." />
+            <EmptyRow columns={6} title="No environments yet" detail="Create a ready-to-run environment before launching sandboxes." />
           ) : (
             props.templates.map((template) => (
               <TableRow
@@ -84,7 +88,9 @@ export function TemplateTable(props: {
                     <span>{templatePersistence(template)}</span>
                   </div>
                 </TableCell>
-                <TableCell>{templateValidationText(template)}</TableCell>
+                <TableCell>
+                  <TemplateValidationBadge template={template} />
+                </TableCell>
                 <TableCell>
                   <div className="row-actions" aria-label={`Actions for ${template.name}`}>
                     <div className="row-action-group">
@@ -98,6 +104,16 @@ export function TemplateTable(props: {
                       </Button>
                     </div>
                     <div className="row-action-group row-action-icon-group">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="row-action-button row-action-lifecycle"
+                        title={templateValidationHint(template)}
+                        aria-label={`Validate ${template.name}`}
+                        onClick={() => void props.onValidate(template.id)}
+                      >
+                        <FlaskConical />
+                      </Button>
                       <TemplateDialog
                         projects={props.projects}
                         template={template}
@@ -113,5 +129,21 @@ export function TemplateTable(props: {
         </TableBody>
       </Table>
     </ConsolePanel>
+  )
+}
+
+function TemplateValidationBadge({ template }: { template: Template }) {
+  return (
+    <Badge
+      variant="secondary"
+      className={cn(
+        "template-validation-badge",
+        `template-validation-badge-${templateValidationTone(template)}`,
+      )}
+      title={templateValidationHint(template)}
+    >
+      <span className="status-badge-dot" />
+      {templateValidationText(template)}
+    </Badge>
   )
 }

@@ -65,7 +65,7 @@ export function DeleteSandboxDialog({
           </div>
         </dl>
         <p className="confirm-warning">
-          Workspace storage follows the runtime cleanup policy. Check the Storage tab before deleting if persistence matters.
+          Workspace storage follows the runtime cleanup policy. Check the workspace storage summary before deleting if persistence matters.
         </p>
         <DialogFooter>
           <DialogClose asChild>

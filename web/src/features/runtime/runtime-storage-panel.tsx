@@ -1,10 +1,10 @@
 import { RuntimeSectionHead } from "@/features/runtime/runtime-section-head"
 import type { RuntimeStorage } from "@/types"
 
-export function RuntimeStoragePanel({ storage }: { storage: RuntimeStorage[] }) {
+export function RuntimeStoragePanel({ storage, compact = false }: { storage: RuntimeStorage[]; compact?: boolean }) {
   return (
-    <div className="runtime-storage">
-      <RuntimeSectionHead eyebrow="Workspace" title="Storage" />
+    <div className={compact ? "runtime-storage runtime-storage-compact" : "runtime-storage"}>
+      {compact ? null : <RuntimeSectionHead eyebrow="Workspace" title="Storage" />}
       {storage.length === 0 ? (
         <p>No persistent workspace mount resolved.</p>
       ) : (

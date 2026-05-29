@@ -96,6 +96,13 @@ export function updateSandboxPorts(id: string, ports: SandboxPort[]) {
   })
 }
 
+export function updateSandbox(id: string, payload: Partial<Sandbox>) {
+  return request<Sandbox>(`/v1/sandboxes/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  })
+}
+
 export function deleteSandbox(id: string) {
   return request<void>(`/v1/sandboxes/${id}`, { method: "DELETE" })
 }

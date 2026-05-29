@@ -1,4 +1,7 @@
 import type {
+  ArtifactKind,
+  ExecutionTask,
+  ExecutionTaskStatus,
   FormRecord,
   Project,
   ResourceKind,
@@ -37,27 +40,27 @@ export function detailRows(
     const project = item as Project
     rows.push(["Namespace", project.defaultNamespace])
     rows.push(["Repository", project.repositoryUrl || ""])
-    rows.push(["Default template", templateName(project.defaultTemplateId, templates)])
+    rows.push(["Default environment", templateName(project.defaultTemplateId, templates)])
   }
   if (kind === "template") {
     const template = item as Template
     rows.push(["Runtime", templateRuntimeType(template)])
     rows.push(["Use case", templateUseCase(template)])
-    rows.push(["Entrypoints", templateEntrypoints(template)])
-    rows.push(["Preset", templateResourcePreset(template)])
-    rows.push(["Storage", templatePersistence(template)])
+    rows.push(["Preview ports", templateEntrypoints(template)])
+    rows.push(["Size", templateResourcePreset(template)])
+    rows.push(["Workspace", templatePersistence(template)])
     rows.push(["Validation", templateValidationText(template)])
     rows.push(["Image", template.image])
-    rows.push(["Working dir", template.workingDir || ""])
+    rows.push(["Working directory", template.workingDir || ""])
     rows.push(["Project", template.projectId ? projectName(template.projectId, projects) : "Global"])
   }
   if (kind === "sandbox") {
     const sandbox = item as Sandbox
     rows.push(["Status", sandbox.status])
     rows.push(["Project", projectName(sandbox.projectId, projects)])
-    rows.push(["Template", templateName(sandbox.templateId, templates)])
+    rows.push(["Environment", templateName(sandbox.templateId, templates)])
     rows.push(["Namespace", sandbox.namespace])
-    rows.push(["ServiceAccount", sandbox.serviceAccountName])
+    rows.push(["Runtime identity", sandbox.serviceAccountName])
     rows.push(["Runtime", runtimeText(sandbox.runtimeRef)])
   }
   return rows
@@ -72,6 +75,57 @@ export function templateName(id: string | undefined, templates: Template[]) {
     return "-"
   }
   return templates.find((template) => template.id === id)?.name || shortID(id)
+}
+
+export function templateForSandbox(sandbox: Sandbox, templates: Template[]) {
+  if (!sandbox.templateId) {
+    return undefined
+  }
+  return templates.find((template) => template.id === sandbox.templateId)
+}
+
+export function sandboxValidationRun(sandbox: Sandbox): {
+  isValidationRun: boolean
+  templateId: string | undefined
+  result: "passed" | "failed" | undefined
+  decidedAt: string | undefined
+} {
+  const metadata = sandbox.metadata || {}
+  const result =
+    metadata.validationResult === "passed" || metadata.validationResult === "failed"
+      ? metadata.validationResult
+      : undefined
+  return {
+    isValidationRun: metadata.purpose === "environment-validation",
+    templateId: typeof metadata.templateId === "string" ? metadata.templateId : sandbox.templateId,
+    result,
+    decidedAt: typeof metadata.validationDecidedAt === "string" ? metadata.validationDecidedAt : undefined,
+  }
+}
+
+export function templateValidationRun(template: Template, sandboxes: Sandbox[]) {
+  const validationSandboxId =
+    typeof template.metadata?.validationSandboxId === "string"
+      ? template.metadata.validationSandboxId
+      : undefined
+  const sandbox = validationSandboxId
+    ? sandboxes.find((item) => item.id === validationSandboxId)
+    : sandboxes
+        .filter((item) => {
+          const run = sandboxValidationRun(item)
+          return run.isValidationRun && run.templateId === template.id
+        })
+        .sort((left, right) => Date.parse(right.createdAt || "") - Date.parse(left.createdAt || ""))[0]
+  const decidedAt =
+    typeof template.metadata?.validationDecidedAt === "string"
+      ? template.metadata.validationDecidedAt
+      : sandboxValidationRun(sandbox || ({} as Sandbox)).decidedAt
+
+  return {
+    sandbox,
+    decidedAt,
+    status: templateValidationStatus(template),
+  }
 }
 
 export function templateRuntimeType(template: Template) {
@@ -135,14 +189,53 @@ export function templatePersistence(template: Template) {
 }
 
 export function templateValidationText(template: Template) {
-  const status = template.metadata?.validationStatus
+  const status = templateValidationStatus(template)
   if (status === "passed") {
     return "Validated"
   }
   if (status === "failed") {
     return "Failed"
   }
+  if (status === "testing") {
+    return "Testing"
+  }
   return "Not tested"
+}
+
+export function templateValidationStatus(template: Template) {
+  const status = template.metadata?.validationStatus
+  if (status === "passed" || status === "failed" || status === "testing") {
+    return status
+  }
+  return "not_tested"
+}
+
+export function templateValidationTone(template: Template) {
+  const status = templateValidationStatus(template)
+  if (status === "passed") {
+    return "success"
+  }
+  if (status === "failed") {
+    return "danger"
+  }
+  if (status === "testing") {
+    return "warning"
+  }
+  return "neutral"
+}
+
+export function templateValidationHint(template: Template) {
+  const status = templateValidationStatus(template)
+  if (status === "passed") {
+    return "Ready for repeated launch"
+  }
+  if (status === "failed") {
+    return "Needs correction before default use"
+  }
+  if (status === "testing") {
+    return "Validation sandbox in progress"
+  }
+  return "No validation sandbox yet"
 }
 
 export function storageSummary(storage: RuntimeStorage[] | undefined) {
@@ -153,19 +246,32 @@ export function storageSummary(storage: RuntimeStorage[] | undefined) {
   return [workspace.phase || "PVC", workspace.capacity, workspace.claimName].filter(Boolean).join(" · ")
 }
 
+export function sandboxPreviewPortsText(sandbox: Sandbox) {
+  const ports = sandbox.ports || []
+  return ports.length ? formatPorts(ports) : "No preview ports"
+}
+
+export function sandboxPreviewPortsHint(sandbox: Sandbox) {
+  const ports = sandbox.ports || []
+  if (!ports.length) {
+    return "No declared TCP ports"
+  }
+  return `${ports.length} declared TCP ${ports.length === 1 ? "port" : "ports"}`
+}
+
 export function parsePorts(value: string) {
   const ports = []
   for (const item of value.split(",").map((entry) => entry.trim()).filter(Boolean)) {
     const parts = item.split(":")
     if (parts.length > 2) {
-      throw new Error("Entrypoints must use name:port or port")
+      throw new Error("Preview ports must use name:port or port")
     }
     const hasName = parts.length === 2
     const rawName = hasName ? parts[0].trim() : ""
     const rawPort = hasName ? parts[1].trim() : parts[0].trim()
     const port = Number(rawPort)
     if ((hasName && !rawName) || !Number.isInteger(port) || port < 1 || port > 65535) {
-      throw new Error("Entrypoint ports must be integers between 1 and 65535")
+      throw new Error("Preview ports must be integers between 1 and 65535")
     }
     ports.push({
       name: hasName ? rawName : `port-${port}`,
@@ -265,7 +371,7 @@ export function templatePayloadFromForm(data: FormRecord) {
   return {
     projectId: stringValue(data.projectId),
     name: stringValue(data.name),
-    slug: stringValue(data.slug),
+    slug: stringValue(data.slug) || generatedSlug(stringValue(data.name), "environment"),
     image,
     startupCommand: parseCommand(stringValue(data.startupCommand)),
     workingDir: stringValue(data.workingDir) || "/workspace",
@@ -276,7 +382,7 @@ export function templatePayloadFromForm(data: FormRecord) {
     env: parseKeyValueLines(stringValue(data.env)),
     secretRefs: parseSecretRefs(stringValue(data.secretRefs)),
     networkPolicy: stringValue(data.networkPolicy),
-    lifecyclePolicy: parseJSONField(stringValue(data.lifecyclePolicy), "Lifecycle policy"),
+    lifecyclePolicy: parseJSONField(stringValue(data.lifecyclePolicy), "Cleanup policy"),
     metadata: {
       runtimeType,
       useCase: stringValue(data.useCase) || defaultUseCaseForRuntime(runtimeType),
@@ -380,6 +486,112 @@ export function runtimeText(ref: RuntimeRef | undefined) {
   return `${ref.kind} ${ref.namespace}/${ref.name}`
 }
 
+export function formatDateTime(value: string | undefined) {
+  if (!value) {
+    return "-"
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value))
+}
+
+export function formatClockTime(value: string | undefined) {
+  if (!value) {
+    return "-"
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value))
+}
+
+export function formatDuration(start: string | undefined, end: string | undefined) {
+  if (!start) {
+    return "-"
+  }
+  const startMs = Date.parse(start)
+  const endMs = end ? Date.parse(end) : Date.now()
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
+    return "-"
+  }
+  const totalSeconds = Math.floor((endMs - startMs) / 1000)
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`
+  }
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes < 60) {
+    return `${minutes}m ${seconds}s`
+  }
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  return `${hours}h ${remainingMinutes}m`
+}
+
+export function formatBytes(value: number | undefined) {
+  if (typeof value !== "number") {
+    return "-"
+  }
+  if (value < 1024) {
+    return `${value} B`
+  }
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KiB`
+  }
+  if (value < 1024 * 1024 * 1024) {
+    return `${(value / (1024 * 1024)).toFixed(1)} MiB`
+  }
+  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GiB`
+}
+
+export function formatTaskCommand(command: string[] | undefined) {
+  if (!command?.length) {
+    return "-"
+  }
+  if (command.length === 3 && command[0] === "sh" && command[1] === "-lc") {
+    return command[2]
+  }
+  if (command.length === 3 && command[0] === "sh" && command[1] === "-c") {
+    return command[2]
+  }
+  return command.join(" ")
+}
+
+export function isActiveTask(task: ExecutionTask) {
+  return task.status === "queued" || task.status === "running"
+}
+
+export function taskStatusLabel(status: ExecutionTaskStatus) {
+  if (status === "timed_out") {
+    return "timed out"
+  }
+  return status
+}
+
+export function taskStatusTone(status: ExecutionTaskStatus) {
+  if (status === "succeeded") {
+    return "success"
+  }
+  if (status === "failed" || status === "timed_out" || status === "canceled") {
+    return "danger"
+  }
+  if (status === "queued" || status === "running") {
+    return "warning"
+  }
+  return "neutral"
+}
+
+export function artifactKindLabel(kind: ArtifactKind) {
+  return kind
+    .split("_")
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" ")
+}
+
 export function terminalURL(sandboxID: string) {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
   return `${protocol}//${window.location.host}/v1/sandboxes/${sandboxID}/terminal`
@@ -414,6 +626,10 @@ export function slugFromName(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
+}
+
+export function generatedSlug(value: string, fallbackPrefix: string) {
+  return slugFromName(value) || `${fallbackPrefix}-${Date.now().toString(36)}`
 }
 
 export function stringValue(value: FormDataEntryValue | undefined) {

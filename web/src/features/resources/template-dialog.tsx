@@ -151,7 +151,7 @@ export function TemplateDialog({
 
   return (
     <ResourceDialog
-      title={editing ? "Edit environment template" : "New environment template"}
+      title={editing ? "Edit environment" : "New environment"}
       description={editing ? "Tune the ready-to-run environment users launch from." : "Create a ready-to-run sandbox environment."}
       trigger={
         editing ? (
@@ -160,18 +160,18 @@ export function TemplateDialog({
             size="icon-sm"
             className={triggerClassName}
             aria-label={`Edit ${template?.name}`}
-            title="Edit template"
+            title="Edit environment"
           >
             <SquarePen />
           </Button>
         ) : (
           <Button variant="outline">
             <Plus data-icon="inline-start" />
-            New template
+            New environment
           </Button>
         )
       }
-      submitLabel={editing ? "Save template" : "Create template"}
+      submitLabel={editing ? "Save environment" : "Create environment"}
       onSubmit={onSubmit}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
@@ -186,7 +186,7 @@ export function TemplateDialog({
             label="Scope"
             defaultValue={projects[0]?.id || "global"}
             items={[
-              { value: "global", label: "Global template" },
+              { value: "global", label: "Global environment" },
               ...projects.map((project) => ({ value: project.id, label: project.name })),
             ]}
           />
@@ -195,18 +195,9 @@ export function TemplateDialog({
         <div className="template-form-section">
           <div>
             <p className="template-form-eyebrow">Essentials</p>
-            <p className="template-form-note">Users pick templates by purpose, entrypoint, and resource fit.</p>
+            <p className="template-form-note">Users pick environments by purpose, preview ports, and resource fit.</p>
           </div>
-          <TextField name="name" label="Template name" required defaultValue={initialValues.name} />
-          {!editing ? (
-            <TextField
-              name="slug"
-              label="Alias"
-              required
-              pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?"
-              defaultValue={initialValues.slug}
-            />
-          ) : null}
+          <TextField name="name" label="Environment name" required defaultValue={initialValues.name} />
           <div className="dialog-row">
             <SelectField
               name="runtimeType"
@@ -217,7 +208,7 @@ export function TemplateDialog({
             />
             <SelectField
               name="resourcePreset"
-              label="Resource preset"
+              label="Size"
               value={resourcePreset}
               onValueChange={selectResourcePreset}
               items={resourcePresets.map((item) => ({ value: item, label: item }))}
@@ -226,12 +217,12 @@ export function TemplateDialog({
           <TextField name="useCase" label="Use case" value={useCase} onChange={(event) => setUseCase(event.target.value)} />
           <TextField
             name="exposedPorts"
-            label="Entrypoints"
+            label="Preview ports"
             value={ports}
             onChange={(event) => setPorts(event.target.value)}
             placeholder="web:3000, api:8080"
           />
-          <TextField name="storageRequest" label="Workspace storage" defaultValue={initialValues.storageRequest} />
+          <TextField name="storageRequest" label="Persistent workspace" defaultValue={initialValues.storageRequest} />
         </div>
 
         <Separator />
@@ -239,15 +230,23 @@ export function TemplateDialog({
         <details className="advanced-template-settings">
           <summary>Advanced settings</summary>
           <FieldGroup>
-            <TextField name="image" label="Base image" required value={image} onChange={(event) => setImage(event.target.value)} />
+            {!editing ? (
+              <TextField
+                name="slug"
+                label="Environment key"
+                pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?"
+                defaultValue={initialValues.slug}
+              />
+            ) : null}
+            <TextField name="image" label="Runtime image" required value={image} onChange={(event) => setImage(event.target.value)} />
             <TextareaField
               name="startupCommand"
-              label="Start command"
+              label="Startup command"
               value={startupCommand}
               onChange={(event) => setStartupCommand(event.target.value)}
               rows={3}
             />
-            <TextField name="workingDir" label="Working dir" defaultValue={initialValues.workingDir} />
+            <TextField name="workingDir" label="Working directory" defaultValue={initialValues.workingDir} />
             <div className="dialog-row">
               <TextField name="cpuRequest" label="CPU" value={cpuRequest} onChange={(event) => updateCPURequest(event.target.value)} />
               <TextField name="memoryRequest" label="Memory" value={memoryRequest} onChange={(event) => updateMemoryRequest(event.target.value)} />
@@ -261,7 +260,7 @@ export function TemplateDialog({
             />
             <SelectField
               name="networkPolicy"
-              label="Network policy"
+              label="Network access"
               defaultValue={initialValues.networkPolicy}
               items={[
                 { value: "default", label: "Default" },
@@ -271,7 +270,7 @@ export function TemplateDialog({
             />
             <TextareaField
               name="lifecyclePolicy"
-              label="Lifecycle policy"
+              label="Cleanup policy"
               defaultValue={initialValues.lifecyclePolicy}
               placeholder='{"idleTimeoutSeconds":3600}'
               rows={3}

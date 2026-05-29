@@ -7,7 +7,7 @@ export function SummaryStrip({ counts }: { counts: Record<string, number> }) {
       </div>
       <div>
         <span>{counts.templates}</span>
-        <p>Templates</p>
+        <p>Environments</p>
       </div>
       <div>
         <span>{counts.sandboxes}</span>

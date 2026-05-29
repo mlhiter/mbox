@@ -9,7 +9,7 @@ export type APIStatus = {
 
 export type ResourceKind = "project" | "template" | "sandbox"
 
-export type WorkspaceView = "projects" | "templates" | "sandboxes"
+export type WorkspaceView = "projects" | "templates" | "sandboxes" | "sandbox-detail"
 
 export type RuntimeRef = {
   adapter?: string
@@ -80,6 +80,8 @@ export type Project = {
   repositoryUrl?: string
   defaultNamespace: string
   defaultTemplateId?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 export type Template = {
@@ -120,6 +122,9 @@ export type Sandbox = {
   status: string
   runtimeRef?: RuntimeRef
   ports?: SandboxPort[]
+  metadata?: Record<string, unknown>
+  createdAt?: string
+  updatedAt?: string
 }
 
 export type Selection = {
@@ -180,7 +185,7 @@ export type Artifact = {
   updatedAt?: string
 }
 
-export type RuntimeTab = "terminal" | "storage" | "preview" | "tasks" | "artifacts" | "logs" | "events"
+export type RuntimeTab = "terminal" | "preview" | "tasks" | "artifacts" | "logs" | "events"
 
 export type ListResponse<T> = {
   items?: T[]

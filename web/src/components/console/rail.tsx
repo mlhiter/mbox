@@ -8,7 +8,7 @@ const navItems: Array<{
   icon: typeof FolderKanban
 }> = [
   { id: "projects", label: "Projects", icon: FolderKanban },
-  { id: "templates", label: "Templates", icon: Layers3 },
+  { id: "templates", label: "Environments", icon: Layers3 },
   { id: "sandboxes", label: "Sandboxes", icon: Boxes },
 ]
 
@@ -35,12 +35,13 @@ export function Rail({
       <nav className="nav">
         {navItems.map((item) => {
           const Icon = item.icon
+          const selected = activeView === item.id || (activeView === "sandbox-detail" && item.id === "sandboxes")
           return (
             <button
               key={item.id}
               type="button"
-              className={cn(activeView === item.id && "is-active")}
-              aria-current={activeView === item.id ? "page" : undefined}
+              className={cn(selected && "is-active")}
+              aria-current={selected ? "page" : undefined}
               onClick={() => onViewChange(item.id)}
             >
               <Icon />

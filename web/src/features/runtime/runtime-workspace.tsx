@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { RefreshCw } from "lucide-react"
+import { Box, Cable, CheckCircle2, Clock3, RefreshCw, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   cancelExecutionTask,
@@ -31,7 +31,6 @@ import type {
 
 const runtimeTabs: Array<{ id: RuntimeTab; label: string }> = [
   { id: "terminal", label: "Terminal" },
-  { id: "storage", label: "Storage" },
   { id: "preview", label: "Preview" },
   { id: "tasks", label: "Tasks" },
   { id: "artifacts", label: "Artifacts" },
@@ -58,7 +57,7 @@ function RuntimePendingPanel({
 }) {
   return (
     <div className="runtime-pending-panel">
-      <strong>Starting runtime</strong>
+      <strong>{sandbox.status === "running" && sandbox.runtimeRef ? "Runtime access unavailable" : "Starting runtime"}</strong>
       <span>{reason || "Runtime is starting"}</span>
       <small>
         Current state: {sandbox.status || "pending"}
@@ -87,10 +86,18 @@ export function RuntimeWorkspace({
   const [loading, setLoading] = useState(false)
   const runtimeReady = Boolean(sandbox.runtimeRef && sandbox.status === "running")
   const runtimeStarting = sandbox.status === "pending" || !sandbox.runtimeRef
+  const previewPortCount = ports.length || sandbox.ports?.length || 0
   const terminalDisabledReason = runtimeStarting
     ? "Runtime is starting"
-    : sandbox.status !== "running"
+    : runtimeError && !runtimeAccessReady
+      ? runtimeError
+      : sandbox.status !== "running"
       ? `Sandbox is ${sandbox.status || "not running"}`
+      : undefined
+  const runtimeNotice = runtimeStarting
+    ? "Runtime workspace is starting. Terminal, logs, events, and preview links become active after the sandbox is running."
+    : terminalDisabledReason
+      ? "Runtime access is unavailable. Terminal, logs, events, and preview links become active after runtime access is configured."
       : undefined
 
   async function loadRuntime() {
@@ -143,6 +150,7 @@ export function RuntimeWorkspace({
       const message = requestError instanceof Error ? requestError.message : "Runtime request failed"
       setRuntimeAccessReady(false)
       setRuntimeError(message)
+      setPorts(previewPortsFromSandbox(sandbox, message))
     }
     await loadTasks()
     await loadArtifacts()
@@ -228,9 +236,9 @@ export function RuntimeWorkspace({
         </Button>
       </div>
       {runtimeError ? <p className="runtime-error">{runtimeError}</p> : null}
-      {terminalDisabledReason ? (
+      {runtimeNotice ? (
         <p className="runtime-notice" role="status">
-          Runtime workspace is starting. Terminal, logs, events, and preview links become active after the sandbox is running.
+          {runtimeNotice}
         </p>
       ) : null}
       <div className="runtime-target-strip">
@@ -251,6 +259,34 @@ export function RuntimeWorkspace({
           <strong>{storageSummary(target?.storage)}</strong>
         </div>
       </div>
+      <div className="runtime-output-summary" aria-label="Runtime output summary">
+        <div>
+          <Cable aria-hidden="true" />
+          <span>Preview ports</span>
+          <strong>{previewPortCount}</strong>
+        </div>
+        <div>
+          <Clock3 aria-hidden="true" />
+          <span>Active tasks</span>
+          <strong>{tasks.filter((task) => task.status === "queued" || task.status === "running").length}</strong>
+        </div>
+        <div>
+          <CheckCircle2 aria-hidden="true" />
+          <span>Succeeded</span>
+          <strong>{tasks.filter((task) => task.status === "succeeded").length}</strong>
+        </div>
+        <div>
+          <XCircle aria-hidden="true" />
+          <span>Needs review</span>
+          <strong>{tasks.filter((task) => task.status === "failed" || task.status === "timed_out" || task.status === "canceled").length}</strong>
+        </div>
+        <div>
+          <Box aria-hidden="true" />
+          <span>Artifacts</span>
+          <strong>{artifacts.length}</strong>
+        </div>
+      </div>
+      <RuntimeStoragePanel storage={target?.storage || []} compact />
       <div className="runtime-tabs" role="tablist" aria-label="Runtime views">
         {runtimeTabs.map((tab) => (
           <button
@@ -267,13 +303,12 @@ export function RuntimeWorkspace({
       </div>
       <div className="runtime-tab-panel">
         {activeTab === "terminal" ? (
-          runtimeReady ? (
+          runtimeReady && runtimeAccessReady ? (
             <TerminalPane sandbox={sandbox} disabled={false} />
           ) : (
             <RuntimePendingPanel sandbox={sandbox} reason={terminalDisabledReason} />
           )
         ) : null}
-        {activeTab === "storage" ? <RuntimeStoragePanel storage={target?.storage || []} /> : null}
         {activeTab === "preview" ? (
           <PreviewPorts
             ports={ports}
