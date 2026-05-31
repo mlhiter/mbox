@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -104,7 +107,163 @@ func (s *Store) UpdateProject(ctx context.Context, id uuid.UUID, input domain.Pr
 }
 
 func (s *Store) DeleteProject(ctx context.Context, id uuid.UUID) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM projects WHERE id = $1`, id)
+	var projectExists bool
+	var cleanupBlocked bool
+	var deleted bool
+	err := s.pool.QueryRow(ctx, `
+		WITH project_row AS (
+			SELECT id
+			FROM projects
+			WHERE id = $1
+		),
+		cleanup_blockers AS (
+			SELECT 1
+			FROM sandboxes
+			WHERE project_id = $1
+				AND (
+					deleted_at IS NULL
+					OR (runtime_ref IS NOT NULL AND runtime_ref <> 'null'::jsonb)
+				)
+			LIMIT 1
+		),
+		deleted_project AS (
+			DELETE FROM projects
+			WHERE id = $1
+				AND EXISTS (SELECT 1 FROM project_row)
+				AND NOT EXISTS (SELECT 1 FROM cleanup_blockers)
+			RETURNING id
+		)
+		SELECT
+			EXISTS (SELECT 1 FROM project_row),
+			EXISTS (SELECT 1 FROM cleanup_blockers),
+			EXISTS (SELECT 1 FROM deleted_project)
+	`, id).Scan(&projectExists, &cleanupBlocked, &deleted)
+	if err != nil {
+		return mapWriteError(err)
+	}
+	if !projectExists {
+		return domain.ErrNotFound
+	}
+	if cleanupBlocked {
+		return fmt.Errorf("%w: project has sandbox cleanup pending", domain.ErrConflict)
+	}
+	if !deleted {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) GetProjectPolicy(ctx context.Context, projectID uuid.UUID) (domain.ProjectPolicy, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT project_id, enforcement, allowed_image_prefixes, allowed_service_accounts,
+			allowed_secret_refs, created_at, updated_at
+		FROM project_policies
+		WHERE project_id = $1
+	`, projectID)
+	policy, err := scanProjectPolicy(row)
+	return policy, mapReadError(err)
+}
+
+func (s *Store) UpsertProjectPolicy(ctx context.Context, projectID uuid.UUID, input domain.ProjectPolicyUpsert) (domain.ProjectPolicy, error) {
+	row := s.pool.QueryRow(ctx, `
+		INSERT INTO project_policies (
+			project_id, enforcement, allowed_image_prefixes, allowed_service_accounts, allowed_secret_refs
+		)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (project_id) DO UPDATE
+		SET enforcement = EXCLUDED.enforcement,
+			allowed_image_prefixes = EXCLUDED.allowed_image_prefixes,
+			allowed_service_accounts = EXCLUDED.allowed_service_accounts,
+			allowed_secret_refs = EXCLUDED.allowed_secret_refs
+		RETURNING project_id, enforcement, allowed_image_prefixes, allowed_service_accounts,
+			allowed_secret_refs, created_at, updated_at
+	`, projectID, input.Enforcement, stringSliceDefault(input.AllowedImagePrefixes),
+		stringSliceDefault(input.AllowedServiceAccounts), stringSliceDefault(input.AllowedSecretRefs))
+
+	policy, err := scanProjectPolicy(row)
+	return policy, mapWriteError(err)
+}
+
+func (s *Store) GetProjectQuotaPolicy(ctx context.Context, projectID uuid.UUID) (domain.ProjectQuotaPolicy, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT project_id, enforcement, max_active_sandboxes, max_retained_artifact_bytes,
+			created_at, updated_at
+		FROM project_quota_policies
+		WHERE project_id = $1
+	`, projectID)
+	policy, err := scanProjectQuotaPolicy(row)
+	return policy, mapReadError(err)
+}
+
+func (s *Store) UpsertProjectQuotaPolicy(ctx context.Context, projectID uuid.UUID, input domain.ProjectQuotaPolicyUpsert) (domain.ProjectQuotaPolicy, error) {
+	row := s.pool.QueryRow(ctx, `
+		INSERT INTO project_quota_policies (
+			project_id, enforcement, max_active_sandboxes, max_retained_artifact_bytes
+		)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (project_id) DO UPDATE
+		SET enforcement = EXCLUDED.enforcement,
+			max_active_sandboxes = EXCLUDED.max_active_sandboxes,
+			max_retained_artifact_bytes = EXCLUDED.max_retained_artifact_bytes
+		RETURNING project_id, enforcement, max_active_sandboxes, max_retained_artifact_bytes,
+			created_at, updated_at
+	`, projectID, input.Enforcement, input.MaxActiveSandboxes, input.MaxRetainedArtifactBytes)
+	policy, err := scanProjectQuotaPolicy(row)
+	return policy, mapWriteError(err)
+}
+
+func (s *Store) ListProjectCredentials(ctx context.Context, projectID uuid.UUID) ([]domain.ProjectCredential, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, project_id, name, slug, type, target, secret_ref, usage, metadata, created_at, updated_at
+		FROM project_credentials
+		WHERE project_id = $1
+		ORDER BY created_at DESC
+	`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	credentials := []domain.ProjectCredential{}
+	for rows.Next() {
+		credential, err := scanProjectCredential(rows)
+		if err != nil {
+			return nil, err
+		}
+		credentials = append(credentials, credential)
+	}
+	return credentials, rows.Err()
+}
+
+func (s *Store) CreateProjectCredential(ctx context.Context, input domain.ProjectCredentialCreate) (domain.ProjectCredential, error) {
+	secretRef, err := json.Marshal(input.SecretRef)
+	if err != nil {
+		return domain.ProjectCredential{}, err
+	}
+	row := s.pool.QueryRow(ctx, `
+		INSERT INTO project_credentials (
+			project_id, name, slug, type, target, secret_ref, usage, metadata
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, project_id, name, slug, type, target, secret_ref, usage, metadata, created_at, updated_at
+	`, input.ProjectID, input.Name, input.Slug, input.Type, input.Target, secretRef, stringSliceDefault(input.Usage),
+		jsonDefaultObject(input.Metadata))
+	credential, err := scanProjectCredential(row)
+	return credential, mapWriteError(err)
+}
+
+func (s *Store) GetProjectCredential(ctx context.Context, id uuid.UUID) (domain.ProjectCredential, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, project_id, name, slug, type, target, secret_ref, usage, metadata, created_at, updated_at
+		FROM project_credentials
+		WHERE id = $1
+	`, id)
+	credential, err := scanProjectCredential(row)
+	return credential, mapReadError(err)
+}
+
+func (s *Store) DeleteProjectCredential(ctx context.Context, id uuid.UUID) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM project_credentials WHERE id = $1`, id)
 	if err != nil {
 		return mapWriteError(err)
 	}
@@ -112,6 +271,362 @@ func (s *Store) DeleteProject(ctx context.Context, id uuid.UUID) error {
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+func (s *Store) GetProjectUsage(ctx context.Context, projectID uuid.UUID) (domain.ProjectUsage, error) {
+	var exists bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1)`, projectID).Scan(&exists); err != nil {
+		return domain.ProjectUsage{}, mapReadError(err)
+	}
+	if !exists {
+		return domain.ProjectUsage{}, domain.ErrNotFound
+	}
+
+	usage := domain.ProjectUsage{
+		ProjectID:   projectID,
+		GeneratedAt: time.Now().UTC(),
+		Notes: []string{
+			"usage is aggregated from mbox product records",
+			"sandbox resource requests are summed from active sandbox templates, not live Kubernetes metrics",
+			"quota enforcement is not implemented by this usage summary",
+		},
+	}
+	if err := s.scanProjectSandboxUsage(ctx, projectID, &usage.Sandboxes); err != nil {
+		return domain.ProjectUsage{}, err
+	}
+	if err := s.scanProjectSandboxRequestUsage(ctx, projectID, &usage.Sandboxes); err != nil {
+		return domain.ProjectUsage{}, err
+	}
+	if err := s.scanProjectSessionUsage(ctx, projectID, &usage.RuntimeSessions); err != nil {
+		return domain.ProjectUsage{}, err
+	}
+	if err := s.scanProjectTaskUsage(ctx, projectID, &usage.ExecutionTasks); err != nil {
+		return domain.ProjectUsage{}, err
+	}
+	if err := s.scanProjectArtifactUsage(ctx, projectID, &usage.Artifacts); err != nil {
+		return domain.ProjectUsage{}, err
+	}
+	if err := s.scanProjectTemplateUsage(ctx, projectID, &usage.Templates); err != nil {
+		return domain.ProjectUsage{}, err
+	}
+	if err := s.scanProjectCredentialUsage(ctx, projectID, &usage.Credentials); err != nil {
+		return domain.ProjectUsage{}, err
+	}
+	return usage, nil
+}
+
+func (s *Store) ListAuditEvents(ctx context.Context, filter domain.AuditEventFilter) ([]domain.AuditEvent, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	query := `
+		SELECT id, project_id, action, resource_type, resource_id, resource_name, actor, source, metadata, created_at
+		FROM audit_events
+	`
+	args := []any{}
+	where := []string{}
+	if filter.ProjectID != nil {
+		args = append(args, *filter.ProjectID)
+		where = append(where, fmt.Sprintf("project_id = $%d", len(args)))
+	}
+	if filter.Action != "" {
+		args = append(args, filter.Action)
+		where = append(where, fmt.Sprintf("action = $%d", len(args)))
+	}
+	if filter.ResourceType != "" {
+		args = append(args, filter.ResourceType)
+		where = append(where, fmt.Sprintf("resource_type = $%d", len(args)))
+	}
+	if filter.ResourceID != nil {
+		args = append(args, *filter.ResourceID)
+		where = append(where, fmt.Sprintf("resource_id = $%d", len(args)))
+	}
+	if filter.Actor != "" {
+		args = append(args, filter.Actor)
+		where = append(where, fmt.Sprintf("actor = $%d", len(args)))
+	}
+	if filter.Source != "" {
+		args = append(args, filter.Source)
+		where = append(where, fmt.Sprintf("source = $%d", len(args)))
+	}
+	if filter.RequestID != "" {
+		args = append(args, filter.RequestID)
+		where = append(where, fmt.Sprintf("metadata ->> 'requestId' = $%d", len(args)))
+	}
+	if filter.Operation != "" {
+		args = append(args, filter.Operation)
+		where = append(where, fmt.Sprintf("metadata ->> 'operation' = $%d", len(args)))
+	}
+	if filter.Since != nil {
+		args = append(args, *filter.Since)
+		where = append(where, fmt.Sprintf("created_at >= $%d", len(args)))
+	}
+	if filter.Until != nil {
+		args = append(args, *filter.Until)
+		where = append(where, fmt.Sprintf("created_at <= $%d", len(args)))
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	args = append(args, limit)
+	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d", len(args))
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := []domain.AuditEvent{}
+	for rows.Next() {
+		event, err := scanAuditEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	return events, rows.Err()
+}
+
+func (s *Store) CreateAuditEvent(ctx context.Context, input domain.AuditEventCreate) (domain.AuditEvent, error) {
+	row := s.pool.QueryRow(ctx, `
+		INSERT INTO audit_events (
+			project_id, action, resource_type, resource_id, resource_name, actor, source, metadata
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, project_id, action, resource_type, resource_id, resource_name, actor, source, metadata, created_at
+	`, input.ProjectID, input.Action, input.ResourceType, input.ResourceID, input.ResourceName, input.Actor,
+		input.Source, jsonDefaultObject(input.Metadata))
+	event, err := scanAuditEvent(row)
+	return event, mapWriteError(err)
+}
+
+func (s *Store) scanProjectSandboxUsage(ctx context.Context, projectID uuid.UUID, usage *domain.ProjectSandboxUsage) error {
+	return s.pool.QueryRow(ctx, `
+		SELECT
+			count(*)::int,
+			count(*) FILTER (WHERE deleted_at IS NULL)::int,
+			count(*) FILTER (WHERE status = 'pending' AND deleted_at IS NULL)::int,
+			count(*) FILTER (WHERE status = 'running' AND deleted_at IS NULL)::int,
+			count(*) FILTER (WHERE status = 'stopped' AND deleted_at IS NULL)::int,
+			count(*) FILTER (WHERE status = 'failed' AND deleted_at IS NULL)::int,
+			count(*) FILTER (WHERE status = 'deleted' OR deleted_at IS NOT NULL)::int,
+			count(*) FILTER (
+				WHERE deleted_at IS NOT NULL
+					AND runtime_ref IS NOT NULL
+					AND runtime_ref <> 'null'::jsonb
+			)::int
+		FROM sandboxes
+		WHERE project_id = $1
+	`, projectID).Scan(
+		&usage.Total,
+		&usage.Active,
+		&usage.Pending,
+		&usage.Running,
+		&usage.Stopped,
+		&usage.Failed,
+		&usage.Deleted,
+		&usage.CleanupPending,
+	)
+}
+
+func (s *Store) scanProjectSandboxRequestUsage(ctx context.Context, projectID uuid.UUID, usage *domain.ProjectSandboxUsage) error {
+	rows, err := s.pool.Query(ctx, `
+		SELECT s.status, t.cpu_request, t.memory_request, t.storage_request
+		FROM sandboxes s
+		JOIN environment_templates t ON t.id = s.template_id
+		WHERE s.project_id = $1
+			AND s.deleted_at IS NULL
+			AND s.status IN ('pending', 'running', 'stopped', 'failed')
+	`, projectID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	active := domain.NewSandboxResourceRequestAccumulator()
+	running := domain.NewSandboxResourceRequestAccumulator()
+	for rows.Next() {
+		var status domain.SandboxStatus
+		var cpuRequest string
+		var memoryRequest string
+		var storageRequest string
+		if err := rows.Scan(&status, &cpuRequest, &memoryRequest, &storageRequest); err != nil {
+			return err
+		}
+		active.Add(cpuRequest, memoryRequest, storageRequest)
+		if status == domain.SandboxStatusRunning {
+			running.Add(cpuRequest, memoryRequest, storageRequest)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	usage.ActiveRequests = active.Usage()
+	usage.RunningRequests = running.Usage()
+	return nil
+}
+
+func (s *Store) scanProjectSessionUsage(ctx context.Context, projectID uuid.UUID, usage *domain.ProjectSessionUsage) error {
+	return s.pool.QueryRow(ctx, `
+		SELECT
+			count(*)::int,
+			count(*) FILTER (WHERE status = 'active')::int,
+			count(*) FILTER (WHERE status = 'ended')::int,
+			count(*) FILTER (WHERE status = 'failed')::int,
+			count(*) FILTER (WHERE type = 'terminal')::int,
+			count(*) FILTER (WHERE type = 'ide')::int,
+			count(*) FILTER (WHERE type = 'notebook')::int,
+			count(*) FILTER (WHERE type = 'browser')::int,
+			count(*) FILTER (WHERE type = 'command')::int,
+			count(*) FILTER (WHERE type = 'custom')::int
+		FROM runtime_sessions
+		WHERE project_id = $1
+	`, projectID).Scan(
+		&usage.Total,
+		&usage.Active,
+		&usage.Ended,
+		&usage.Failed,
+		&usage.Terminal,
+		&usage.IDE,
+		&usage.Notebook,
+		&usage.Browser,
+		&usage.Command,
+		&usage.Custom,
+	)
+}
+
+func (s *Store) scanProjectTaskUsage(ctx context.Context, projectID uuid.UUID, usage *domain.ProjectTaskUsage) error {
+	return s.pool.QueryRow(ctx, `
+		SELECT
+			count(*)::int,
+			count(*) FILTER (WHERE status = 'queued')::int,
+			count(*) FILTER (WHERE status = 'running')::int,
+			count(*) FILTER (WHERE status = 'succeeded')::int,
+			count(*) FILTER (WHERE status = 'failed')::int,
+			count(*) FILTER (WHERE status = 'canceled')::int,
+			count(*) FILTER (WHERE status = 'timed_out')::int
+		FROM execution_tasks
+		WHERE project_id = $1
+	`, projectID).Scan(
+		&usage.Total,
+		&usage.Queued,
+		&usage.Running,
+		&usage.Succeeded,
+		&usage.Failed,
+		&usage.Canceled,
+		&usage.TimedOut,
+	)
+}
+
+func (s *Store) scanProjectArtifactUsage(ctx context.Context, projectID uuid.UUID, usage *domain.ProjectArtifactUsage) error {
+	return s.pool.QueryRow(ctx, `
+		SELECT
+			count(a.*)::int,
+			count(ac.*)::int,
+			coalesce(sum(a.size_bytes), 0)::bigint,
+			coalesce(sum(ac.size_bytes), 0)::bigint,
+			count(a.*) FILTER (WHERE a.kind = 'file')::int,
+			count(a.*) FILTER (WHERE a.kind = 'directory')::int,
+			count(a.*) FILTER (WHERE a.kind = 'log')::int,
+			count(a.*) FILTER (WHERE a.kind = 'report')::int,
+			count(a.*) FILTER (WHERE a.kind = 'screenshot')::int,
+			count(a.*) FILTER (WHERE a.kind = 'image')::int,
+			count(a.*) FILTER (WHERE a.kind = 'link')::int,
+			count(a.*) FILTER (WHERE a.kind = 'other')::int
+		FROM artifacts a
+		LEFT JOIN artifact_contents ac ON ac.artifact_id = a.id
+		WHERE a.project_id = $1
+	`, projectID).Scan(
+		&usage.Total,
+		&usage.RetainedContent,
+		&usage.ReferencedBytes,
+		&usage.RetainedBytes,
+		&usage.File,
+		&usage.Directory,
+		&usage.Log,
+		&usage.Report,
+		&usage.Screenshot,
+		&usage.Image,
+		&usage.Link,
+		&usage.Other,
+	)
+}
+
+func (s *Store) scanProjectTemplateUsage(ctx context.Context, projectID uuid.UUID, usage *domain.ProjectTemplateUsage) error {
+	if err := s.pool.QueryRow(ctx, `
+		SELECT
+			count(*) FILTER (WHERE project_id = $1)::int,
+			count(*) FILTER (WHERE project_id IS NULL)::int
+		FROM environment_templates
+		WHERE project_id = $1 OR project_id IS NULL
+	`, projectID).Scan(&usage.ProjectScoped, &usage.GlobalVisible); err != nil {
+		return err
+	}
+	cpu, err := s.resourceUsageValues(ctx, projectID, "cpu_request")
+	if err != nil {
+		return err
+	}
+	memory, err := s.resourceUsageValues(ctx, projectID, "memory_request")
+	if err != nil {
+		return err
+	}
+	storage, err := s.resourceUsageValues(ctx, projectID, "storage_request")
+	if err != nil {
+		return err
+	}
+	usage.CPURequests = cpu
+	usage.MemoryRequests = memory
+	usage.StorageRequests = storage
+	return nil
+}
+
+func (s *Store) resourceUsageValues(ctx context.Context, projectID uuid.UUID, column string) ([]domain.ResourceUsageValue, error) {
+	query := fmt.Sprintf(`
+		SELECT %s, count(*)::int
+		FROM environment_templates
+		WHERE (project_id = $1 OR project_id IS NULL)
+			AND length(trim(%s)) > 0
+		GROUP BY %s
+		ORDER BY count(*) DESC, %s ASC
+	`, column, column, column, column)
+	rows, err := s.pool.Query(ctx, query, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	values := []domain.ResourceUsageValue{}
+	for rows.Next() {
+		var value domain.ResourceUsageValue
+		if err := rows.Scan(&value.Value, &value.Count); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
+func (s *Store) scanProjectCredentialUsage(ctx context.Context, projectID uuid.UUID, usage *domain.ProjectCredentialUsage) error {
+	return s.pool.QueryRow(ctx, `
+		SELECT
+			count(*)::int,
+			count(*) FILTER (WHERE type = 'git')::int,
+			count(*) FILTER (WHERE type = 'registry')::int,
+			count(*) FILTER (WHERE type = 'kubernetes')::int,
+			count(*) FILTER (WHERE type = 'ssh')::int,
+			count(*) FILTER (WHERE type = 'generic')::int
+		FROM project_credentials
+		WHERE project_id = $1
+	`, projectID).Scan(
+		&usage.Total,
+		&usage.Git,
+		&usage.Registry,
+		&usage.Kubernetes,
+		&usage.SSH,
+		&usage.Generic,
+	)
 }
 
 func (s *Store) ListTemplates(ctx context.Context, projectID *uuid.UUID) ([]domain.EnvironmentTemplate, error) {
@@ -143,6 +658,10 @@ func (s *Store) ListTemplates(ctx context.Context, projectID *uuid.UUID) ([]doma
 		templates = append(templates, template)
 	}
 	return templates, rows.Err()
+}
+
+func (s *Store) ListAllTemplates(ctx context.Context) ([]domain.EnvironmentTemplate, error) {
+	return s.ListTemplates(ctx, nil)
 }
 
 func (s *Store) CreateTemplate(ctx context.Context, input domain.TemplateCreate) (domain.EnvironmentTemplate, error) {
@@ -313,14 +832,45 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID *uuid.UUID) ([]doma
 	return sandboxes, rows.Err()
 }
 
+func (s *Store) ListAllSandboxes(ctx context.Context) ([]domain.Sandbox, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, project_id, template_id, name, slug, status, namespace, service_account_name,
+			runtime_ref, ports, metadata, created_at, updated_at, deleted_at
+		FROM sandboxes
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sandboxes := []domain.Sandbox{}
+	for rows.Next() {
+		sandbox, err := scanSandbox(rows)
+		if err != nil {
+			return nil, err
+		}
+		sandboxes = append(sandboxes, sandbox)
+	}
+	return sandboxes, rows.Err()
+}
+
 func (s *Store) ListSandboxesForReconcile(ctx context.Context) ([]domain.Sandbox, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, project_id, template_id, name, slug, status, namespace, service_account_name,
 			runtime_ref, ports, metadata, created_at, updated_at, deleted_at
 		FROM sandboxes
 		WHERE status IN ('pending', 'running', 'failed')
-			OR (status = 'stopped' AND runtime_ref IS NOT NULL)
-			OR (deleted_at IS NOT NULL AND runtime_ref IS NOT NULL)
+			OR (
+				status = 'stopped'
+				AND runtime_ref IS NOT NULL
+				AND runtime_ref <> 'null'::jsonb
+			)
+			OR (
+				deleted_at IS NOT NULL
+				AND runtime_ref IS NOT NULL
+				AND runtime_ref <> 'null'::jsonb
+			)
 		ORDER BY created_at ASC
 	`)
 	if err != nil {
@@ -454,6 +1004,84 @@ func (s *Store) MarkSandboxRuntimeDeleted(ctx context.Context, id uuid.UUID) err
 	return nil
 }
 
+func (s *Store) ListRuntimeSessions(ctx context.Context, sandboxID uuid.UUID) ([]domain.RuntimeSession, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, project_id, sandbox_id, type, status, client, user_agent, runtime_ref,
+			metadata, started_at, ended_at, created_at, updated_at
+		FROM runtime_sessions
+		WHERE sandbox_id = $1
+		ORDER BY started_at DESC
+	`, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sessions := []domain.RuntimeSession{}
+	for rows.Next() {
+		session, err := scanRuntimeSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, session)
+	}
+	return sessions, rows.Err()
+}
+
+func (s *Store) CreateRuntimeSession(ctx context.Context, input domain.RuntimeSessionCreate) (domain.RuntimeSession, error) {
+	runtimeRefJSON, err := jsonOrNil(input.RuntimeRef)
+	if err != nil {
+		return domain.RuntimeSession{}, err
+	}
+	row := s.pool.QueryRow(ctx, `
+		INSERT INTO runtime_sessions (project_id, sandbox_id, type, client, user_agent, runtime_ref, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, project_id, sandbox_id, type, status, client, user_agent, runtime_ref,
+			metadata, started_at, ended_at, created_at, updated_at
+	`, input.ProjectID, input.SandboxID, input.Type, input.Client, input.UserAgent,
+		runtimeRefJSON, jsonDefaultObject(input.Metadata))
+
+	session, err := scanRuntimeSession(row)
+	return session, mapWriteError(err)
+}
+
+func (s *Store) GetRuntimeSession(ctx context.Context, id uuid.UUID) (domain.RuntimeSession, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, project_id, sandbox_id, type, status, client, user_agent, runtime_ref,
+			metadata, started_at, ended_at, created_at, updated_at
+		FROM runtime_sessions
+		WHERE id = $1
+	`, id)
+	session, err := scanRuntimeSession(row)
+	return session, mapReadError(err)
+}
+
+func (s *Store) UpdateRuntimeSession(ctx context.Context, id uuid.UUID, input domain.RuntimeSessionUpdate) (domain.RuntimeSession, error) {
+	session, err := s.GetRuntimeSession(ctx, id)
+	if err != nil {
+		return domain.RuntimeSession{}, err
+	}
+
+	status := session.Status
+	endedAt := session.EndedAt
+	if input.Status != nil {
+		status = *input.Status
+	}
+	if input.EndedAt != nil {
+		endedAt = input.EndedAt
+	}
+
+	row := s.pool.QueryRow(ctx, `
+		UPDATE runtime_sessions
+		SET status = $2, ended_at = $3
+		WHERE id = $1
+		RETURNING id, project_id, sandbox_id, type, status, client, user_agent, runtime_ref,
+			metadata, started_at, ended_at, created_at, updated_at
+	`, id, status, endedAt)
+	updated, err := scanRuntimeSession(row)
+	return updated, mapWriteError(err)
+}
+
 func (s *Store) ListExecutionTasks(ctx context.Context, sandboxID uuid.UUID) ([]domain.ExecutionTask, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, project_id, sandbox_id, status, command, timeout_seconds, exit_code, stdout,
@@ -486,7 +1114,11 @@ func (s *Store) CreateExecutionTask(ctx context.Context, input domain.ExecutionT
 	}
 	row := s.pool.QueryRow(ctx, `
 		INSERT INTO execution_tasks (project_id, sandbox_id, command, timeout_seconds, runtime_ref, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		SELECT project_id, id, $3, $4, $5, $6
+		FROM sandboxes
+		WHERE id = $2
+			AND project_id = $1
+			AND deleted_at IS NULL
 		RETURNING id, project_id, sandbox_id, status, command, timeout_seconds, exit_code, stdout,
 			stderr, output_truncated, error, runtime_ref, metadata, started_at, finished_at,
 			created_at, updated_at
@@ -574,17 +1206,20 @@ func (s *Store) UpdateExecutionTask(ctx context.Context, id uuid.UUID, input dom
 
 func (s *Store) ListArtifacts(ctx context.Context, sandboxID uuid.UUID, taskID *uuid.UUID) ([]domain.Artifact, error) {
 	query := `
-		SELECT id, project_id, sandbox_id, task_id, kind, name, uri, content_type,
-			size_bytes, metadata, created_at, updated_at
-		FROM artifacts
-		WHERE sandbox_id = $1
+		SELECT a.id, a.project_id, a.sandbox_id, a.task_id, a.kind, a.name, a.uri, a.content_type,
+			a.size_bytes, a.metadata, a.created_at, a.updated_at,
+			ac.content_type, ac.size_bytes, ac.sha256, ac.source_uri, ac.storage_provider, ac.storage_key,
+			ac.captured_at
+		FROM artifacts a
+		LEFT JOIN artifact_contents ac ON ac.artifact_id = a.id
+		WHERE a.sandbox_id = $1
 	`
 	args := []any{sandboxID}
 	if taskID != nil {
-		query += ` AND task_id = $2`
+		query += ` AND a.task_id = $2`
 		args = append(args, *taskID)
 	}
-	query += ` ORDER BY created_at DESC`
+	query += ` ORDER BY a.created_at DESC`
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -605,10 +1240,32 @@ func (s *Store) ListArtifacts(ctx context.Context, sandboxID uuid.UUID, taskID *
 
 func (s *Store) CreateArtifact(ctx context.Context, input domain.ArtifactCreate) (domain.Artifact, error) {
 	row := s.pool.QueryRow(ctx, `
-		INSERT INTO artifacts (project_id, sandbox_id, task_id, kind, name, uri, content_type, size_bytes, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, project_id, sandbox_id, task_id, kind, name, uri, content_type,
-			size_bytes, metadata, created_at, updated_at
+		WITH matching_sandbox AS (
+			SELECT id, project_id
+			FROM sandboxes
+			WHERE id = $2
+				AND project_id = $1
+				AND deleted_at IS NULL
+		),
+		matching_task AS (
+			SELECT id
+			FROM execution_tasks
+			WHERE id = $3
+				AND sandbox_id = $2
+				AND project_id = $1
+		),
+		inserted AS (
+			INSERT INTO artifacts (project_id, sandbox_id, task_id, kind, name, uri, content_type, size_bytes, metadata)
+			SELECT matching_sandbox.project_id, matching_sandbox.id, $3, $4, $5, $6, $7, $8, $9
+			FROM matching_sandbox
+			WHERE $3::uuid IS NULL OR EXISTS (SELECT 1 FROM matching_task)
+			RETURNING id, project_id, sandbox_id, task_id, kind, name, uri, content_type,
+				size_bytes, metadata, created_at, updated_at
+		)
+		SELECT id, project_id, sandbox_id, task_id, kind, name, uri, content_type,
+			size_bytes, metadata, created_at, updated_at,
+			NULL::text, NULL::bigint, NULL::text, NULL::text, NULL::text, NULL::text, NULL::timestamptz
+		FROM inserted
 	`, input.ProjectID, input.SandboxID, input.TaskID, input.Kind, input.Name, input.URI,
 		input.ContentType, input.SizeBytes, jsonDefaultObject(input.Metadata))
 
@@ -618,13 +1275,66 @@ func (s *Store) CreateArtifact(ctx context.Context, input domain.ArtifactCreate)
 
 func (s *Store) GetArtifact(ctx context.Context, id uuid.UUID) (domain.Artifact, error) {
 	row := s.pool.QueryRow(ctx, `
-		SELECT id, project_id, sandbox_id, task_id, kind, name, uri, content_type,
-			size_bytes, metadata, created_at, updated_at
-		FROM artifacts
-		WHERE id = $1
+		SELECT a.id, a.project_id, a.sandbox_id, a.task_id, a.kind, a.name, a.uri, a.content_type,
+			a.size_bytes, a.metadata, a.created_at, a.updated_at,
+			ac.content_type, ac.size_bytes, ac.sha256, ac.source_uri, ac.storage_provider, ac.storage_key,
+			ac.captured_at
+		FROM artifacts a
+		LEFT JOIN artifact_contents ac ON ac.artifact_id = a.id
+		WHERE a.id = $1
 	`, id)
 	artifact, err := scanArtifact(row)
 	return artifact, mapReadError(err)
+}
+
+func (s *Store) CaptureArtifactContent(ctx context.Context, input domain.ArtifactContentCapture) (domain.Artifact, error) {
+	row := s.pool.QueryRow(ctx, `
+		WITH retained AS (
+			INSERT INTO artifact_contents (
+				artifact_id, content, content_type, size_bytes, sha256, source_uri,
+				storage_provider, storage_key, captured_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+			ON CONFLICT (artifact_id) DO UPDATE
+			SET content = EXCLUDED.content,
+				content_type = EXCLUDED.content_type,
+				size_bytes = EXCLUDED.size_bytes,
+				sha256 = EXCLUDED.sha256,
+				source_uri = EXCLUDED.source_uri,
+				storage_provider = EXCLUDED.storage_provider,
+				storage_key = EXCLUDED.storage_key,
+				captured_at = now()
+			RETURNING artifact_id, content_type, size_bytes, sha256, source_uri, storage_provider, storage_key,
+				captured_at
+		)
+		SELECT a.id, a.project_id, a.sandbox_id, a.task_id, a.kind, a.name, a.uri, a.content_type,
+			a.size_bytes, a.metadata, a.created_at, a.updated_at,
+			r.content_type, r.size_bytes, r.sha256, r.source_uri, r.storage_provider, r.storage_key,
+			r.captured_at
+		FROM retained r
+		JOIN artifacts a ON a.id = r.artifact_id
+	`, input.ArtifactID, input.Content, input.ContentType, input.SizeBytes, input.SHA256, input.SourceURI,
+		storageProviderOrDefault(input.StorageProvider), input.StorageKey)
+	artifact, err := scanArtifact(row)
+	return artifact, mapWriteError(err)
+}
+
+func (s *Store) GetArtifactContent(ctx context.Context, id uuid.UUID) (domain.ArtifactContent, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT artifact_id, content, content_type, size_bytes, sha256, source_uri, storage_provider, storage_key,
+			captured_at
+		FROM artifact_contents
+		WHERE artifact_id = $1
+	`, id)
+	content, err := scanArtifactContent(row)
+	return content, mapReadError(err)
+}
+
+func storageProviderOrDefault(provider domain.ArtifactContentStorageProvider) domain.ArtifactContentStorageProvider {
+	if provider == "" {
+		return domain.ArtifactContentStorageProviderPostgres
+	}
+	return provider
 }
 
 func mapReadError(err error) error {
@@ -670,6 +1380,13 @@ func stringSliceDefault(values []string) []string {
 func jsonOrNil(value any) ([]byte, error) {
 	if value == nil {
 		return nil, nil
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		if reflected.IsNil() {
+			return nil, nil
+		}
 	}
 	return json.Marshal(value)
 }

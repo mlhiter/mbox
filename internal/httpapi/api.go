@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,11 +21,26 @@ import (
 )
 
 type API struct {
-	store       domain.Store
-	access      mboxruntime.Access
-	mux         *http.ServeMux
-	taskMu      sync.Mutex
-	taskCancels map[uuid.UUID]context.CancelFunc
+	store            domain.Store
+	access           mboxruntime.Access
+	auditor          mboxruntime.Auditor
+	cleaner          mboxruntime.Cleaner
+	artifactContents *artifactContentBackends
+	info             APIInfo
+	apiToken         string
+	mux              *http.ServeMux
+	taskMu           sync.Mutex
+	taskCancels      map[uuid.UUID]context.CancelFunc
+	taskEvents       map[uuid.UUID]*taskEventHub
+}
+
+type Options struct {
+	RuntimeAccess          mboxruntime.Access
+	RuntimeAuditor         mboxruntime.Auditor
+	RuntimeCleaner         mboxruntime.Cleaner
+	ArtifactContentBackend ArtifactContentBackend
+	Info                   InfoOptions
+	APIToken               string
 }
 
 func New(store domain.Store) *API {
@@ -32,39 +48,103 @@ func New(store domain.Store) *API {
 }
 
 func NewWithRuntimeAccess(store domain.Store, access mboxruntime.Access) *API {
+	return NewWithOptions(store, Options{RuntimeAccess: access})
+}
+
+func NewWithOptions(store domain.Store, options Options) *API {
+	artifactContents := newArtifactContentBackends(options.ArtifactContentBackend)
+	infoOptions := options.Info
+	if options.RuntimeAccess != nil {
+		infoOptions.RuntimeAccessEnabled = true
+	}
+	if infoOptions.ArtifactStorageProvider == "" {
+		infoOptions.ArtifactStorageProvider = string(artifactContents.CaptureProvider())
+	}
+	apiToken := strings.TrimSpace(options.APIToken)
+	infoOptions.AuthenticationRequired = apiToken != ""
 	api := &API{
-		store:       store,
-		access:      access,
-		mux:         http.NewServeMux(),
-		taskCancels: map[uuid.UUID]context.CancelFunc{},
+		store:            store,
+		access:           options.RuntimeAccess,
+		auditor:          options.RuntimeAuditor,
+		cleaner:          options.RuntimeCleaner,
+		artifactContents: artifactContents,
+		info:             buildAPIInfo(infoOptions),
+		apiToken:         apiToken,
+		mux:              http.NewServeMux(),
+		taskCancels:      map[uuid.UUID]context.CancelFunc{},
+		taskEvents:       map[uuid.UUID]*taskEventHub{},
 	}
 	api.routes()
 	return api
 }
 
 func (api *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r = r.WithContext(withRequestID(r.Context(), r.Header.Get(requestIDHeader)))
+	w.Header().Set(requestIDHeader, requestIDFromContext(r.Context()))
+	if !api.authorize(r) {
+		writeError(w, http.StatusUnauthorized, "missing or invalid bearer token")
+		return
+	}
+	r = r.WithContext(withAuditAttribution(r.Context(), r))
 	api.mux.ServeHTTP(w, r)
+}
+
+func (api *API) authorize(r *http.Request) bool {
+	if api.apiToken == "" || isPublicRoute(r) {
+		return true
+	}
+	const prefix = "Bearer "
+	header := r.Header.Get("Authorization")
+	if !strings.HasPrefix(header, prefix) {
+		return false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(header, prefix))
+	return subtle.ConstantTimeCompare([]byte(token), []byte(api.apiToken)) == 1
+}
+
+func isPublicRoute(r *http.Request) bool {
+	return r.Method == http.MethodGet && (r.URL.Path == "/healthz" || r.URL.Path == "/v1/info")
 }
 
 func (api *API) routes() {
 	api.mux.HandleFunc("GET /healthz", api.healthz)
+	api.mux.HandleFunc("GET /v1/info", api.getInfo)
+	api.mux.HandleFunc("GET /v1/openapi.json", api.getOpenAPI)
+	api.mux.HandleFunc("GET /v1/runtime/resources", api.listRuntimeResources)
+	api.mux.HandleFunc("GET /v1/runtime/orphans", api.listRuntimeOrphans)
+	api.mux.HandleFunc("POST /v1/runtime/orphans/cleanup", api.cleanupRuntimeOrphan)
+	api.mux.HandleFunc("GET /v1/audit-events", api.listAuditEvents)
 	api.mux.HandleFunc("GET /v1/projects", api.listProjects)
 	api.mux.HandleFunc("POST /v1/projects", api.createProject)
 	api.mux.HandleFunc("GET /v1/projects/{projectID}", api.getProject)
 	api.mux.HandleFunc("PATCH /v1/projects/{projectID}", api.updateProject)
 	api.mux.HandleFunc("DELETE /v1/projects/{projectID}", api.deleteProject)
+	api.mux.HandleFunc("GET /v1/projects/{projectID}/policy", api.getProjectPolicy)
+	api.mux.HandleFunc("PUT /v1/projects/{projectID}/policy", api.putProjectPolicy)
+	api.mux.HandleFunc("GET /v1/projects/{projectID}/quota-policy", api.getProjectQuotaPolicy)
+	api.mux.HandleFunc("PUT /v1/projects/{projectID}/quota-policy", api.putProjectQuotaPolicy)
+	api.mux.HandleFunc("GET /v1/projects/{projectID}/credentials", api.listProjectCredentials)
+	api.mux.HandleFunc("POST /v1/projects/{projectID}/credentials", api.createProjectCredential)
+	api.mux.HandleFunc("GET /v1/projects/{projectID}/usage", api.getProjectUsage)
+	api.mux.HandleFunc("GET /v1/projects/{projectID}/audit-events", api.listProjectAuditEvents)
+	api.mux.HandleFunc("GET /v1/credentials/{credentialID}", api.getProjectCredential)
+	api.mux.HandleFunc("DELETE /v1/credentials/{credentialID}", api.deleteProjectCredential)
 
 	api.mux.HandleFunc("GET /v1/templates", api.listTemplates)
 	api.mux.HandleFunc("POST /v1/templates", api.createTemplate)
 	api.mux.HandleFunc("GET /v1/templates/{templateID}", api.getTemplate)
 	api.mux.HandleFunc("PATCH /v1/templates/{templateID}", api.updateTemplate)
 	api.mux.HandleFunc("DELETE /v1/templates/{templateID}", api.deleteTemplate)
+	api.mux.HandleFunc("GET /v1/templates/{templateID}/boundary", api.getTemplateBoundary)
+	api.mux.HandleFunc("POST /v1/templates/{templateID}/validation-runs", api.createTemplateValidationRun)
+	api.mux.HandleFunc("POST /v1/templates/{templateID}/validation-runs/{sandboxID}/decision", api.decideTemplateValidationRun)
 
 	api.mux.HandleFunc("GET /v1/sandboxes", api.listSandboxes)
 	api.mux.HandleFunc("POST /v1/sandboxes", api.createSandbox)
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}", api.getSandbox)
 	api.mux.HandleFunc("PATCH /v1/sandboxes/{sandboxID}", api.updateSandbox)
 	api.mux.HandleFunc("DELETE /v1/sandboxes/{sandboxID}", api.deleteSandbox)
+	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/boundary", api.getSandboxBoundary)
 	api.mux.HandleFunc("POST /v1/sandboxes/{sandboxID}/start", api.startSandbox)
 	api.mux.HandleFunc("POST /v1/sandboxes/{sandboxID}/stop", api.stopSandbox)
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/runtime", api.getSandboxRuntime)
@@ -73,14 +153,22 @@ func (api *API) routes() {
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/ports", api.getSandboxPorts)
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/ports/{port}/proxy/", api.proxySandboxPort)
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/terminal", api.connectSandboxTerminal)
+	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/sessions", api.listRuntimeSessions)
+	api.mux.HandleFunc("POST /v1/sandboxes/{sandboxID}/sessions", api.createRuntimeSession)
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/tasks", api.listExecutionTasks)
 	api.mux.HandleFunc("POST /v1/sandboxes/{sandboxID}/tasks", api.createExecutionTask)
 	api.mux.HandleFunc("GET /v1/sandboxes/{sandboxID}/artifacts", api.listSandboxArtifacts)
 	api.mux.HandleFunc("POST /v1/sandboxes/{sandboxID}/artifacts", api.createSandboxArtifact)
+	api.mux.HandleFunc("GET /v1/sessions/{sessionID}", api.getRuntimeSession)
+	api.mux.HandleFunc("POST /v1/sessions/{sessionID}/end", api.endRuntimeSession)
 	api.mux.HandleFunc("GET /v1/tasks/{taskID}", api.getExecutionTask)
+	api.mux.HandleFunc("GET /v1/tasks/{taskID}/events", api.watchExecutionTask)
 	api.mux.HandleFunc("POST /v1/tasks/{taskID}/cancel", api.cancelExecutionTask)
 	api.mux.HandleFunc("GET /v1/tasks/{taskID}/artifacts", api.listTaskArtifacts)
 	api.mux.HandleFunc("GET /v1/artifacts/{artifactID}", api.getArtifact)
+	api.mux.HandleFunc("POST /v1/artifacts/{artifactID}/capture", api.captureArtifactContent)
+	api.mux.HandleFunc("PUT /v1/artifacts/{artifactID}/content", api.uploadArtifactContent)
+	api.mux.HandleFunc("GET /v1/artifacts/{artifactID}/content", api.getArtifactContent)
 }
 
 func (api *API) healthz(w http.ResponseWriter, _ *http.Request) {

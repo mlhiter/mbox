@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -102,6 +101,18 @@ func (api *API) createExecutionTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	api.recordAuditEvent(r.Context(), domain.AuditEventCreate{
+		ProjectID:    &task.ProjectID,
+		Action:       "execution.task.created",
+		ResourceType: "execution-task",
+		ResourceID:   &task.ID,
+		ResourceName: task.ID.String(),
+		Metadata: auditMetadata(map[string]any{
+			"sandboxId":       task.SandboxID.String(),
+			"commandArgCount": len(task.Command),
+			"timeoutSeconds":  task.TimeoutSeconds,
+		}),
+	})
 	api.startExecutionTask(task, runtimeRef)
 	writeJSON(w, http.StatusCreated, task)
 }
@@ -135,11 +146,23 @@ func (api *API) cancelExecutionTask(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	api.recordAuditEvent(r.Context(), domain.AuditEventCreate{
+		ProjectID:    &task.ProjectID,
+		Action:       "execution.task.cancel.requested",
+		ResourceType: "execution-task",
+		ResourceID:   &task.ID,
+		ResourceName: task.ID.String(),
+		Metadata: auditMetadata(map[string]any{
+			"sandboxId": task.SandboxID.String(),
+			"status":    task.Status,
+		}),
+	})
 	writeJSON(w, http.StatusOK, task)
 }
 
 func (api *API) startExecutionTask(task domain.ExecutionTask, ref domain.RuntimeRef) {
 	runCtx, cancel := context.WithCancel(context.Background())
+	hub := api.getOrCreateTaskEventHub(task.ID)
 	api.taskMu.Lock()
 	api.taskCancels[task.ID] = cancel
 	api.taskMu.Unlock()
@@ -151,11 +174,13 @@ func (api *API) startExecutionTask(task domain.ExecutionTask, ref domain.Runtime
 			delete(api.taskCancels, task.ID)
 			api.taskMu.Unlock()
 		}()
-		api.runExecutionTask(runCtx, task, ref)
+		api.runExecutionTask(runCtx, task, ref, hub)
+		hub.close()
+		api.scheduleTaskEventHubCleanup(task.ID, hub)
 	}()
 }
 
-func (api *API) runExecutionTask(ctx context.Context, task domain.ExecutionTask, ref domain.RuntimeRef) domain.ExecutionTask {
+func (api *API) runExecutionTask(ctx context.Context, task domain.ExecutionTask, ref domain.RuntimeRef, hub *taskEventHub) domain.ExecutionTask {
 	started := time.Now().UTC()
 	running := domain.ExecutionTaskStatusRunning
 	startUpdateCtx, cancelStartUpdate := context.WithTimeout(context.Background(), 5*time.Second)
@@ -167,15 +192,22 @@ func (api *API) runExecutionTask(ctx context.Context, task domain.ExecutionTask,
 	if err != nil {
 		task.Status = running
 		task.StartedAt = &started
+		if hub != nil {
+			hub.publish(executionTaskEvent{Type: taskEventTypeStatus, Task: &task})
+			hub.publish(executionTaskEvent{Type: taskEventTypeDone, Task: &task})
+		}
 		return task
 	}
 	task = updated
+	if hub != nil {
+		hub.publish(executionTaskEvent{Type: taskEventTypeStatus, Task: &task})
+	}
 
 	runCtx, cancelRun := context.WithTimeout(ctx, time.Duration(task.TimeoutSeconds)*time.Second)
 	defer cancelRun()
 
-	stdout := &limitedBuffer{limit: maxExecutionTaskOutputBytes}
-	stderr := &limitedBuffer{limit: maxExecutionTaskOutputBytes}
+	stdout := newTaskOutputBuffer(task.ID, "stdout", hub, maxExecutionTaskOutputBytes)
+	stderr := newTaskOutputBuffer(task.ID, "stderr", hub, maxExecutionTaskOutputBytes)
 	err = api.access.Exec(runCtx, ref, mboxruntime.ExecOptions{
 		Command: task.Command,
 		Stdout:  stdout,
@@ -228,7 +260,13 @@ func (api *API) runExecutionTask(ctx context.Context, task domain.ExecutionTask,
 		task.OutputTruncated = outputTruncated
 		task.Error = taskError
 		task.FinishedAt = &finished
+		if hub != nil {
+			hub.publish(executionTaskEvent{Type: taskEventTypeDone, Task: &task})
+		}
 		return task
+	}
+	if hub != nil {
+		hub.publish(executionTaskEvent{Type: taskEventTypeDone, Task: &updated})
 	}
 	return updated
 }
@@ -278,33 +316,4 @@ func isTerminalExecutionTaskStatus(status domain.ExecutionTaskStatus) bool {
 	default:
 		return false
 	}
-}
-
-type limitedBuffer struct {
-	buffer    bytes.Buffer
-	limit     int
-	truncated bool
-}
-
-func (b *limitedBuffer) Write(p []byte) (int, error) {
-	remaining := b.limit - b.buffer.Len()
-	if remaining <= 0 {
-		b.truncated = true
-		return len(p), nil
-	}
-	if len(p) > remaining {
-		_, _ = b.buffer.Write(p[:remaining])
-		b.truncated = true
-		return len(p), nil
-	}
-	_, _ = b.buffer.Write(p)
-	return len(p), nil
-}
-
-func (b *limitedBuffer) String() string {
-	return b.buffer.String()
-}
-
-func (b *limitedBuffer) Truncated() bool {
-	return b.truncated
 }

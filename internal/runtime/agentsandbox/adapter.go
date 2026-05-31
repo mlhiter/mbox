@@ -7,7 +7,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -145,6 +149,32 @@ func (a *Adapter) DeleteRuntime(ctx context.Context, ref domain.RuntimeRef) erro
 	return err
 }
 
+func (a *Adapter) DeleteManagedResource(ctx context.Context, ref mboxruntime.ManagedResourceRef) error {
+	if ref.Adapter != adapterName {
+		return fmt.Errorf("unsupported runtime adapter %s", ref.Adapter)
+	}
+	if strings.TrimSpace(ref.Namespace) == "" {
+		return fmt.Errorf("runtime resource namespace is required")
+	}
+	if strings.TrimSpace(ref.Name) == "" {
+		return fmt.Errorf("runtime resource name is required")
+	}
+	var gvr schema.GroupVersionResource
+	switch ref.Kind {
+	case "SandboxClaim":
+		gvr = claimsGVR
+	case "SandboxTemplate":
+		gvr = templatesGVR
+	default:
+		return fmt.Errorf("unsupported runtime resource kind %s", ref.Kind)
+	}
+	err := a.client.Resource(gvr).Namespace(ref.Namespace).Delete(ctx, ref.Name, metav1.DeleteOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
 func (a *Adapter) StartRuntime(ctx context.Context, ref domain.RuntimeRef) error {
 	return a.scaleRuntimeSandbox(ctx, ref, 1)
 }
@@ -182,6 +212,50 @@ func (a *Adapter) GetRuntimeStatus(ctx context.Context, ref domain.RuntimeRef) (
 		RuntimeRef: ref,
 		Ports:      runtimePorts(claim),
 		Message:    message,
+	}, nil
+}
+
+func (a *Adapter) ListManagedResources(ctx context.Context) (mboxruntime.ManagedResourceList, error) {
+	if a.client == nil {
+		return mboxruntime.ManagedResourceList{}, fmt.Errorf("kubernetes dynamic client is not configured")
+	}
+	selector := "app.kubernetes.io/managed-by=mbox"
+	resources := []mboxruntime.ManagedResource{}
+
+	claims, err := a.client.Resource(claimsGVR).Namespace(metav1.NamespaceAll).List(ctx, metav1.ListOptions{
+		LabelSelector: selector,
+	})
+	if err != nil {
+		return mboxruntime.ManagedResourceList{}, err
+	}
+	for _, item := range claims.Items {
+		resources = append(resources, managedResourceFromUnstructured("SandboxClaim", item))
+	}
+
+	templates, err := a.client.Resource(templatesGVR).Namespace(metav1.NamespaceAll).List(ctx, metav1.ListOptions{
+		LabelSelector: selector,
+	})
+	if err != nil {
+		return mboxruntime.ManagedResourceList{}, err
+	}
+	for _, item := range templates.Items {
+		resources = append(resources, managedResourceFromUnstructured("SandboxTemplate", item))
+	}
+
+	sort.Slice(resources, func(i, j int) bool {
+		if resources[i].Namespace != resources[j].Namespace {
+			return resources[i].Namespace < resources[j].Namespace
+		}
+		if resources[i].Kind != resources[j].Kind {
+			return resources[i].Kind < resources[j].Kind
+		}
+		return resources[i].Name < resources[j].Name
+	})
+
+	return mboxruntime.ManagedResourceList{
+		Adapter:   adapterName,
+		CheckedAt: time.Now().UTC(),
+		Items:     resources,
 	}, nil
 }
 
@@ -237,6 +311,64 @@ func (a *Adapter) ResolveRuntime(ctx context.Context, ref domain.RuntimeRef) (mb
 		Selector:  selector,
 		Commands:  []string{"/bin/bash", "/bin/sh", "sh"},
 		Storage:   a.runtimeStorage(ctx, pod, container),
+	}, nil
+}
+
+func (a *Adapter) ReadFile(ctx context.Context, ref domain.RuntimeRef, request mboxruntime.FileReadRequest) (mboxruntime.FileReadResult, error) {
+	target, err := a.ResolveRuntime(ctx, ref)
+	if err != nil {
+		return mboxruntime.FileReadResult{}, err
+	}
+	cleanPath, err := safeWorkspacePath(target, request.Path)
+	if err != nil {
+		return mboxruntime.FileReadResult{}, err
+	}
+	limit := request.MaxBytes
+	if limit <= 0 {
+		limit = 1024 * 1024
+	}
+
+	stdout := &limitedWriter{limit: limit + 4096}
+	stderr := &bytes.Buffer{}
+	err = a.Exec(ctx, ref, mboxruntime.ExecOptions{
+		Container: target.Container,
+		Command: []string{
+			"sh",
+			"-lc",
+			fmt.Sprintf("test -f %s && printf '__MBOX_SIZE__%%s\\n' \"$(wc -c < %s)\" && printf '__MBOX_TYPE__%%s\\n' \"$(file -b --mime-type %s 2>/dev/null || echo application/octet-stream)\" && cat -- %s",
+				shellQuote(cleanPath), shellQuote(cleanPath), shellQuote(cleanPath), shellQuote(cleanPath)),
+		},
+		Stdout: stdout,
+		Stderr: stderr,
+		TTY:    false,
+	})
+	if err != nil {
+		message := strings.TrimSpace(stderr.String())
+		if message != "" {
+			return mboxruntime.FileReadResult{}, fmt.Errorf("%w: %s", err, message)
+		}
+		return mboxruntime.FileReadResult{}, err
+	}
+
+	data := stdout.Bytes()
+	size, contentType, body, err := parseFileReadPayload(data)
+	if err != nil {
+		return mboxruntime.FileReadResult{}, err
+	}
+	truncated := int64(len(body)) > limit
+	if truncated {
+		body = body[:limit]
+	}
+	if size < 0 {
+		size = int64(len(body))
+	}
+	return mboxruntime.FileReadResult{
+		Target:      target,
+		Path:        cleanPath,
+		ContentType: contentType,
+		SizeBytes:   size,
+		Truncated:   truncated || stdout.Truncated(),
+		Body:        io.NopCloser(bytes.NewReader(body)),
 	}, nil
 }
 
@@ -607,6 +739,48 @@ func runtimeRef(namespace string, name string) domain.RuntimeRef {
 	}
 }
 
+func managedResourceFromUnstructured(kind string, item unstructured.Unstructured) mboxruntime.ManagedResource {
+	labels := map[string]string{}
+	for key, value := range item.GetLabels() {
+		labels[key] = value
+	}
+	return mboxruntime.ManagedResource{
+		Adapter:   adapterName,
+		Kind:      kind,
+		Namespace: item.GetNamespace(),
+		Name:      item.GetName(),
+		Owner:     managedResourceOwner(kind, labels),
+		Labels:    labels,
+		CreatedAt: item.GetCreationTimestamp().Time,
+	}
+}
+
+func managedResourceOwner(kind string, labels map[string]string) *mboxruntime.ManagedResourceOwner {
+	switch kind {
+	case "SandboxClaim":
+		sandboxID := strings.TrimSpace(labels["mbox.dev/sandbox-id"])
+		if sandboxID == "" {
+			return nil
+		}
+		return &mboxruntime.ManagedResourceOwner{
+			Kind:      "sandbox",
+			ProjectID: strings.TrimSpace(labels["mbox.dev/project-id"]),
+			SandboxID: sandboxID,
+		}
+	case "SandboxTemplate":
+		templateID := strings.TrimSpace(labels["mbox.dev/template-id"])
+		if templateID == "" {
+			return nil
+		}
+		return &mboxruntime.ManagedResourceOwner{
+			Kind:       "template",
+			TemplateID: templateID,
+		}
+	default:
+		return nil
+	}
+}
+
 func runtimeName(slug string, id string) string {
 	suffix := id
 	if len(suffix) > 8 {
@@ -758,6 +932,95 @@ func portNumber(value any) int {
 	default:
 		return 0
 	}
+}
+
+func safeWorkspacePath(target mboxruntime.RuntimeTarget, raw string) (string, error) {
+	cleanRaw := path.Clean("/" + strings.TrimSpace(raw))
+	workspace := workspaceMountPath(target)
+	if workspace == "" {
+		return "", fmt.Errorf("runtime target has no workspace storage mount")
+	}
+	workspace = path.Clean(workspace)
+	if cleanRaw == workspace || strings.HasPrefix(cleanRaw, workspace+"/") {
+		return cleanRaw, nil
+	}
+	return "", fmt.Errorf("artifact path must stay inside workspace mount %s", workspace)
+}
+
+func workspaceMountPath(target mboxruntime.RuntimeTarget) string {
+	for _, item := range target.Storage {
+		if item.MountPath == "/workspace" {
+			return item.MountPath
+		}
+	}
+	for _, item := range target.Storage {
+		if item.MountPath != "" {
+			return item.MountPath
+		}
+	}
+	return ""
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+func parseFileReadPayload(data []byte) (int64, string, []byte, error) {
+	const sizePrefix = "__MBOX_SIZE__"
+	const typePrefix = "__MBOX_TYPE__"
+
+	firstLineEnd := bytes.IndexByte(data, '\n')
+	if firstLineEnd < 0 || !bytes.HasPrefix(data[:firstLineEnd], []byte(sizePrefix)) {
+		return 0, "", nil, fmt.Errorf("runtime file response missing size header")
+	}
+	size, err := strconv.ParseInt(strings.TrimSpace(string(data[len(sizePrefix):firstLineEnd])), 10, 64)
+	if err != nil {
+		return 0, "", nil, fmt.Errorf("runtime file response has invalid size header")
+	}
+
+	rest := data[firstLineEnd+1:]
+	secondLineEnd := bytes.IndexByte(rest, '\n')
+	if secondLineEnd < 0 || !bytes.HasPrefix(rest[:secondLineEnd], []byte(typePrefix)) {
+		return 0, "", nil, fmt.Errorf("runtime file response missing content type header")
+	}
+	contentType := strings.TrimSpace(string(rest[len(typePrefix):secondLineEnd]))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return size, contentType, rest[secondLineEnd+1:], nil
+}
+
+type limitedWriter struct {
+	buffer    bytes.Buffer
+	limit     int64
+	truncated bool
+}
+
+func (w *limitedWriter) Write(p []byte) (int, error) {
+	if w.limit <= 0 {
+		w.truncated = true
+		return len(p), nil
+	}
+	remaining := w.limit - int64(w.buffer.Len())
+	if remaining <= 0 {
+		w.truncated = true
+		return len(p), nil
+	}
+	if int64(len(p)) > remaining {
+		_, _ = w.buffer.Write(p[:remaining])
+		w.truncated = true
+		return len(p), nil
+	}
+	_, _ = w.buffer.Write(p)
+	return len(p), nil
+}
+
+func (w *limitedWriter) Bytes() []byte {
+	return w.buffer.Bytes()
+}
+
+func (w *limitedWriter) Truncated() bool {
+	return w.truncated
 }
 
 func readyCondition(obj *unstructured.Unstructured) (corev1.ConditionStatus, string) {

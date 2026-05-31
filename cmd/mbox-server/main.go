@@ -51,6 +51,8 @@ func run(ctx context.Context) error {
 
 	store := postgres.NewStore(pool)
 	var runtimeAccess mboxruntime.Access
+	var runtimeAuditor mboxruntime.Auditor
+	var runtimeCleaner mboxruntime.Cleaner
 	if cfg.RuntimeControllerEnabled || cfg.RuntimeAccessEnabled {
 		restConfig, err := agentsandbox.BuildRESTConfig(agentsandbox.Config{
 			KubeconfigPath: cfg.KubeconfigPath,
@@ -65,6 +67,8 @@ func run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		runtimeAuditor = adapter
+		runtimeCleaner = adapter
 		if cfg.RuntimeAccessEnabled {
 			runtimeAccess = adapter
 		} else {
@@ -85,7 +89,46 @@ func run(ctx context.Context) error {
 		slog.Info("sandbox runtime access disabled")
 	}
 
-	api := httpapi.NewWithRuntimeAccess(store, runtimeAccess)
+	var artifactContentBackend httpapi.ArtifactContentBackend
+	switch cfg.ArtifactContentBackend {
+	case "filesystem":
+		artifactContentBackend, err = httpapi.NewFilesystemArtifactContentBackend(cfg.ArtifactContentDir)
+		if err != nil {
+			return err
+		}
+		slog.Info("artifact content backend enabled", "backend", cfg.ArtifactContentBackend, "dir", cfg.ArtifactContentDir)
+	case "s3":
+		artifactContentBackend, err = httpapi.NewS3ArtifactContentBackend(httpapi.S3ArtifactContentBackendOptions{
+			Endpoint:        cfg.ArtifactContentS3.Endpoint,
+			Region:          cfg.ArtifactContentS3.Region,
+			Bucket:          cfg.ArtifactContentS3.Bucket,
+			Prefix:          cfg.ArtifactContentS3.Prefix,
+			AccessKeyID:     cfg.ArtifactContentS3.AccessKeyID,
+			SecretAccessKey: cfg.ArtifactContentS3.SecretAccessKey,
+			ForcePathStyle:  cfg.ArtifactContentS3.ForcePathStyle,
+		})
+		if err != nil {
+			return err
+		}
+		slog.Info("artifact content backend enabled", "backend", cfg.ArtifactContentBackend, "endpoint", cfg.ArtifactContentS3.Endpoint, "bucket", cfg.ArtifactContentS3.Bucket, "prefix", cfg.ArtifactContentS3.Prefix)
+	default:
+		slog.Info("artifact content backend enabled", "backend", cfg.ArtifactContentBackend)
+	}
+
+	api := httpapi.NewWithOptions(store, httpapi.Options{
+		RuntimeAccess:          runtimeAccess,
+		RuntimeAuditor:         runtimeAuditor,
+		RuntimeCleaner:         runtimeCleaner,
+		ArtifactContentBackend: artifactContentBackend,
+		APIToken:               cfg.APIToken,
+		Info: httpapi.InfoOptions{
+			ServerVersion:            cfg.ServerVersion,
+			RuntimeControllerEnabled: cfg.RuntimeControllerEnabled,
+			RuntimeAccessEnabled:     cfg.RuntimeAccessEnabled,
+			RuntimeAdapter:           "agent-sandbox",
+			ArtifactStorageProvider:  cfg.ArtifactContentBackend,
+		},
+	})
 	server := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           requestLogger(api),
@@ -115,6 +158,6 @@ func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
-		slog.Info("request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start))
+		slog.Info("request", "method", r.Method, "path", r.URL.Path, "request_id", w.Header().Get(httpapi.RequestIDHeader), "duration", time.Since(start))
 	})
 }

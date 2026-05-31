@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -250,6 +251,151 @@ func TestStartStopRuntimeScalesResolvedSandbox(t *testing.T) {
 	replicas, ok, _ = unstructured.NestedInt64(started.Object, "spec", "replicas")
 	if !ok || replicas != 1 {
 		t.Fatalf("expected started replicas 1, got %d ok=%v", replicas, ok)
+	}
+}
+
+func TestListManagedResourcesListsLabeledClaimsAndTemplates(t *testing.T) {
+	scheme := runtime.NewScheme()
+	projectID := uuid.New()
+	claimSandboxID := uuid.New()
+	templateID := uuid.New()
+	claim := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": apiVersion,
+		"kind":       "SandboxClaim",
+		"metadata": map[string]any{
+			"name":              "claim",
+			"namespace":         "mbox-demo",
+			"creationTimestamp": "2026-05-29T01:02:03Z",
+			"labels": map[string]any{
+				"app.kubernetes.io/managed-by": "mbox",
+				"mbox.dev/project-id":          projectID.String(),
+				"mbox.dev/sandbox-id":          claimSandboxID.String(),
+			},
+		},
+	}}
+	template := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": apiVersion,
+		"kind":       "SandboxTemplate",
+		"metadata": map[string]any{
+			"name":      "template",
+			"namespace": "mbox-demo",
+			"labels": map[string]any{
+				"app.kubernetes.io/managed-by": "mbox",
+				"mbox.dev/template-id":         templateID.String(),
+			},
+		},
+	}}
+	ignored := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": apiVersion,
+		"kind":       "SandboxClaim",
+		"metadata": map[string]any{
+			"name":      "ignored",
+			"namespace": "mbox-demo",
+			"labels": map[string]any{
+				"app.kubernetes.io/managed-by": "other",
+			},
+		},
+	}}
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		claimsGVR:    "SandboxClaimList",
+		templatesGVR: "SandboxTemplateList",
+	}, claim, template, ignored)
+	adapter := NewWithClient(client, Config{})
+
+	list, err := adapter.ListManagedResources(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list.Adapter != "agent-sandbox" || len(list.Items) != 2 {
+		t.Fatalf("unexpected managed resources: %+v", list)
+	}
+	if list.Items[0].Kind != "SandboxClaim" || list.Items[0].Labels["mbox.dev/sandbox-id"] != claimSandboxID.String() {
+		t.Fatalf("expected labeled SandboxClaim first, got %+v", list.Items[0])
+	}
+	if list.Items[0].Owner == nil ||
+		list.Items[0].Owner.Kind != "sandbox" ||
+		list.Items[0].Owner.ProjectID != projectID.String() ||
+		list.Items[0].Owner.SandboxID != claimSandboxID.String() {
+		t.Fatalf("expected SandboxClaim owner projection, got %+v", list.Items[0].Owner)
+	}
+	if list.Items[1].Kind != "SandboxTemplate" || list.Items[1].Labels["mbox.dev/template-id"] != templateID.String() {
+		t.Fatalf("expected labeled SandboxTemplate second, got %+v", list.Items[1])
+	}
+	if list.Items[1].Owner == nil ||
+		list.Items[1].Owner.Kind != "template" ||
+		list.Items[1].Owner.TemplateID != templateID.String() {
+		t.Fatalf("expected SandboxTemplate owner projection, got %+v", list.Items[1].Owner)
+	}
+	if list.Items[0].CreatedAt.IsZero() {
+		t.Fatal("expected creation timestamp to be preserved")
+	}
+}
+
+func TestDeleteManagedResourceDeletesAllowedRuntimeResources(t *testing.T) {
+	scheme := runtime.NewScheme()
+	claim := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": apiVersion,
+		"kind":       "SandboxClaim",
+		"metadata": map[string]any{
+			"name":      "claim",
+			"namespace": "mbox-demo",
+			"labels": map[string]any{
+				"app.kubernetes.io/managed-by": "mbox",
+			},
+		},
+	}}
+	template := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": apiVersion,
+		"kind":       "SandboxTemplate",
+		"metadata": map[string]any{
+			"name":      "template",
+			"namespace": "mbox-demo",
+			"labels": map[string]any{
+				"app.kubernetes.io/managed-by": "mbox",
+			},
+		},
+	}}
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		claimsGVR:    "SandboxClaimList",
+		templatesGVR: "SandboxTemplateList",
+	}, claim, template)
+	adapter := NewWithClient(client, Config{})
+
+	if err := adapter.DeleteManagedResource(context.Background(), mboxruntime.ManagedResourceRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "SandboxClaim",
+		Namespace: "mbox-demo",
+		Name:      "claim",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Resource(claimsGVR).Namespace("mbox-demo").Get(context.Background(), "claim", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected SandboxClaim to be deleted, got %v", err)
+	}
+
+	if err := adapter.DeleteManagedResource(context.Background(), mboxruntime.ManagedResourceRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "SandboxTemplate",
+		Namespace: "mbox-demo",
+		Name:      "template",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Resource(templatesGVR).Namespace("mbox-demo").Get(context.Background(), "template", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected SandboxTemplate to be deleted, got %v", err)
+	}
+}
+
+func TestDeleteManagedResourceRejectsUnsupportedResource(t *testing.T) {
+	adapter := NewWithClient(dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{}), Config{})
+
+	if err := adapter.DeleteManagedResource(context.Background(), mboxruntime.ManagedResourceRef{
+		Adapter:   "agent-sandbox",
+		Kind:      "Pod",
+		Namespace: "mbox-demo",
+		Name:      "pod",
+	}); err == nil {
+		t.Fatal("expected unsupported kind to fail")
 	}
 }
 

@@ -173,6 +173,26 @@ func (api *API) connectSandboxTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
+	clientName := strings.TrimSpace(r.URL.Query().Get("client"))
+	if clientName == "" {
+		clientName = "web-terminal"
+	}
+	if len(clientName) > maxRuntimeSessionClientLength {
+		_ = conn.WriteMessage(websocket.TextMessage, []byte("\r\nterminal client label is too long\r\n"))
+		return
+	}
+	session, err := api.store.CreateRuntimeSession(r.Context(), domain.RuntimeSessionCreate{
+		ProjectID:  sandbox.ProjectID,
+		SandboxID:  sandbox.ID,
+		Type:       domain.RuntimeSessionTypeTerminal,
+		Client:     clientName,
+		UserAgent:  runtimeSessionUserAgent(r),
+		RuntimeRef: sandbox.RuntimeRef,
+	})
+	if err != nil {
+		_ = conn.WriteMessage(websocket.TextMessage, []byte("\r\nterminal session record failed\r\n"))
+		return
+	}
 
 	_ = conn.SetReadDeadline(time.Time{})
 	ctx, cancel := contextWithRequest(r)
@@ -189,8 +209,11 @@ func (api *API) connectSandboxTerminal(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	if err := <-streamErr; err != nil {
+		api.finishRuntimeSession(session.ID, domain.RuntimeSessionStatusFailed)
 		_ = conn.WriteMessage(websocket.TextMessage, []byte("\r\nterminal closed: "+err.Error()+"\r\n"))
+		return
 	}
+	api.finishRuntimeSession(session.ID, domain.RuntimeSessionStatusEnded)
 }
 
 func sameOriginHost(originHost string, requestHost string) bool {

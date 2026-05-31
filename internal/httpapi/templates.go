@@ -94,6 +94,17 @@ func (api *API) createTemplate(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	api.recordAuditEvent(r.Context(), domain.AuditEventCreate{
+		ProjectID:    template.ProjectID,
+		Action:       "template.created",
+		ResourceType: "template",
+		ResourceID:   &template.ID,
+		ResourceName: template.Name,
+		Metadata: auditMetadata(map[string]any{
+			"scope": templateAuditScope(template),
+			"image": template.Image,
+		}),
+	})
 	writeJSON(w, http.StatusCreated, template)
 }
 
@@ -108,6 +119,13 @@ func (api *API) getTemplate(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	api.recordAuditEvent(r.Context(), domain.AuditEventCreate{
+		ProjectID:    template.ProjectID,
+		Action:       "template.updated",
+		ResourceType: "template",
+		ResourceID:   &template.ID,
+		ResourceName: template.Name,
+	})
 	writeJSON(w, http.StatusOK, template)
 }
 
@@ -181,11 +199,30 @@ func (api *API) deleteTemplate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid template id")
 		return
 	}
+	template, err := api.store.GetTemplate(r.Context(), id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
 	if err := api.store.DeleteTemplate(r.Context(), id); err != nil {
 		writeStoreError(w, err)
 		return
 	}
+	api.recordAuditEvent(r.Context(), domain.AuditEventCreate{
+		ProjectID:    template.ProjectID,
+		Action:       "template.deleted",
+		ResourceType: "template",
+		ResourceID:   &id,
+		ResourceName: template.Name,
+	})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func templateAuditScope(template domain.EnvironmentTemplate) string {
+	if template.ProjectID == nil {
+		return "global"
+	}
+	return "project"
 }
 
 func validateTemplatePorts(ports []domain.TemplatePort) string {

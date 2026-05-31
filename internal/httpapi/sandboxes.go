@@ -142,6 +142,31 @@ func (api *API) createSandbox(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	if err := api.enforceSandboxLaunchPolicy(r.Context(), project, template, serviceAccountName); err != nil {
+		api.recordPolicyDeniedAuditEvent(r.Context(), project.ID, "sandbox.launch", "sandbox", nil, req.Name, err, map[string]any{
+			"templateId":         template.ID.String(),
+			"templateName":       template.Name,
+			"image":              template.Image,
+			"serviceAccountName": serviceAccountName,
+		})
+		if writePolicyError(w, err) {
+			return
+		}
+		writeStoreError(w, err)
+		return
+	}
+	if err := api.enforceSandboxQuotaPolicy(r.Context(), project.ID); err != nil {
+		api.recordPolicyDeniedAuditEvent(r.Context(), project.ID, "sandbox.launch", "sandbox", nil, req.Name, err, map[string]any{
+			"templateId":         template.ID.String(),
+			"templateName":       template.Name,
+			"serviceAccountName": serviceAccountName,
+		})
+		if writePolicyError(w, err) {
+			return
+		}
+		writeStoreError(w, err)
+		return
+	}
 	ports := sandboxPortsFromTemplate(template.ExposedPorts)
 
 	sandbox, err := api.store.CreateSandbox(r.Context(), domain.SandboxCreate{
@@ -158,6 +183,19 @@ func (api *API) createSandbox(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	api.recordAuditEvent(r.Context(), domain.AuditEventCreate{
+		ProjectID:    &sandbox.ProjectID,
+		Action:       "sandbox.created",
+		ResourceType: "sandbox",
+		ResourceID:   &sandbox.ID,
+		ResourceName: sandbox.Name,
+		Metadata: auditMetadata(map[string]any{
+			"templateId":           sandbox.TemplateID.String(),
+			"namespace":            sandbox.Namespace,
+			"serviceAccountName":   sandbox.ServiceAccountName,
+			"declaredPreviewPorts": len(sandbox.Ports),
+		}),
+	})
 	writeJSON(w, http.StatusCreated, sandbox)
 }
 
@@ -172,6 +210,13 @@ func (api *API) getSandbox(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	api.recordAuditEvent(r.Context(), domain.AuditEventCreate{
+		ProjectID:    &sandbox.ProjectID,
+		Action:       "sandbox.updated",
+		ResourceType: "sandbox",
+		ResourceID:   &sandbox.ID,
+		ResourceName: sandbox.Name,
+	})
 	writeJSON(w, http.StatusOK, sandbox)
 }
 
@@ -241,10 +286,22 @@ func (api *API) deleteSandbox(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid sandbox id")
 		return
 	}
+	sandbox, err := api.store.GetSandbox(r.Context(), id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
 	if err := api.store.DeleteSandbox(r.Context(), id); err != nil {
 		writeStoreError(w, err)
 		return
 	}
+	api.recordAuditEvent(r.Context(), domain.AuditEventCreate{
+		ProjectID:    &sandbox.ProjectID,
+		Action:       "sandbox.deleted",
+		ResourceType: "sandbox",
+		ResourceID:   &id,
+		ResourceName: sandbox.Name,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -267,6 +324,17 @@ func (api *API) setSandboxLifecycleStatus(w http.ResponseWriter, r *http.Request
 		writeStoreError(w, err)
 		return
 	}
+	action := "sandbox.started"
+	if status == domain.SandboxStatusStopped {
+		action = "sandbox.stopped"
+	}
+	api.recordAuditEvent(r.Context(), domain.AuditEventCreate{
+		ProjectID:    &sandbox.ProjectID,
+		Action:       action,
+		ResourceType: "sandbox",
+		ResourceID:   &sandbox.ID,
+		ResourceName: sandbox.Name,
+	})
 	writeJSON(w, http.StatusOK, sandbox)
 }
 

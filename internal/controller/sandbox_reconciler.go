@@ -15,6 +15,7 @@ type SandboxReconciler struct {
 	adapter  mboxruntime.Adapter
 	interval time.Duration
 	logger   *slog.Logger
+	now      func() time.Time
 }
 
 func NewSandboxReconciler(store domain.Store, adapter mboxruntime.Adapter, interval time.Duration, logger *slog.Logger) *SandboxReconciler {
@@ -29,6 +30,7 @@ func NewSandboxReconciler(store domain.Store, adapter mboxruntime.Adapter, inter
 		adapter:  adapter,
 		interval: interval,
 		logger:   logger,
+		now:      time.Now,
 	}
 }
 
@@ -72,12 +74,24 @@ func (r *SandboxReconciler) reconcileSandbox(ctx context.Context, sandbox domain
 		return r.reconcileDeleted(ctx, sandbox)
 	}
 
+	template, err := r.store.GetTemplate(ctx, sandbox.TemplateID)
+	if err != nil {
+		return err
+	}
+	if r.lifecycleExpired(template, sandbox) {
+		r.logger.Info("sandbox lifecycle ttl expired", "sandbox_id", sandbox.ID)
+		if err := r.store.DeleteSandbox(ctx, sandbox.ID); err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return err
+		}
+		return r.reconcileDeleted(ctx, sandbox)
+	}
+
 	if sandbox.Status == domain.SandboxStatusStopped {
 		return r.reconcileStopped(ctx, sandbox)
 	}
 
 	if sandbox.RuntimeRef == nil {
-		return r.createRuntime(ctx, sandbox)
+		return r.createRuntime(ctx, sandbox, template)
 	}
 
 	if sandbox.Status == domain.SandboxStatusPending {
@@ -93,6 +107,14 @@ func (r *SandboxReconciler) reconcileSandbox(ctx context.Context, sandbox domain
 	return r.applyRuntimeStatus(ctx, sandbox, status)
 }
 
+func (r *SandboxReconciler) lifecycleExpired(template domain.EnvironmentTemplate, sandbox domain.Sandbox) bool {
+	ttl, ok := domain.LifecycleTTL(template.LifecyclePolicy)
+	if !ok {
+		return false
+	}
+	return !r.now().Before(sandbox.CreatedAt.Add(ttl))
+}
+
 func (r *SandboxReconciler) reconcileStopped(ctx context.Context, sandbox domain.Sandbox) error {
 	if sandbox.RuntimeRef == nil {
 		return nil
@@ -100,11 +122,7 @@ func (r *SandboxReconciler) reconcileStopped(ctx context.Context, sandbox domain
 	return r.adapter.StopRuntime(ctx, *sandbox.RuntimeRef)
 }
 
-func (r *SandboxReconciler) createRuntime(ctx context.Context, sandbox domain.Sandbox) error {
-	template, err := r.store.GetTemplate(ctx, sandbox.TemplateID)
-	if err != nil {
-		return err
-	}
+func (r *SandboxReconciler) createRuntime(ctx context.Context, sandbox domain.Sandbox, template domain.EnvironmentTemplate) error {
 	ref, err := r.adapter.CreateRuntime(ctx, mboxruntime.CreateRequest{
 		Sandbox:  sandbox,
 		Template: template,

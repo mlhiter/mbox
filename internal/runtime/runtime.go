@@ -85,6 +85,21 @@ type LogResult struct {
 	Logs   string        `json:"logs"`
 }
 
+type FileReadRequest struct {
+	Path          string
+	MaxBytes      int64
+	WorkspaceOnly bool
+}
+
+type FileReadResult struct {
+	Target      RuntimeTarget `json:"target"`
+	Path        string        `json:"path"`
+	ContentType string        `json:"contentType,omitempty"`
+	SizeBytes   int64         `json:"sizeBytes"`
+	Truncated   bool          `json:"truncated"`
+	Body        io.ReadCloser `json:"-"`
+}
+
 type RuntimeEvent struct {
 	Type           string    `json:"type,omitempty"`
 	Reason         string    `json:"reason,omitempty"`
@@ -92,6 +107,49 @@ type RuntimeEvent struct {
 	Count          int32     `json:"count,omitempty"`
 	FirstTimestamp time.Time `json:"firstTimestamp,omitempty"`
 	LastTimestamp  time.Time `json:"lastTimestamp,omitempty"`
+}
+
+type ManagedResource struct {
+	Adapter   string                `json:"adapter"`
+	Kind      string                `json:"kind"`
+	Namespace string                `json:"namespace,omitempty"`
+	Name      string                `json:"name"`
+	Owner     *ManagedResourceOwner `json:"owner,omitempty"`
+	Labels    map[string]string     `json:"labels,omitempty"`
+	CreatedAt time.Time             `json:"createdAt,omitempty"`
+}
+
+type ManagedResourceList struct {
+	Adapter   string                 `json:"adapter"`
+	CheckedAt time.Time              `json:"checkedAt"`
+	Summary   ManagedResourceSummary `json:"summary"`
+	Items     []ManagedResource      `json:"items"`
+}
+
+type ManagedResourceSummary struct {
+	Total       int                    `json:"total"`
+	ByKind      []ManagedResourceCount `json:"byKind"`
+	ByNamespace []ManagedResourceCount `json:"byNamespace"`
+	ByOwner     []ManagedResourceCount `json:"byOwner"`
+}
+
+type ManagedResourceCount struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+type ManagedResourceOwner struct {
+	Kind       string `json:"kind"`
+	ProjectID  string `json:"projectId,omitempty"`
+	SandboxID  string `json:"sandboxId,omitempty"`
+	TemplateID string `json:"templateId,omitempty"`
+}
+
+type ManagedResourceRef struct {
+	Adapter   string `json:"adapter"`
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace,omitempty"`
+	Name      string `json:"name"`
 }
 
 type ExecOptions struct {
@@ -117,6 +175,15 @@ type Access interface {
 	ListEvents(ctx context.Context, ref domain.RuntimeRef) ([]RuntimeEvent, error)
 	ProxyPreview(ctx context.Context, ref domain.RuntimeRef, request PreviewProxyRequest) (PreviewProxyResponse, error)
 	Exec(ctx context.Context, ref domain.RuntimeRef, options ExecOptions) error
+	ReadFile(ctx context.Context, ref domain.RuntimeRef, request FileReadRequest) (FileReadResult, error)
+}
+
+type Auditor interface {
+	ListManagedResources(ctx context.Context) (ManagedResourceList, error)
+}
+
+type Cleaner interface {
+	DeleteManagedResource(ctx context.Context, ref ManagedResourceRef) error
 }
 
 type NoopAdapter struct{}

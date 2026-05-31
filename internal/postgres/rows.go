@@ -55,6 +55,77 @@ func scanProject(row scanner) (domain.Project, error) {
 	return project.toDomain(), err
 }
 
+func scanProjectPolicy(row scanner) (domain.ProjectPolicy, error) {
+	var policy domain.ProjectPolicy
+	err := row.Scan(
+		&policy.ProjectID,
+		&policy.Enforcement,
+		&policy.AllowedImagePrefixes,
+		&policy.AllowedServiceAccounts,
+		&policy.AllowedSecretRefs,
+		&policy.CreatedAt,
+		&policy.UpdatedAt,
+	)
+	return policy, err
+}
+
+func scanProjectQuotaPolicy(row scanner) (domain.ProjectQuotaPolicy, error) {
+	var policy domain.ProjectQuotaPolicy
+	err := row.Scan(
+		&policy.ProjectID,
+		&policy.Enforcement,
+		&policy.MaxActiveSandboxes,
+		&policy.MaxRetainedArtifactBytes,
+		&policy.CreatedAt,
+		&policy.UpdatedAt,
+	)
+	return policy, err
+}
+
+func scanProjectCredential(row scanner) (domain.ProjectCredential, error) {
+	var credential domain.ProjectCredential
+	var secretRef json.RawMessage
+	err := row.Scan(
+		&credential.ID,
+		&credential.ProjectID,
+		&credential.Name,
+		&credential.Slug,
+		&credential.Type,
+		&credential.Target,
+		&secretRef,
+		&credential.Usage,
+		&credential.Metadata,
+		&credential.CreatedAt,
+		&credential.UpdatedAt,
+	)
+	if err != nil {
+		return domain.ProjectCredential{}, err
+	}
+	if len(secretRef) > 0 {
+		if err := json.Unmarshal(secretRef, &credential.SecretRef); err != nil {
+			return domain.ProjectCredential{}, err
+		}
+	}
+	return credential, nil
+}
+
+func scanAuditEvent(row scanner) (domain.AuditEvent, error) {
+	var event domain.AuditEvent
+	err := row.Scan(
+		&event.ID,
+		&event.ProjectID,
+		&event.Action,
+		&event.ResourceType,
+		&event.ResourceID,
+		&event.ResourceName,
+		&event.Actor,
+		&event.Source,
+		&event.Metadata,
+		&event.CreatedAt,
+	)
+	return event, err
+}
+
 func scanTemplate(row scanner) (domain.EnvironmentTemplate, error) {
 	var template domain.EnvironmentTemplate
 	var exposedPorts json.RawMessage
@@ -118,7 +189,7 @@ func scanSandbox(row scanner) (domain.Sandbox, error) {
 	if err != nil {
 		return domain.Sandbox{}, err
 	}
-	if runtimeRef != nil && len(*runtimeRef) > 0 {
+	if isSetJSON(runtimeRef) {
 		var ref domain.RuntimeRef
 		if err := json.Unmarshal(*runtimeRef, &ref); err != nil {
 			return domain.Sandbox{}, err
@@ -131,6 +202,37 @@ func scanSandbox(row scanner) (domain.Sandbox, error) {
 		}
 	}
 	return sandbox, nil
+}
+
+func scanRuntimeSession(row scanner) (domain.RuntimeSession, error) {
+	var session domain.RuntimeSession
+	var runtimeRef *json.RawMessage
+	err := row.Scan(
+		&session.ID,
+		&session.ProjectID,
+		&session.SandboxID,
+		&session.Type,
+		&session.Status,
+		&session.Client,
+		&session.UserAgent,
+		&runtimeRef,
+		&session.Metadata,
+		&session.StartedAt,
+		&session.EndedAt,
+		&session.CreatedAt,
+		&session.UpdatedAt,
+	)
+	if err != nil {
+		return domain.RuntimeSession{}, err
+	}
+	if isSetJSON(runtimeRef) {
+		var ref domain.RuntimeRef
+		if err := json.Unmarshal(*runtimeRef, &ref); err != nil {
+			return domain.RuntimeSession{}, err
+		}
+		session.RuntimeRef = &ref
+	}
+	return session, nil
 }
 
 func scanExecutionTask(row scanner) (domain.ExecutionTask, error) {
@@ -158,7 +260,7 @@ func scanExecutionTask(row scanner) (domain.ExecutionTask, error) {
 	if err != nil {
 		return domain.ExecutionTask{}, err
 	}
-	if runtimeRef != nil && len(*runtimeRef) > 0 {
+	if isSetJSON(runtimeRef) {
 		var ref domain.RuntimeRef
 		if err := json.Unmarshal(*runtimeRef, &ref); err != nil {
 			return domain.ExecutionTask{}, err
@@ -168,8 +270,19 @@ func scanExecutionTask(row scanner) (domain.ExecutionTask, error) {
 	return task, nil
 }
 
+func isSetJSON(raw *json.RawMessage) bool {
+	return raw != nil && len(*raw) > 0 && string(*raw) != "null"
+}
+
 func scanArtifact(row scanner) (domain.Artifact, error) {
 	var artifact domain.Artifact
+	var retainedContentType *string
+	var retainedSizeBytes *int64
+	var retainedSHA256 *string
+	var retainedSourceURI *string
+	var retainedStorageProvider *string
+	var retainedStorageKey *string
+	var retainedCapturedAt *time.Time
 	err := row.Scan(
 		&artifact.ID,
 		&artifact.ProjectID,
@@ -183,6 +296,71 @@ func scanArtifact(row scanner) (domain.Artifact, error) {
 		&artifact.Metadata,
 		&artifact.CreatedAt,
 		&artifact.UpdatedAt,
+		&retainedContentType,
+		&retainedSizeBytes,
+		&retainedSHA256,
+		&retainedSourceURI,
+		&retainedStorageProvider,
+		&retainedStorageKey,
+		&retainedCapturedAt,
 	)
-	return artifact, err
+	if err != nil {
+		return domain.Artifact{}, err
+	}
+	if retainedCapturedAt != nil {
+		content := domain.ArtifactContent{
+			ArtifactID:  artifact.ID,
+			CapturedAt:  *retainedCapturedAt,
+			ContentType: stringPointerValue(retainedContentType),
+			SizeBytes:   int64PointerValue(retainedSizeBytes),
+			SHA256:      stringPointerValue(retainedSHA256),
+			SourceURI:   stringPointerValue(retainedSourceURI),
+			StorageProvider: domain.ArtifactContentStorageProvider(
+				storageProviderPointerValue(retainedStorageProvider),
+			),
+			StorageKey: stringPointerValue(retainedStorageKey),
+		}
+		artifact.RetainedContent = &content
+	}
+	return artifact, nil
+}
+
+func scanArtifactContent(row scanner) (domain.ArtifactContent, error) {
+	var content domain.ArtifactContent
+	err := row.Scan(
+		&content.ArtifactID,
+		&content.Content,
+		&content.ContentType,
+		&content.SizeBytes,
+		&content.SHA256,
+		&content.SourceURI,
+		&content.StorageProvider,
+		&content.StorageKey,
+		&content.CapturedAt,
+	)
+	if content.StorageProvider == "" {
+		content.StorageProvider = domain.ArtifactContentStorageProviderPostgres
+	}
+	return content, err
+}
+
+func stringPointerValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func int64PointerValue(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func storageProviderPointerValue(value *string) string {
+	if value == nil || *value == "" {
+		return string(domain.ArtifactContentStorageProviderPostgres)
+	}
+	return *value
 }

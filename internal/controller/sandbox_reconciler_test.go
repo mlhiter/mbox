@@ -167,6 +167,75 @@ func TestReconcilerStartsRuntimeForPendingSandboxWithRuntimeRef(t *testing.T) {
 	}
 }
 
+func TestReconcilerDeletesExpiredSandboxByLifecycleTTL(t *testing.T) {
+	store := newFakeStore()
+	adapter := &fakeAdapter{}
+	project := store.mustProject()
+	template := store.mustTemplate(&project.ID)
+	template.LifecyclePolicy = []byte(`{"ttlSeconds":60}`)
+	store.templates[template.ID] = template
+	sandbox := store.mustSandbox(project.ID, template.ID)
+	sandbox.CreatedAt = time.Date(2026, 5, 29, 10, 0, 0, 0, time.UTC)
+	ref := domain.RuntimeRef{Adapter: "agent-sandbox", Kind: "SandboxClaim", Namespace: sandbox.Namespace, Name: "runtime"}
+	sandbox.RuntimeRef = &ref
+	store.sandboxes[sandbox.ID] = sandbox
+
+	reconciler := NewSandboxReconciler(store, adapter, time.Second, nil)
+	reconciler.now = func() time.Time {
+		return sandbox.CreatedAt.Add(61 * time.Second)
+	}
+	if err := reconciler.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	updated := store.sandboxes[sandbox.ID]
+	if updated.DeletedAt == nil || updated.Status != domain.SandboxStatusDeleted {
+		t.Fatalf("expected expired sandbox to be soft-deleted, got %+v", updated)
+	}
+	if updated.RuntimeRef != nil {
+		t.Fatalf("expected runtime ref to be cleared after delete cleanup, got %+v", updated.RuntimeRef)
+	}
+	if adapter.deleteCalls != 1 {
+		t.Fatalf("expected runtime delete call, got %d", adapter.deleteCalls)
+	}
+	if adapter.statusCalls != 0 || adapter.startCalls != 0 || adapter.stopCalls != 0 {
+		t.Fatalf("expected TTL cleanup to skip runtime status/start/stop, got status=%d start=%d stop=%d", adapter.statusCalls, adapter.startCalls, adapter.stopCalls)
+	}
+}
+
+func TestReconcilerKeepsSandboxBeforeLifecycleTTL(t *testing.T) {
+	store := newFakeStore()
+	adapter := &fakeAdapter{status: mboxruntime.Status{Status: mboxruntime.RuntimeStatusRunning}}
+	project := store.mustProject()
+	template := store.mustTemplate(&project.ID)
+	template.LifecyclePolicy = []byte(`{"ttlSeconds":60}`)
+	store.templates[template.ID] = template
+	sandbox := store.mustSandbox(project.ID, template.ID)
+	sandbox.CreatedAt = time.Date(2026, 5, 29, 10, 0, 0, 0, time.UTC)
+	ref := domain.RuntimeRef{Adapter: "agent-sandbox", Kind: "SandboxClaim", Namespace: sandbox.Namespace, Name: "runtime"}
+	sandbox.RuntimeRef = &ref
+	store.sandboxes[sandbox.ID] = sandbox
+
+	reconciler := NewSandboxReconciler(store, adapter, time.Second, nil)
+	reconciler.now = func() time.Time {
+		return sandbox.CreatedAt.Add(59 * time.Second)
+	}
+	if err := reconciler.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := store.GetSandbox(context.Background(), sandbox.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.DeletedAt != nil || updated.Status != domain.SandboxStatusRunning {
+		t.Fatalf("expected sandbox to stay active before TTL, got %+v", updated)
+	}
+	if adapter.deleteCalls != 0 {
+		t.Fatalf("expected no runtime delete call, got %d", adapter.deleteCalls)
+	}
+}
+
 type fakeAdapter struct {
 	createCalls int
 	startCalls  int
@@ -289,22 +358,71 @@ func (s *fakeStore) DeleteProject(context.Context, uuid.UUID) error {
 	return nil
 }
 
+func (s *fakeStore) GetProjectPolicy(context.Context, uuid.UUID) (domain.ProjectPolicy, error) {
+	return domain.ProjectPolicy{}, domain.ErrNotFound
+}
+
+func (s *fakeStore) UpsertProjectPolicy(context.Context, uuid.UUID, domain.ProjectPolicyUpsert) (domain.ProjectPolicy, error) {
+	return domain.ProjectPolicy{}, nil
+}
+
+func (s *fakeStore) GetProjectQuotaPolicy(context.Context, uuid.UUID) (domain.ProjectQuotaPolicy, error) {
+	return domain.ProjectQuotaPolicy{}, domain.ErrNotFound
+}
+
+func (s *fakeStore) UpsertProjectQuotaPolicy(context.Context, uuid.UUID, domain.ProjectQuotaPolicyUpsert) (domain.ProjectQuotaPolicy, error) {
+	return domain.ProjectQuotaPolicy{}, nil
+}
+
+func (s *fakeStore) ListProjectCredentials(context.Context, uuid.UUID) ([]domain.ProjectCredential, error) {
+	return nil, nil
+}
+
+func (s *fakeStore) CreateProjectCredential(context.Context, domain.ProjectCredentialCreate) (domain.ProjectCredential, error) {
+	return domain.ProjectCredential{}, nil
+}
+
+func (s *fakeStore) GetProjectCredential(context.Context, uuid.UUID) (domain.ProjectCredential, error) {
+	return domain.ProjectCredential{}, domain.ErrNotFound
+}
+
+func (s *fakeStore) DeleteProjectCredential(context.Context, uuid.UUID) error {
+	return nil
+}
+
+func (s *fakeStore) GetProjectUsage(context.Context, uuid.UUID) (domain.ProjectUsage, error) {
+	return domain.ProjectUsage{}, nil
+}
+
+func (s *fakeStore) ListAuditEvents(context.Context, domain.AuditEventFilter) ([]domain.AuditEvent, error) {
+	return nil, nil
+}
+
+func (s *fakeStore) CreateAuditEvent(context.Context, domain.AuditEventCreate) (domain.AuditEvent, error) {
+	return domain.AuditEvent{}, nil
+}
+
 func (s *fakeStore) ListTemplates(context.Context, *uuid.UUID) ([]domain.EnvironmentTemplate, error) {
+	return nil, nil
+}
+
+func (s *fakeStore) ListAllTemplates(context.Context) ([]domain.EnvironmentTemplate, error) {
 	return nil, nil
 }
 
 func (s *fakeStore) CreateTemplate(_ context.Context, input domain.TemplateCreate) (domain.EnvironmentTemplate, error) {
 	now := time.Now()
 	template := domain.EnvironmentTemplate{
-		ID:         uuid.New(),
-		ProjectID:  input.ProjectID,
-		Name:       input.Name,
-		Slug:       input.Slug,
-		Image:      input.Image,
-		WorkingDir: input.WorkingDir,
-		Metadata:   input.Metadata,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		ID:              uuid.New(),
+		ProjectID:       input.ProjectID,
+		Name:            input.Name,
+		Slug:            input.Slug,
+		Image:           input.Image,
+		WorkingDir:      input.WorkingDir,
+		LifecyclePolicy: input.LifecyclePolicy,
+		Metadata:        input.Metadata,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	s.templates[template.ID] = template
 	return template, nil
@@ -327,6 +445,10 @@ func (s *fakeStore) DeleteTemplate(context.Context, uuid.UUID) error {
 }
 
 func (s *fakeStore) ListSandboxes(context.Context, *uuid.UUID) ([]domain.Sandbox, error) {
+	return nil, nil
+}
+
+func (s *fakeStore) ListAllSandboxes(context.Context) ([]domain.Sandbox, error) {
 	return nil, nil
 }
 
@@ -414,6 +536,22 @@ func (s *fakeStore) UpdateExecutionTask(context.Context, uuid.UUID, domain.Execu
 	return domain.ExecutionTask{}, nil
 }
 
+func (s *fakeStore) ListRuntimeSessions(context.Context, uuid.UUID) ([]domain.RuntimeSession, error) {
+	return nil, nil
+}
+
+func (s *fakeStore) CreateRuntimeSession(context.Context, domain.RuntimeSessionCreate) (domain.RuntimeSession, error) {
+	return domain.RuntimeSession{}, nil
+}
+
+func (s *fakeStore) GetRuntimeSession(context.Context, uuid.UUID) (domain.RuntimeSession, error) {
+	return domain.RuntimeSession{}, domain.ErrNotFound
+}
+
+func (s *fakeStore) UpdateRuntimeSession(context.Context, uuid.UUID, domain.RuntimeSessionUpdate) (domain.RuntimeSession, error) {
+	return domain.RuntimeSession{}, domain.ErrNotFound
+}
+
 func (s *fakeStore) ListArtifacts(context.Context, uuid.UUID, *uuid.UUID) ([]domain.Artifact, error) {
 	return nil, nil
 }
@@ -424,4 +562,12 @@ func (s *fakeStore) CreateArtifact(context.Context, domain.ArtifactCreate) (doma
 
 func (s *fakeStore) GetArtifact(context.Context, uuid.UUID) (domain.Artifact, error) {
 	return domain.Artifact{}, domain.ErrNotFound
+}
+
+func (s *fakeStore) CaptureArtifactContent(context.Context, domain.ArtifactContentCapture) (domain.Artifact, error) {
+	return domain.Artifact{}, domain.ErrNotFound
+}
+
+func (s *fakeStore) GetArtifactContent(context.Context, uuid.UUID) (domain.ArtifactContent, error) {
+	return domain.ArtifactContent{}, domain.ErrNotFound
 }

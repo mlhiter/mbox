@@ -99,6 +99,13 @@ func (api *API) createProject(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	api.recordAuditEvent(r.Context(), domain.AuditEventCreate{
+		ProjectID:    &project.ID,
+		Action:       "project.created",
+		ResourceType: "project",
+		ResourceID:   &project.ID,
+		ResourceName: project.Name,
+	})
 	writeJSON(w, http.StatusCreated, project)
 }
 
@@ -113,6 +120,13 @@ func (api *API) getProject(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	api.recordAuditEvent(r.Context(), domain.AuditEventCreate{
+		ProjectID:    &project.ID,
+		Action:       "project.updated",
+		ResourceType: "project",
+		ResourceID:   &project.ID,
+		ResourceName: project.Name,
+	})
 	writeJSON(w, http.StatusOK, project)
 }
 
@@ -167,9 +181,34 @@ func (api *API) deleteProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid project id")
 		return
 	}
+	project, err := api.store.GetProject(r.Context(), id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
 	if err := api.store.DeleteProject(r.Context(), id); err != nil {
 		writeStoreError(w, err)
 		return
 	}
+	api.recordAuditEvent(r.Context(), domain.AuditEventCreate{
+		Action:       "project.deleted",
+		ResourceType: "project",
+		ResourceID:   &id,
+		ResourceName: project.Name,
+	})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (api *API) getProjectUsage(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseUUIDParam(r, "projectID")
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid project id")
+		return
+	}
+	usage, err := api.store.GetProjectUsage(r.Context(), id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, usage)
 }
