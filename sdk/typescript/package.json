@@ -17,7 +17,13 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "check:pack": "npm run build && node scripts/check-pack.mjs",
+    "check:pack:consumer": "npm run build && node scripts/check-pack-consumer.mjs",
+    "check:openapi": "npm run build && node scripts/check-openapi.mjs",
+    "prepublishOnly": "npm run verify",
+    "smoke": "npm run build && node scripts/smoke.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify": "npm run typecheck && npm run smoke && npm run check:pack && npm run check:pack:consumer"
   },
   "devDependencies": {
     "typescript": "^6.0.3"
