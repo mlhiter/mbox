@@ -4,16 +4,22 @@ import {
   createProject as createProjectRequest,
   createSandbox as createSandboxRequest,
   createTemplate as createTemplateRequest,
+  createTemplateValidationRun,
+  decideTemplateValidationRun as decideTemplateValidationRunRequest,
   deleteSandbox as deleteSandboxRequest,
   getHealth,
+  getProjectPolicy,
+  getProjectQuotaPolicy,
+  getProjectUsage,
   getSandbox,
+  listProjectAuditEvents,
+  listProjectCredentials,
   listProjects,
   listSandboxes,
   listTemplates,
   startSandbox as startSandboxRequest,
   stopSandbox as stopSandboxRequest,
   updateProject,
-  updateSandbox as updateSandboxRequest,
   updateTemplate as updateTemplateRequest,
 } from "@/lib/api"
 import {
@@ -24,8 +30,13 @@ import {
 } from "@/lib/resource-utils"
 import type {
   APIStatus,
+  AuditEvent,
   FormRecord,
   Project,
+  ProjectCredential,
+  ProjectPolicy,
+  ProjectQuotaPolicy,
+  ProjectUsage,
   Sandbox,
   Selection,
   Template,
@@ -38,6 +49,11 @@ const initialAPIStatus: APIStatus = {
 
 export function useMboxData() {
   const [projects, setProjects] = useState<Project[]>([])
+  const [projectPolicies, setProjectPolicies] = useState<Record<string, ProjectPolicy>>({})
+  const [projectQuotaPolicies, setProjectQuotaPolicies] = useState<Record<string, ProjectQuotaPolicy>>({})
+  const [projectCredentials, setProjectCredentials] = useState<Record<string, ProjectCredential[]>>({})
+  const [projectUsage, setProjectUsage] = useState<Record<string, ProjectUsage>>({})
+  const [projectAuditEvents, setProjectAuditEvents] = useState<Record<string, AuditEvent[]>>({})
   const [templates, setTemplates] = useState<Template[]>([])
   const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
   const [selection, setSelection] = useState<Selection | null>(null)
@@ -73,9 +89,68 @@ export function useMboxData() {
         listTemplates(),
         listSandboxes(),
       ])
-      setProjects(projectList.items || [])
+      const nextProjects = projectList.items || []
+      setProjects(nextProjects)
       setTemplates(templateList.items || [])
       setSandboxes(sandboxList.items || [])
+      const policies = await Promise.all(
+        nextProjects.map(async (project) => {
+          try {
+            return await getProjectPolicy(project.id)
+          } catch {
+            return {
+              projectId: project.id,
+              enforcement: "disabled" as const,
+            }
+          }
+        }),
+      )
+      setProjectPolicies(Object.fromEntries(policies.map((policy) => [policy.projectId, policy])))
+      const quotaPolicies = await Promise.all(
+        nextProjects.map(async (project) => {
+          try {
+            return await getProjectQuotaPolicy(project.id)
+          } catch {
+            return {
+              projectId: project.id,
+              enforcement: "disabled" as const,
+            }
+          }
+        }),
+      )
+      setProjectQuotaPolicies(Object.fromEntries(quotaPolicies.map((policy) => [policy.projectId, policy])))
+      const credentials = await Promise.all(
+        nextProjects.map(async (project) => {
+          try {
+            const result = await listProjectCredentials(project.id)
+            return [project.id, result.items || []] as const
+          } catch {
+            return [project.id, []] as const
+          }
+        }),
+      )
+      setProjectCredentials(Object.fromEntries(credentials))
+      const usage = await Promise.all(
+        nextProjects.map(async (project) => {
+          try {
+            return [project.id, await getProjectUsage(project.id)] as const
+          } catch {
+            return [project.id, undefined] as const
+          }
+        }),
+      )
+      setProjectUsage(Object.fromEntries(usage.filter((entry): entry is readonly [string, ProjectUsage] => Boolean(entry[1]))))
+      const auditEvents = await Promise.all(
+        nextProjects.map(async (project) => {
+          try {
+            const result = await listProjectAuditEvents(project.id)
+            return [project.id, result.items || []] as const
+          } catch {
+            return [project.id, []] as const
+          }
+        }),
+      )
+      setProjectAuditEvents(Object.fromEntries(auditEvents))
       setAPIState({
         state: health.status === "ok" ? "ok" : "bad",
         label: health.status || "Unknown",
@@ -163,26 +238,14 @@ export function useMboxData() {
           throw new Error("Create a project before validating an environment.")
         }
         const validationName = `Validate ${template.name}`.slice(0, 58)
-        const sandbox = await createSandboxRequest({
+        const run = await createTemplateValidationRun(template.id, {
           projectId: project.id,
-          templateId: template.id,
           name: validationName,
-          slug: generatedSlug(`${validationName}-${Date.now().toString(36)}`, "validation"),
-          metadata: {
-            purpose: "environment-validation",
-            templateId: template.id,
-          },
-        })
-        await updateTemplateRequest(id, {
-          metadata: {
-            ...(template.metadata || {}),
-            validationStatus: "testing",
-          },
         })
         await loadAll()
-        setSelection({ kind: "sandbox", id: sandbox.id })
+        setSelection({ kind: "sandbox", id: run.sandbox.id })
         toast.success("Validation sandbox launched")
-        return sandbox
+        return run.sandbox
       } catch (validationError) {
         const message = validationError instanceof Error ? validationError.message : "Validation launch failed"
         toast.error(message)
@@ -222,24 +285,7 @@ export function useMboxData() {
         if (!template || !templateID) {
           throw new Error("Environment not found for this validation run")
         }
-        const decidedAt = new Date().toISOString()
-        await updateTemplateRequest(templateID, {
-          metadata: {
-            ...(template.metadata || {}),
-            validationStatus: status,
-            validationSandboxId: sandbox.id,
-            validationDecidedAt: decidedAt,
-          },
-        })
-        await updateSandboxRequest(sandbox.id, {
-          metadata: {
-            ...(sandbox.metadata || {}),
-            purpose: "environment-validation",
-            templateId: templateID,
-            validationResult: status,
-            validationDecidedAt: decidedAt,
-          },
-        })
+        await decideTemplateValidationRunRequest(templateID, sandbox.id, status)
         await loadAll()
         setSelection({ kind: "sandbox", id: sandbox.id })
         toast.success(status === "passed" ? "Environment marked validated" : "Environment marked failed")
@@ -290,6 +336,21 @@ export function useMboxData() {
     return sandbox
   }, [])
 
+  const refreshProjectAuditEvents = useCallback(
+    async (projectID: string, filters: { action?: string; actor?: string; source?: string } = {}) => {
+      const result = await listProjectAuditEvents(projectID, {
+        limit: 20,
+        action: filters.action,
+        actor: filters.actor,
+        source: filters.source,
+      })
+      const events = result.items || []
+      setProjectAuditEvents((current) => ({ ...current, [projectID]: events }))
+      return events
+    },
+    [],
+  )
+
   return {
     apiState,
     counts,
@@ -301,7 +362,13 @@ export function useMboxData() {
     error,
     loadAll,
     loading,
+    projectPolicies,
+    projectQuotaPolicies,
+    projectCredentials,
+    projectAuditEvents,
+    projectUsage,
     projects,
+    refreshProjectAuditEvents,
     refreshSandbox,
     sandboxes,
     selectedSandbox,

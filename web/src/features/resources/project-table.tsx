@@ -12,15 +12,31 @@ import { ResourceTitleCell } from "@/components/console/resource-cells"
 import { EmptyRow, SkeletonRows } from "@/components/console/table-state"
 import { ProjectDialog } from "@/features/resources/project-dialog"
 import {
+  projectPolicyText,
+  projectQuotaPolicyText,
   templateName,
   templateRuntimeType,
   templateUseCase,
 } from "@/lib/resource-utils"
 import { cn } from "@/lib/utils"
-import type { FormRecord, Project, Sandbox, Selection, Template } from "@/types"
+import type {
+  FormRecord,
+  Project,
+  ProjectCredential,
+  ProjectPolicy,
+  ProjectQuotaPolicy,
+  ProjectUsage,
+  Sandbox,
+  Selection,
+  Template,
+} from "@/types"
 
 export function ProjectTable(props: {
   projects: Project[]
+  projectCredentials: Record<string, ProjectCredential[]>
+  projectPolicies: Record<string, ProjectPolicy>
+  projectQuotaPolicies: Record<string, ProjectQuotaPolicy>
+  projectUsage: Record<string, ProjectUsage>
   templates: Template[]
   sandboxes: Sandbox[]
   loading: boolean
@@ -58,6 +74,12 @@ export function ProjectTable(props: {
               const defaultEnvironment = props.templates.find((template) => template.id === project.defaultTemplateId)
               const projectSandboxes = props.sandboxes.filter((sandbox) => sandbox.projectId === project.id)
               const runningCount = projectSandboxes.filter((sandbox) => sandbox.status === "running").length
+              const policy = props.projectPolicies[project.id]
+              const quotaPolicy = props.projectQuotaPolicies[project.id]
+              const credentialCount = props.projectCredentials[project.id]?.length || 0
+              const usage = props.projectUsage[project.id]
+              const taskCount = usage?.executionTasks.total || 0
+              const retainedBytes = usage?.artifacts.retainedBytes || 0
               return (
                 <TableRow
                   key={project.id}
@@ -83,8 +105,9 @@ export function ProjectTable(props: {
                   </TableCell>
                   <TableCell>
                     <div className="project-activity-cell">
-                      <strong>{projectSandboxes.length} sandboxes</strong>
-                      <span>{runningCount} running</span>
+                      <strong>{usage?.sandboxes.active ?? projectSandboxes.length} active sandboxes</strong>
+                      <span>{usage?.sandboxes.running ?? runningCount} running · {taskCount} tasks · {formatBytes(retainedBytes)} retained</span>
+                      <span>{projectPolicyText(policy)} · {projectQuotaPolicyText(quotaPolicy)} · {credentialCount} credentials</span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -100,4 +123,19 @@ export function ProjectTable(props: {
       </Table>
     </ConsolePanel>
   )
+}
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0 B"
+  }
+  const units = ["B", "KiB", "MiB", "GiB"]
+  let size = value
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024
+    unit += 1
+  }
+  const precision = unit === 0 || size >= 10 ? 0 : 1
+  return `${size.toFixed(precision)} ${units[unit]}`
 }

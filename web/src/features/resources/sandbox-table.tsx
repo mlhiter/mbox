@@ -25,10 +25,13 @@ import {
   templateUseCase,
 } from "@/lib/resource-utils"
 import { cn } from "@/lib/utils"
-import type { FormRecord, Project, Sandbox, Selection, Template } from "@/types"
+import type { FormRecord, Project, ProjectPolicy, ProjectQuotaPolicy, ProjectUsage, Sandbox, Selection, Template } from "@/types"
 
 export function SandboxTable(props: {
   projects: Project[]
+  projectPolicies: Record<string, ProjectPolicy>
+  projectQuotaPolicies: Record<string, ProjectQuotaPolicy>
+  projectUsage: Record<string, ProjectUsage>
   templates: Template[]
   sandboxes: Sandbox[]
   loading: boolean
@@ -49,7 +52,16 @@ export function SandboxTable(props: {
       eyebrow="Execution"
       title="Sandboxes"
       wide
-      action={<SandboxDialog projects={props.projects} templates={props.templates} onSubmit={props.onCreate} />}
+      action={
+        <SandboxDialog
+          projects={props.projects}
+          projectPolicies={props.projectPolicies}
+          projectQuotaPolicies={props.projectQuotaPolicies}
+          projectUsage={props.projectUsage}
+          templates={props.templates}
+          onSubmit={props.onCreate}
+        />
+      }
     >
       {!canLaunch && !props.loading ? (
         <div className="prereq-strip" role="status">

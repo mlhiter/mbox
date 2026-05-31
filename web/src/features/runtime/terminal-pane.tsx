@@ -11,10 +11,12 @@ export function TerminalPane({
   sandbox,
   disabled,
   disabledReason,
+  onSessionChange,
 }: {
   sandbox: Sandbox
   disabled: boolean
   disabledReason?: string
+  onSessionChange?: () => Promise<void>
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
@@ -88,6 +90,7 @@ export function TerminalPane({
       terminal.write("\r\nConnection closed.\r\n")
       inputDisposableRef.current?.dispose()
       inputDisposableRef.current = null
+      void onSessionChange?.()
     }
     inputDisposableRef.current?.dispose()
     inputDisposableRef.current = terminal.onData((data) => {

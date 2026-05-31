@@ -4,6 +4,8 @@ import type {
   ExecutionTaskStatus,
   FormRecord,
   Project,
+  ProjectPolicy,
+  ProjectQuotaPolicy,
   ResourceKind,
   RuntimeRef,
   RuntimeStorage,
@@ -68,6 +70,81 @@ export function detailRows(
 
 export function projectName(id: string | undefined, projects: Project[]) {
   return projects.find((project) => project.id === id)?.name || shortID(id)
+}
+
+export function projectPolicyText(policy: ProjectPolicy | undefined) {
+  if (policy?.enforcement === "enforced") {
+    return "Policy enforced"
+  }
+  return "Policy disabled"
+}
+
+export function projectQuotaPolicyText(policy: ProjectQuotaPolicy | undefined) {
+  if (policy?.enforcement === "enforced") {
+    return "Quota enforced"
+  }
+  return "Quota disabled"
+}
+
+export function sandboxLaunchPreflight(props: {
+  project?: Project
+  template?: Template
+  policy?: ProjectPolicy
+  quotaPolicy?: ProjectQuotaPolicy
+  usage?: { sandboxes?: { active?: number } }
+  serviceAccountName?: string
+}) {
+  const blockers: string[] = []
+  const warnings: string[] = []
+  const serviceAccountName = props.serviceAccountName || "mbox-sandbox"
+
+  if (!props.project) {
+    blockers.push("Select a project before launching.")
+  }
+  if (!props.template) {
+    blockers.push("Select an environment before launching.")
+  }
+  if (!props.project || !props.template) {
+    return { blockers, warnings }
+  }
+
+  if (props.template.projectId && props.template.projectId !== props.project.id) {
+    blockers.push("This environment belongs to a different project.")
+  }
+
+  if (props.policy?.enforcement === "enforced") {
+    const imagePrefixes = props.policy.allowedImagePrefixes || []
+    if (imagePrefixes.length > 0 && !imagePrefixes.some((prefix) => props.template?.image.startsWith(prefix))) {
+      blockers.push(`Image ${props.template.image} is outside this project's allowed prefixes.`)
+    }
+
+    const allowedServiceAccounts = props.policy.allowedServiceAccounts || []
+    if (allowedServiceAccounts.length > 0 && !allowedServiceAccounts.includes(serviceAccountName)) {
+      blockers.push(`Runtime identity ${serviceAccountName} is not allowed for this project.`)
+    }
+
+    const secretRefs = props.template.secretRefs || []
+    if (secretRefs.length > 0) {
+      const allowedSecretRefs = new Set(props.policy.allowedSecretRefs || [])
+      const deniedSecretRefs = secretRefs
+        .map((secretRef) => secretRef.name)
+        .filter((name) => !allowedSecretRefs.has(name))
+      if (deniedSecretRefs.length > 0) {
+        blockers.push(`Secret refs not allowed: ${deniedSecretRefs.join(", ")}.`)
+      }
+    }
+  }
+
+  if (props.quotaPolicy?.enforcement === "enforced" && props.quotaPolicy.maxActiveSandboxes !== undefined) {
+    const active = props.usage?.sandboxes?.active ?? 0
+    if (active >= props.quotaPolicy.maxActiveSandboxes) {
+      blockers.push(`Active sandbox quota reached: ${active} / ${props.quotaPolicy.maxActiveSandboxes}.`)
+    } else {
+      warnings.push(`Active sandbox quota after launch: ${active + 1} / ${props.quotaPolicy.maxActiveSandboxes}.`)
+    }
+  }
+
+  return { blockers, warnings }
 }
 
 export function templateName(id: string | undefined, templates: Template[]) {

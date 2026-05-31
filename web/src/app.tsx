@@ -106,8 +106,14 @@ export function App() {
     error,
     loadAll,
     loading,
+    projectCredentials,
+    projectAuditEvents,
+    projectPolicies,
+    projectQuotaPolicies,
+    projectUsage,
     projects,
     refreshSandbox,
+    refreshProjectAuditEvents,
     sandboxes,
     selectedSandbox,
     selection,
@@ -228,6 +234,12 @@ export function App() {
       onValidateTemplate={validateTemplateAndOpen}
       onOpenSandboxWorkspace={openSandboxWorkspace}
       onClearSelection={() => setSelection(null)}
+      projectAuditEvents={projectAuditEvents}
+      projectPolicies={projectPolicies}
+      projectQuotaPolicies={projectQuotaPolicies}
+      projectCredentials={projectCredentials}
+      projectUsage={projectUsage}
+      onRefreshProjectAuditEvents={refreshProjectAuditEvents}
     >
       {activeView === "sandbox-detail" ? (
         selectedSandbox ? (
@@ -277,6 +289,10 @@ export function App() {
             {activeView === "projects" ? (
               <ProjectTable
                 projects={projects}
+                projectPolicies={projectPolicies}
+                projectQuotaPolicies={projectQuotaPolicies}
+                projectCredentials={projectCredentials}
+                projectUsage={projectUsage}
                 templates={templates}
                 sandboxes={sandboxes}
                 loading={loading}
@@ -302,6 +318,9 @@ export function App() {
             {activeView === "sandboxes" ? (
               <SandboxTable
                 projects={projects}
+                projectPolicies={projectPolicies}
+                projectQuotaPolicies={projectQuotaPolicies}
+                projectUsage={projectUsage}
                 templates={templates}
                 sandboxes={sandboxes}
                 loading={loading}

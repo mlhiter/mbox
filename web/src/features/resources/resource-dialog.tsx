@@ -36,6 +36,7 @@ export function ResourceDialog({
   description,
   trigger,
   submitLabel,
+  submitDisabled = false,
   onSubmit,
   onOpenChange,
   children,
@@ -44,6 +45,7 @@ export function ResourceDialog({
   description: string
   trigger: ReactNode
   submitLabel: string
+  submitDisabled?: boolean
   onSubmit: (data: FormRecord) => Promise<void>
   onOpenChange?: (open: boolean) => void
   children: ReactNode
@@ -87,7 +89,7 @@ export function ResourceDialog({
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" disabled={submitting || submitDisabled}>
               {submitting ? "Working..." : submitLabel}
             </Button>
           </DialogFooter>

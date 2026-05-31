@@ -1,9 +1,9 @@
 import { FormEvent, useMemo, useState } from "react"
-import { ExternalLink, Plus, RefreshCw } from "lucide-react"
+import { Archive, Download, ExternalLink, Plus, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { createArtifact } from "@/lib/api"
+import { artifactContentURL, captureArtifactContent, createArtifact } from "@/lib/api"
 import {
   artifactKindLabel,
   formatBytes,
@@ -40,6 +40,7 @@ export function RuntimeArtifacts({
   const [contentType, setContentType] = useState("")
   const [sizeBytes, setSizeBytes] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [capturingID, setCapturingID] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const sortedArtifacts = useMemo(
     () => [...artifacts].sort((left, right) => (right.createdAt || "").localeCompare(left.createdAt || "")),
@@ -96,6 +97,19 @@ export function RuntimeArtifacts({
       setFormError(error instanceof Error ? error.message : "Could not register artifact.")
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleCapture(artifact: Artifact) {
+    setCapturingID(artifact.id)
+    setFormError(null)
+    try {
+      const captured = await captureArtifactContent(artifact.id)
+      onArtifactCreated(captured)
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Could not capture artifact content.")
+    } finally {
+      setCapturingID(null)
     }
   }
 
@@ -216,9 +230,34 @@ export function RuntimeArtifacts({
                     {artifact.contentType ? ` ${artifact.contentType}` : ""}
                     {typeof artifact.sizeBytes === "number" ? ` ${formatBytes(artifact.sizeBytes)}` : ""}
                   </span>
+                  {artifact.retainedContent ? (
+                    <small>
+                      retained {formatBytes(artifact.retainedContent.sizeBytes)} · {artifact.retainedContent.storageProvider} ·{" "}
+                      {artifact.retainedContent.sha256.slice(0, 12)}
+                    </small>
+                  ) : null}
                 </div>
                 <div className="runtime-artifact-reference">
                   <code>{artifact.uri}</code>
+                  {canCaptureArtifact(artifact) ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={`Capture ${artifact.name}`}
+                      disabled={capturingID === artifact.id}
+                      onClick={() => void handleCapture(artifact)}
+                    >
+                      <Archive aria-hidden="true" />
+                    </Button>
+                  ) : null}
+                  {canDownloadArtifact(artifact) ? (
+                    <Button asChild variant="outline" size="icon-sm" aria-label={`Download ${artifact.name}`}>
+                      <a href={artifactContentURL(artifact.id)} download={artifact.name}>
+                        <Download aria-hidden="true" />
+                      </a>
+                    </Button>
+                  ) : null}
                   {artifact.uri.startsWith("http://") || artifact.uri.startsWith("https://") ? (
                     <a href={artifact.uri} target="_blank" rel="noreferrer" aria-label={`Open ${artifact.name}`}>
                       <ExternalLink aria-hidden="true" />
@@ -243,4 +282,12 @@ export function RuntimeArtifacts({
       )}
     </div>
   )
+}
+
+function canDownloadArtifact(artifact: Artifact) {
+  return artifact.kind !== "directory" && (artifact.uri.startsWith("workspace://") || Boolean(artifact.retainedContent))
+}
+
+function canCaptureArtifact(artifact: Artifact) {
+  return artifact.kind !== "directory" && artifact.uri.startsWith("workspace://")
 }

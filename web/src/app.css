@@ -546,6 +546,39 @@
   overflow-wrap: anywhere;
 }
 
+.launch-preflight {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--info-soft);
+  color: var(--info-ink);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 9px 10px;
+}
+
+.launch-preflight strong {
+  color: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.launch-preflight span {
+  overflow-wrap: anywhere;
+}
+
+.launch-preflight-ok {
+  background: var(--runtime-soft);
+  color: var(--runtime-ink);
+}
+
+.launch-preflight-blocked {
+  border-color: var(--danger-soft);
+  background: oklch(0.973 0.018 28);
+  color: var(--danger);
+}
+
 .records-table table {
   width: 100%;
   border-collapse: collapse;
@@ -1154,6 +1187,13 @@
   gap: 8px;
 }
 
+.detail-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .detail-group h3 {
   margin: 0;
   color: var(--ink);
@@ -1206,6 +1246,65 @@
   color: var(--ink);
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+.audit-event-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 10px;
+}
+
+.audit-event-filters > div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.audit-event-filters [data-slot="label"] {
+  color: var(--muted-copy);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.audit-event-filters [data-slot="input"] {
+  height: 32px;
+  border-color: var(--line-strong);
+  border-radius: 6px;
+  background: oklch(0.992 0.003 82);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.audit-event-filter-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.audit-event-error {
+  margin: 0;
+  border: 1px solid var(--danger-soft);
+  border-radius: 6px;
+  background: oklch(0.973 0.018 28);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 8px 10px;
+}
+
+.audit-event-list div:nth-child(2n) {
+  padding-top: 0;
+}
+
+.audit-event-list div:nth-child(2n) dt,
+.audit-event-list div:nth-child(2n) dd {
+  color: var(--muted-copy);
+  font-size: 12px;
 }
 
 .sandbox-detail-page {
@@ -1841,11 +1940,175 @@
   min-height: 320px;
 }
 
+.runtime-sessions,
+.runtime-boundary,
 .runtime-tasks,
 .runtime-artifacts {
   display: grid;
   gap: 8px;
   min-height: 320px;
+}
+
+.boundary-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.boundary-fact,
+.boundary-check,
+.boundary-list,
+.boundary-template-shape {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.boundary-fact {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+
+.boundary-fact span,
+.boundary-template-shape span {
+  color: var(--muted-copy);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.boundary-fact strong,
+.boundary-template-shape strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.boundary-checks,
+.boundary-columns,
+.boundary-template-shape {
+  display: grid;
+  gap: 8px;
+}
+
+.boundary-check {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+}
+
+.boundary-check > svg {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+}
+
+.boundary-check-pass > svg {
+  color: var(--runtime);
+}
+
+.boundary-check-warn > svg {
+  color: var(--warn);
+}
+
+.boundary-check-fail > svg {
+  color: var(--danger);
+}
+
+.boundary-check-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.boundary-check p,
+.boundary-check small,
+.runtime-boundary-empty span {
+  margin: 0;
+  color: var(--muted-copy);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.boundary-check small {
+  display: block;
+  margin-top: 4px;
+  font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+
+.boundary-columns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.boundary-list {
+  padding: 10px;
+}
+
+.boundary-list h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.boundary-list h3 svg {
+  width: 15px;
+  height: 15px;
+  color: var(--runtime);
+}
+
+.boundary-list ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 16px;
+}
+
+.boundary-list li {
+  color: var(--muted-copy);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.boundary-template-shape {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 10px;
+}
+
+.boundary-template-shape > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.runtime-boundary-empty {
+  display: grid;
+  gap: 6px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: var(--paper-soft);
+  padding: 18px;
+}
+
+.runtime-boundary-empty button {
+  justify-self: start;
+  min-height: 30px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+  padding: 0 10px;
 }
 
 .preview-port-form,
@@ -2067,6 +2330,11 @@
   font-weight: 560;
 }
 
+.runtime-artifact-reference {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+}
+
 .runtime-ledger-actions {
   display: flex;
   align-items: center;
@@ -2174,6 +2442,7 @@
 }
 
 .preview-ports p,
+.runtime-sessions p,
 .runtime-tasks p,
 .runtime-artifacts p {
   margin: 0;
@@ -2188,6 +2457,7 @@
 }
 
 .preview-ports ul,
+.runtime-sessions ul,
 .runtime-tasks ul,
 .runtime-artifacts ul,
 .runtime-storage ul {
@@ -2199,6 +2469,7 @@
 }
 
 .preview-ports li,
+.runtime-sessions li,
 .runtime-tasks li,
 .runtime-artifacts li,
 .runtime-storage li {
@@ -2214,6 +2485,11 @@
 }
 
 .runtime-tasks li {
+  align-items: stretch;
+  grid-template-columns: 1fr;
+}
+
+.runtime-sessions li {
   align-items: stretch;
   grid-template-columns: 1fr;
 }
@@ -2234,6 +2510,7 @@
 }
 
 .preview-ports li > div,
+.runtime-sessions li > div,
 .runtime-tasks li > div,
 .runtime-artifacts li > div,
 .runtime-storage li > div {
@@ -2243,6 +2520,7 @@
 }
 
 .preview-ports strong,
+.runtime-sessions strong,
 .runtime-tasks strong,
 .runtime-artifacts strong,
 .runtime-storage strong {
@@ -2254,6 +2532,8 @@
 
 .preview-ports span,
 .preview-ports small,
+.runtime-sessions span,
+.runtime-sessions small,
 .runtime-tasks span,
 .runtime-tasks small,
 .runtime-artifacts span,
@@ -2295,6 +2575,12 @@
   white-space: nowrap;
 }
 
+.runtime-session-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.runtime-session-row-head,
 .runtime-task-row-head {
   display: flex;
   align-items: flex-start;
@@ -2302,10 +2588,33 @@
   gap: 10px;
 }
 
+.runtime-session-row-actions,
 .runtime-task-row-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.runtime-session-meta {
+  display: block;
+  margin-top: 4px;
+}
+
+.runtime-session-user-agent {
+  display: block;
+  min-width: 0;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: oklch(0.984 0.004 82);
+  color: var(--muted-copy);
+  font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
+    monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  padding: 3px 6px;
 }
 
 .runtime-task-row-actions [data-slot="button"] {
@@ -2314,6 +2623,7 @@
   font-size: 12px;
 }
 
+.runtime-session-row-head time,
 .runtime-task-row-head time {
   color: var(--faint);
   font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
@@ -2716,6 +3026,9 @@
 
   .runtime-output-summary,
   .workspace-readiness-grid,
+  .boundary-summary-grid,
+  .boundary-columns,
+  .boundary-template-shape,
   .runtime-ledger-head {
     grid-template-columns: 1fr;
   }

@@ -9,6 +9,7 @@ import {
 } from "@/features/resources/resource-dialog"
 import {
   slugFromName,
+  sandboxLaunchPreflight,
   templateEntrypoints,
   templatePersistence,
   templateResourcePreset,
@@ -17,14 +18,20 @@ import {
   templateValidationHint,
   templateValidationText,
 } from "@/lib/resource-utils"
-import type { FormRecord, Project, Template } from "@/types"
+import type { FormRecord, Project, ProjectPolicy, ProjectQuotaPolicy, ProjectUsage, Template } from "@/types"
 
 export function SandboxDialog({
   projects,
+  projectPolicies,
+  projectQuotaPolicies,
+  projectUsage,
   templates,
   onSubmit,
 }: {
   projects: Project[]
+  projectPolicies: Record<string, ProjectPolicy>
+  projectQuotaPolicies: Record<string, ProjectQuotaPolicy>
+  projectUsage: Record<string, ProjectUsage>
   templates: Template[]
   onSubmit: (data: FormRecord) => Promise<void>
 }) {
@@ -51,6 +58,14 @@ export function SandboxDialog({
   const launchName = sandboxName.trim() || suggestedSandboxName(selectedProject, selectedTemplate)
   const launchKey = slugFromName(launchName) || "Generated on launch"
   const hasLaunchEnvironment = Boolean(selectedTemplate)
+  const preflight = sandboxLaunchPreflight({
+    project: selectedProject,
+    template: selectedTemplate,
+    policy: selectedProject ? projectPolicies[selectedProject.id] : undefined,
+    quotaPolicy: selectedProject ? projectQuotaPolicies[selectedProject.id] : undefined,
+    usage: selectedProject ? projectUsage[selectedProject.id] : undefined,
+  })
+  const launchBlocked = preflight.blockers.length > 0
 
   function selectProject(nextProjectID: string) {
     const nextProject = projects.find((project) => project.id === nextProjectID)
@@ -83,8 +98,12 @@ export function SandboxDialog({
         if (!selectedTemplate) {
           throw new Error("Select an environment before launching.")
         }
+        if (launchBlocked) {
+          throw new Error(preflight.blockers.join(" "))
+        }
         return onSubmit(data)
       }}
+      submitDisabled={launchBlocked}
       onOpenChange={resetLaunchPlan}
     >
       <FieldGroup>
@@ -119,7 +138,13 @@ export function SandboxDialog({
           placeholder={launchName}
           onChange={(event) => setSandboxName(event.target.value)}
         />
-        <LaunchPlan project={selectedProject} template={selectedTemplate} name={launchName} sandboxKey={launchKey} />
+        <LaunchPlan
+          project={selectedProject}
+          template={selectedTemplate}
+          name={launchName}
+          sandboxKey={launchKey}
+          preflight={preflight}
+        />
         {!hasLaunchEnvironment ? (
           <div className="form-note">
             <span>This project has no global or project-scoped environment to launch.</span>
@@ -135,11 +160,13 @@ function LaunchPlan({
   template,
   name,
   sandboxKey,
+  preflight,
 }: {
   project: Project | undefined
   template: Template | undefined
   name: string
   sandboxKey: string
+  preflight: { blockers: string[]; warnings: string[] }
 }) {
   return (
     <section className="launch-plan" aria-label="Launch plan">
@@ -155,7 +182,31 @@ function LaunchPlan({
         <LaunchPlanRow label="Placement" value={project?.defaultNamespace || "No namespace"} hint="Runtime identity: mbox-sandbox" />
         <LaunchPlanRow label="Sandbox key" value={sandboxKey || "Generated from name"} />
       </dl>
+      <LaunchPreflightSummary preflight={preflight} />
     </section>
+  )
+}
+
+function LaunchPreflightSummary({
+  preflight,
+}: {
+  preflight: { blockers: string[]; warnings: string[] }
+}) {
+  if (preflight.blockers.length === 0 && preflight.warnings.length === 0) {
+    return (
+      <div className="launch-preflight launch-preflight-ok" role="status">
+        <strong>Launch checks passed</strong>
+        <span>Server-side policy and quota checks still run when the sandbox is created.</span>
+      </div>
+    )
+  }
+  return (
+    <div className={preflight.blockers.length > 0 ? "launch-preflight launch-preflight-blocked" : "launch-preflight"} role="status">
+      <strong>{preflight.blockers.length > 0 ? "Launch blocked" : "Launch checks"}</strong>
+      {[...preflight.blockers, ...preflight.warnings].map((item) => (
+        <span key={item}>{item}</span>
+      ))}
+    </div>
   )
 }
 

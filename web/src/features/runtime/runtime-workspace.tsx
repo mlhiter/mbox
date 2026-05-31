@@ -6,24 +6,31 @@ import {
   getPreviewPorts,
   getRuntimeEvents,
   getRuntimeLogs,
+  getSandboxBoundary,
   getRuntimeTarget,
   listArtifacts,
   listExecutionTasks,
+  listRuntimeSessions,
   updateSandboxPorts,
+  watchExecutionTask,
 } from "@/lib/api"
 import { storageSummary } from "@/lib/resource-utils"
 import { cn } from "@/lib/utils"
 import { PreviewPorts } from "@/features/runtime/preview-ports"
+import { RuntimeBoundary } from "@/features/runtime/runtime-boundary"
 import { RuntimeArtifacts } from "@/features/runtime/runtime-artifacts"
 import { RuntimeEvents, RuntimeLogs } from "@/features/runtime/runtime-observe"
+import { RuntimeSessions } from "@/features/runtime/runtime-sessions"
 import { RuntimeStoragePanel } from "@/features/runtime/runtime-storage-panel"
 import { RuntimeTasks } from "@/features/runtime/runtime-tasks"
 import { TerminalPane } from "@/features/runtime/terminal-pane"
 import type {
   Artifact,
+  BoundarySummary,
   ExecutionTask,
   PreviewPort,
   RuntimeEvent,
+  RuntimeSession,
   RuntimeTab,
   RuntimeTarget,
   Sandbox,
@@ -31,6 +38,8 @@ import type {
 
 const runtimeTabs: Array<{ id: RuntimeTab; label: string }> = [
   { id: "terminal", label: "Terminal" },
+  { id: "sessions", label: "Sessions" },
+  { id: "boundary", label: "Boundary" },
   { id: "preview", label: "Preview" },
   { id: "tasks", label: "Tasks" },
   { id: "artifacts", label: "Artifacts" },
@@ -67,6 +76,45 @@ function RuntimePendingPanel({
   )
 }
 
+function mergeTask(current: ExecutionTask[], task: ExecutionTask) {
+  return [task, ...current.filter((item) => item.id !== task.id)]
+}
+
+function applyTaskOutput(current: ExecutionTask[], taskID: string, stream: "stdout" | "stderr", data: string) {
+  return current.map((task) => {
+    if (task.id !== taskID) {
+      return task
+    }
+    if (stream === "stdout") {
+      return { ...task, stdout: `${task.stdout || ""}${data}` }
+    }
+    return { ...task, stderr: `${task.stderr || ""}${data}` }
+  })
+}
+
+function applyTaskOutputEvent(
+  current: ExecutionTask[],
+  taskID: string,
+  stream: "stdout" | "stderr",
+  data: string,
+  offset?: number,
+) {
+  return current.map((task) => {
+    if (task.id !== taskID) {
+      return task
+    }
+    const currentOutput = stream === "stdout" ? task.stdout || "" : task.stderr || ""
+    if (typeof offset === "number" && offset < currentOutput.length) {
+      const missing = data.slice(currentOutput.length - offset)
+      if (!missing) {
+        return task
+      }
+      return applyTaskOutput([task], taskID, stream, missing)[0]
+    }
+    return applyTaskOutput([task], taskID, stream, data)[0]
+  })
+}
+
 export function RuntimeWorkspace({
   sandbox,
   onSandboxChange,
@@ -79,9 +127,12 @@ export function RuntimeWorkspace({
   const [logs, setLogs] = useState("")
   const [events, setEvents] = useState<RuntimeEvent[]>([])
   const [ports, setPorts] = useState<PreviewPort[]>([])
+  const [sessions, setSessions] = useState<RuntimeSession[]>([])
+  const [boundary, setBoundary] = useState<BoundarySummary | null>(null)
   const [tasks, setTasks] = useState<ExecutionTask[]>([])
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
+  const [boundaryError, setBoundaryError] = useState<string | null>(null)
   const [runtimeAccessReady, setRuntimeAccessReady] = useState(false)
   const [loading, setLoading] = useState(false)
   const runtimeReady = Boolean(sandbox.runtimeRef && sandbox.status === "running")
@@ -110,6 +161,15 @@ export function RuntimeWorkspace({
         setRuntimeError((current) => current || message)
       }
     }
+    async function loadSessions() {
+      try {
+        const sessionResult = await listRuntimeSessions(sandbox.id)
+        setSessions(sessionResult.items || [])
+      } catch (requestError) {
+        const message = requestError instanceof Error ? requestError.message : "Session history request failed"
+        setRuntimeError((current) => current || message)
+      }
+    }
     async function loadArtifacts() {
       try {
         const artifactResult = await listArtifacts(sandbox.id)
@@ -119,14 +179,27 @@ export function RuntimeWorkspace({
         setRuntimeError((current) => current || message)
       }
     }
+    async function loadBoundary() {
+      try {
+        const boundaryResult = await getSandboxBoundary(sandbox.id)
+        setBoundary(boundaryResult)
+        setBoundaryError(null)
+      } catch (requestError) {
+        const message = requestError instanceof Error ? requestError.message : "Boundary request failed"
+        setBoundaryError(message)
+      }
+    }
 
     if (!runtimeReady) {
+      setLoading(false)
       setRuntimeError(null)
       setTarget(null)
       setLogs("")
       setEvents([])
       setRuntimeAccessReady(false)
       setPorts(previewPortsFromSandbox(sandbox, runtimeStarting ? "sandbox is starting" : "sandbox must be running before preview is available"))
+      await loadSessions()
+      await loadBoundary()
       await loadTasks()
       await loadArtifacts()
       return
@@ -152,6 +225,8 @@ export function RuntimeWorkspace({
       setRuntimeError(message)
       setPorts(previewPortsFromSandbox(sandbox, message))
     }
+    await loadSessions()
+    await loadBoundary()
     await loadTasks()
     await loadArtifacts()
     setLoading(false)
@@ -170,7 +245,7 @@ export function RuntimeWorkspace({
   }
 
   function addTask(task: ExecutionTask) {
-    setTasks((current) => [task, ...current.filter((item) => item.id !== task.id)])
+    setTasks((current) => mergeTask(current, task))
   }
 
   function addArtifact(artifact: Artifact) {
@@ -222,6 +297,37 @@ export function RuntimeWorkspace({
       window.clearInterval(timer)
     }
   }, [sandbox.id, tasks])
+
+  useEffect(() => {
+    const activeTasks = tasks.filter((task) => task.status === "queued" || task.status === "running")
+    if (!activeTasks.length) {
+      return
+    }
+    const controllers = activeTasks.map((task) => {
+      const controller = new AbortController()
+      void watchExecutionTask(task.id, {
+        signal: controller.signal,
+        onEvent: (event) => {
+          if (event.type === "output") {
+            setTasks((current) => applyTaskOutputEvent(current, task.id, event.stream, event.data, event.offset))
+            return
+          }
+          if (event.task) {
+            setTasks((current) => mergeTask(current, event.task))
+          }
+        },
+      }).catch((requestError) => {
+        if (!controller.signal.aborted) {
+          const message = requestError instanceof Error ? requestError.message : "Task watch request failed"
+          setRuntimeError((current) => current || message)
+        }
+      })
+      return controller
+    })
+    return () => {
+      controllers.forEach((controller) => controller.abort())
+    }
+  }, [tasks.map((task) => `${task.id}:${task.status}`).join("|")])
 
   return (
     <section id="runtime-workspace" className="runtime-workspace" aria-label="Sandbox runtime workspace">
@@ -304,10 +410,16 @@ export function RuntimeWorkspace({
       <div className="runtime-tab-panel">
         {activeTab === "terminal" ? (
           runtimeReady && runtimeAccessReady ? (
-            <TerminalPane sandbox={sandbox} disabled={false} />
+            <TerminalPane sandbox={sandbox} disabled={false} onSessionChange={loadRuntime} />
           ) : (
             <RuntimePendingPanel sandbox={sandbox} reason={terminalDisabledReason} />
           )
+        ) : null}
+        {activeTab === "sessions" ? (
+          <RuntimeSessions sessions={sessions} loading={loading} onRefresh={loadRuntime} />
+        ) : null}
+        {activeTab === "boundary" ? (
+          <RuntimeBoundary boundary={boundary} loading={loading} error={boundaryError} onRefresh={loadRuntime} />
         ) : null}
         {activeTab === "preview" ? (
           <PreviewPorts

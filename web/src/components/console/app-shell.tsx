@@ -3,7 +3,19 @@ import { Toaster } from "@/components/ui/sonner"
 import { DetailPane } from "@/components/console/detail-pane"
 import { Rail } from "@/components/console/rail"
 import { cn } from "@/lib/utils"
-import type { APIStatus, Project, Sandbox, Selection, Template, WorkspaceView } from "@/types"
+import type {
+  APIStatus,
+  AuditEvent,
+  Project,
+  ProjectCredential,
+  ProjectPolicy,
+  ProjectQuotaPolicy,
+  ProjectUsage,
+  Sandbox,
+  Selection,
+  Template,
+  WorkspaceView,
+} from "@/types"
 
 export function AppShell({
   activeView,
@@ -13,7 +25,13 @@ export function AppShell({
   onViewChange,
   onValidateTemplate,
   onOpenSandboxWorkspace,
+  onRefreshProjectAuditEvents,
   projects,
+  projectAuditEvents,
+  projectCredentials,
+  projectPolicies,
+  projectQuotaPolicies,
+  projectUsage,
   sandboxes,
   selection,
   templates,
@@ -26,7 +44,16 @@ export function AppShell({
   onViewChange: (view: WorkspaceView) => void
   onValidateTemplate?: (id: string) => Promise<void>
   onOpenSandboxWorkspace?: (id: string) => void
+  onRefreshProjectAuditEvents?: (
+    projectID: string,
+    filters?: { action?: string; actor?: string; source?: string },
+  ) => Promise<AuditEvent[]>
   projects: Project[]
+  projectAuditEvents: Record<string, AuditEvent[]>
+  projectCredentials: Record<string, ProjectCredential[]>
+  projectPolicies: Record<string, ProjectPolicy>
+  projectQuotaPolicies: Record<string, ProjectQuotaPolicy>
+  projectUsage: Record<string, ProjectUsage>
   sandboxes: Sandbox[]
   selection: Selection | null
   templates: Template[]
@@ -41,10 +68,16 @@ export function AppShell({
           <DetailPane
             selection={selection}
             projects={projects}
+            projectAuditEvents={projectAuditEvents}
+            projectCredentials={projectCredentials}
+            projectPolicies={projectPolicies}
+            projectQuotaPolicies={projectQuotaPolicies}
+            projectUsage={projectUsage}
             templates={templates}
             sandboxes={sandboxes}
             onValidateTemplate={onValidateTemplate}
             onOpenSandboxWorkspace={onOpenSandboxWorkspace}
+            onRefreshProjectAuditEvents={onRefreshProjectAuditEvents}
             onClear={onClearSelection}
           />
         ) : null}
