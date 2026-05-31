@@ -10,6 +10,11 @@ The current console supports the first product slice:
 - view-switched left navigation for Projects, Environments, and Sandboxes
 - hash-routable console locations for `#projects`, `#environments`, `#sandboxes`, and `#sandboxes/{sandboxID}`
 - project list and create dialog
+- project launch policy and credential-reference visibility in the project table and selected-resource inspector
+- project quota policy visibility in the project table and selected-resource inspector
+- project usage visibility in the project table and inspector, backed by product-record counts and declared sandbox request totals rather than live Kubernetes metrics
+- recent project audit-event visibility in the selected-resource inspector, with action/actor/source display and filtering backed by product records rather than auth or Kubernetes audit logs
+- sandbox launch preflight visibility for obvious project policy and active-sandbox quota blockers, while the API remains the authoritative enforcement point
 - template library for ready-to-run environments, with create/edit dialogs that foreground runtime type, use case, entrypoints, resource preset, and workspace storage
 - advanced template settings for image, startup command, working directory, CPU, memory, env, secret refs, network preset, and lifecycle JSON
 - sandbox list, simplified guarded launch dialog, stop/start actions, and delete confirmation dialog
@@ -18,13 +23,13 @@ The current console supports the first product slice:
 - browser terminal for ready sandboxes, with a starting state while new runtimes are pending
 - compact workspace storage state showing resolved PVC mounts and capacity
 - preview port list with manual add/remove controls and API-proxied open links for declared TCP ports
-- execution task tab for running asynchronous commands in a ready sandbox, polling task state, canceling active tasks, and inspecting output
-- artifact tab for registering and inspecting sandbox or task output references
+- execution task tab for running asynchronous commands in a ready sandbox, watching live task output, canceling active tasks, and inspecting final output
+- artifact tab for registering and inspecting sandbox or task output references, with workspace file download links for supported `workspace://` artifacts
 - lightweight runtime logs and Kubernetes events in runtime tabs
 - toast feedback for API failures and successful writes
 - runtime readiness notices when terminal access is blocked by missing runtime projection or non-running sandbox status
 
-The console does not yet provide runtime session history, artifact file transfer, credentials, or policy management. Those remain roadmap items. Pipeline and deployment screens should be treated as upper-layer integrations, not as the base console model.
+The console does not yet provide artifact upload, object-store retention, credential injection, or a full policy editor. Project launch policy, quota policy, and credential-reference visibility exists, while broader policy and credential management remain roadmap items. Pipeline and deployment screens should be treated as upper-layer integrations, not as the base console model.
 
 ## Local Development
 
@@ -70,6 +75,8 @@ Vite proxies `/healthz` and `/v1/*` to the API server. The `/v1/*` proxy also fo
 ```sh
 MBOX_API_PROXY_TARGET=http://127.0.0.1:19080 npm run dev
 ```
+
+If the local API is started with `MBOX_API_TOKEN`, start Vite with `MBOX_TOKEN` or the same `MBOX_API_TOKEN`. The dev proxy attaches `Authorization: Bearer <token>` server-side, including for WebSocket upgrades, so frontend code does not read the token directly.
 
 If another local project needs the default web port, set:
 
@@ -123,7 +130,11 @@ The create/edit dialog has two layers:
 
 Runtime, use case, resource preset, and validation status are stored in template metadata. Resource presets also write the actual CPU and memory requests, so the visible product choice matches the runtime projection. If CPU or memory is manually edited away from a preset, the saved metadata preset becomes `Custom`. Invalid entrypoint ports are rejected instead of silently dropped. Editing resets `validationStatus` to `not_tested`, does not move a template between global and project scope, and does not relaunch existing sandboxes. Newly launched sandboxes inherit the saved template shape.
 
+Environment validation uses the server-side validation-run API. The console asks the API to launch a validation sandbox from the selected template, opens that sandbox workspace, and then records a `passed` or `failed` decision through the matching decision route after the operator checks terminal, preview ports, logs, and artifacts. Validation sandboxes are ordinary sandbox records tagged with `metadata.purpose = "environment-validation"` so API, SDK, CLI, and Web clients share the same product contract.
+
 Sandbox launch is intentionally short. The dialog asks for Project, Template, and Name. The frontend derives the slug from the name, and the API fills namespace from the project plus the default sandbox ServiceAccount `mbox-sandbox`.
+
+The launch dialog also previews policy and quota blockers from already loaded product records. It can show image-prefix, ServiceAccount, secret-reference, project/template-scope, and active-sandbox quota reasons before submission. This is operator guidance only; `POST /v1/sandboxes` remains the source of truth and still performs server-side policy and quota enforcement.
 
 Opening a sandbox workspace moves to `#sandboxes/{sandboxID}`. The detail page is recoverable after refresh and replaces the global right detail pane with a local runtime inspector. If a detail hash is opened before data has loaded, the page shows a resolving state; if the sandbox is not present after loading, it shows an unavailable state with a route back to the Sandboxes list.
 
@@ -131,11 +142,15 @@ The sandbox detail page includes workspace readiness checks before the Runtime W
 
 When a sandbox detail page opens, the Runtime Workspace should not treat `pending` as an error. It shows a starting panel, polls the sandbox record, and waits until the sandbox is `running` with a `runtimeRef` before calling terminal, tasks, logs, events, runtime target, or runtime preview routes.
 
+The Sessions tab lists runtime session records for the sandbox. Browser terminal connections automatically create `terminal` sessions with the `web-terminal` client label, and external clients can create `custom` or protocol-specific session records through the API. Sessions are audit records for attachment history, not an internal agent identity model.
+
+The Boundary tab reads `GET /v1/sandboxes/{sandboxID}/boundary` and presents the current execution boundary: namespace, ServiceAccount, token automount, project launch policy state, visible secret references, project credential references, network policy projection, lifecycle policy projection, controller permissions, runtime access paths, and cleanup behavior. It is intentionally read-only. The launch policy can enforce image prefix, runtime identity, and secret-reference name allowlists, lifecycle `ttlSeconds` is enforced by the reconciler, and credential references are shown by Secret name/key only; full RBAC, custom network enforcement, idle cleanup policy, and credential mounting remain future work.
+
 The Preview tab edits the sandbox's declared `ports` list. A user can start a service in Terminal, add its TCP port in Preview, and open the API-proxied URL once the sandbox is running.
 
-The Tasks tab creates controlled command tasks through `POST /v1/sandboxes/{sandboxID}/tasks`. It stays disabled until the sandbox is `running` with a `runtimeRef`, then polls active tasks, exposes cancel for `queued` and `running` tasks, and records status, command, stdout, stderr, exit result, timeout, and truncation state. The UI input is intentionally simple; API and CLI clients should use array-form commands directly, and shell behavior should be explicit through commands such as `sh -lc`.
+The Tasks tab creates controlled command tasks through `POST /v1/sandboxes/{sandboxID}/tasks`. It stays disabled until the sandbox is `running` with a `runtimeRef`, then watches active task events, exposes cancel for `queued` and `running` tasks, and records status, command, live stdout/stderr, exit result, timeout, and truncation state. The UI input is intentionally simple; API and CLI clients should use array-form commands directly, and shell behavior should be explicit through commands such as `sh -lc`.
 
-The Artifacts tab registers output references through `POST /v1/sandboxes/{sandboxID}/artifacts` and lists the sandbox's artifact history. It can link an artifact to an existing task, but it does not upload or download file bytes in this slice. Use references such as `workspace:///workspace/out.txt`, HTTPS URLs, object-store URIs, or log/report identifiers.
+The Artifacts tab registers output references through `POST /v1/sandboxes/{sandboxID}/artifacts` and lists the sandbox's artifact history. It can link an artifact to an existing task. `workspace://` file artifacts can be downloaded while the sandbox is running and runtime access can read the resolved workspace mount. The tab also exposes a capture action for supported workspace files; captured content is retained server-side with size, sha256, and storage-provider metadata so it can still be downloaded after runtime cleanup. API, CLI, and SDK clients can upload retained bytes directly; the current web tab does not expose a client-file upload control yet. External HTTPS URLs, object-store URIs, and directories remain reference-only.
 
 ## Design System
 
@@ -184,6 +199,8 @@ Useful manual checks:
 
 - `http://127.0.0.1:5174/` loads the console.
 - API status shows healthy when the Go server is running.
+- Selecting a project shows recent activity with actor/source attribution, and filtering by actor or source reloads the project audit feed through the API.
+- Selecting a project shows active/running declared sandbox request totals in the Usage group; these are summed from saved template requests and may show missing or invalid request counts for incomplete product records.
 - Project, template, and sandbox create dialogs fill the modal width on desktop and mobile.
 - Templates table shows Environment, Use case, Entrypoints, Preset, and Status rather than leading with raw image/resource fields.
 - Template create/edit opens from the Templates row action with Essentials visible and Advanced settings collapsed by default.
@@ -197,6 +214,7 @@ Useful manual checks:
 - Sandbox detail shows workspace readiness checks for runtime record projection, preview surface, workspace persistence, and run intent above the Runtime Workspace.
 - Sandbox launch is disabled until at least one project and one template exist.
 - The launch dialog only asks for Project, Template, and Name.
+- The launch dialog shows policy or active-sandbox quota blockers before submission and disables Launch when a known blocker is present.
 - Sandbox deletion opens a confirmation dialog and does not delete from the row button directly.
 - Sandbox stop/start is available from the sandbox row. Stop is direct because it pauses runtime compute without deleting the sandbox.
 - Opening a ready sandbox workspace shows terminal, preview ports, execution tasks, artifacts, logs, and Kubernetes events as tabs, with compact storage state near the runtime target strip.
@@ -204,5 +222,6 @@ Useful manual checks:
 - The compact storage state shows the workspace mount path, PVC name, bound phase, capacity, and storage class when a template has `storageRequest`.
 - Terminal Connect is disabled until the sandbox has a runtime reference and `running` status, with the blocker visible in the workspace notice and button title.
 - The Preview tab can add and remove TCP ports, and links stay disabled until the sandbox is running.
-- The Tasks tab can run a simple command such as `pwd`, shows stdout/stderr, and keeps task execution disabled until the sandbox is running.
+- The Tasks tab can run a simple command such as `pwd`, streams stdout/stderr while active, and keeps task execution disabled until the sandbox is running.
+- The Artifacts tab can register `workspace://` file references, capture retained content for supported workspace files, and show download actions for supported artifacts.
 - No page-level horizontal overflow appears on mobile.

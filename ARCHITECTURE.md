@@ -89,13 +89,15 @@ The API documentation surface should publish the product API contract for humans
 
 The API docs should track the server API version and SDK generation boundary.
 
+The current implementation publishes a starter OpenAPI 3.1 document at `GET /v1/openapi.json`. It is the machine-readable contract for implemented public routes and schemas, and is meant to anchor future generated docs or client generation without changing the product model.
+
 ### SDK Package
 
 mbox should provide at least one official SDK/package for automation clients. The first package can be Node.js or Go, depending on the first integration audience.
 
 The SDK should wrap the public product API for common runtime workflows while keeping raw API access possible for advanced clients. It should share API schemas with the server and API docs where practical.
 
-The current repository includes a first TypeScript SDK package in `sdk/typescript`. It is deliberately a thin HTTP client over product primitives: projects, templates, sandboxes, runtime access, execution tasks, preview ports, and artifact references. Convenience methods such as `waitForTask` belong in the client because they help external agents and scripts compose the primitive API without turning the mbox server into an agent planner or CI workflow engine.
+The current repository includes a first TypeScript SDK package in `sdk/typescript`. It is deliberately a thin HTTP client over product primitives: projects, project launch policies, project quota policies, project credential references, templates, template validation, boundary summaries, sandboxes, runtime access, runtime sessions, execution tasks, preview ports, and artifacts. Convenience methods such as `waitForTask` and `watchExecutionTask` belong in the client because they help external agents and scripts compose the primitive API without turning the mbox server into an agent planner or CI workflow engine.
 
 ## Runtime Boundary
 
@@ -151,7 +153,7 @@ Human-facing console for:
 
 The UI should be operational and dense enough for repeated use. Avoid landing-page style composition in the app surface.
 
-Current implemented console scope is intentionally narrower than the long-term product: list and create projects, templates, and sandboxes; inspect selected resource IDs and runtime state; stop, start, and delete sandboxes from compact row actions; open a main-workspace browser terminal for ready sandboxes; show resolved workspace PVC storage metadata; show declared preview ports through the API server's Pod proxy path; run, poll, cancel, and inspect asynchronous command tasks inside a ready sandbox; register and list artifact references for sandbox and task outputs; show lightweight runtime logs and Kubernetes events in runtime tabs; show API health and request errors. Runtime session history, credentials, and policy screens are still roadmap work. Pipeline and deployment products may be built later as clients of these primitives rather than as the base architecture.
+Current implemented console scope is intentionally narrower than the long-term product: list and create projects, templates, and sandboxes; inspect selected resource IDs and runtime state; show project launch policy, quota policy, and credential-reference visibility in the project inspector; launch and decide template validation sandboxes; stop, start, and delete sandboxes from compact row actions; open a main-workspace browser terminal for ready sandboxes; show resolved workspace PVC storage metadata; show the read-only Boundary tab for namespace, ServiceAccount, secret, credential-reference, network, lifecycle, runtime access, and cleanup visibility; show declared preview ports through the API server's Pod proxy path; run, poll, cancel, and inspect asynchronous command tasks inside a ready sandbox; register and list artifact references for sandbox and task outputs; show runtime session history; show lightweight runtime logs and Kubernetes events in runtime tabs; show API health and request errors. Full credential injection and full policy management screens are still roadmap work. Pipeline and deployment products may be built later as clients of these primitives rather than as the base architecture.
 
 ### Controller / Reconciler
 
@@ -249,7 +251,7 @@ Prefer short-lived tokens and secret references over copying long-lived credenti
 
 ## Data Model Draft
 
-The implemented data model currently covers the first sandbox control-plane slice plus sandbox-backed execution task records and artifact reference records. Runtime session, policy, credential, audit, and deeper observability records below are still roadmap items.
+The implemented data model currently covers the sandbox control-plane slice plus runtime session records, sandbox-backed execution task records, artifact reference records, retained content for small captured workspace-file artifacts, a first project-scoped launch policy, a project quota policy, project credential-reference records, and best-effort product audit events for successful API mutations. Credential value storage/injection, strong transactional audit, auth identity attribution, full RBAC, and deeper observability records below are still roadmap items.
 
 ### Project
 
@@ -317,11 +319,14 @@ Implemented Postgres constraints:
 - sandbox id
 - project id
 - kind: terminal, IDE, notebook, browser, command, or custom
-- client identity
-- status
-- connected at
-- disconnected at
+- status: active, ended, or failed
+- client label and user agent
+- runtime reference
+- started at
+- ended at
 - metadata
+
+Runtime sessions are attachment/audit records for clients entering an existing sandbox. They intentionally do not model an internal agent brain or own upper-layer workflow semantics.
 
 ### ExecutionTask
 
@@ -343,7 +348,7 @@ Implemented Postgres constraints:
 - created at
 - updated at
 
-The current implementation is asynchronous and sandbox-backed. `POST /v1/sandboxes/{sandboxID}/tasks` creates a queued task and returns immediately, the API server runs the command through runtime access in the background, clients poll task records, and `POST /v1/tasks/{taskID}/cancel` cancels tasks currently running on this API server. Batch-only runtimes, streaming watch, log references, artifact collection/download, and cleanup state remain future work.
+The current implementation is asynchronous and sandbox-backed. `POST /v1/sandboxes/{sandboxID}/tasks` creates a queued task and returns immediately, the API server runs the command through runtime access in the background, clients can poll task records or stream `GET /v1/tasks/{taskID}/events`, and `POST /v1/tasks/{taskID}/cancel` cancels tasks currently running on this API server. Batch-only runtimes, log references, durable cleanup state, and restart-safe task control remain future work.
 
 ### Artifact
 
@@ -356,11 +361,50 @@ The current implementation is asynchronous and sandbox-backed. `POST /v1/sandbox
 - URI or storage reference
 - content type
 - size bytes
+- retained content metadata: content type, size, sha256, source URI, and captured time
 - metadata
 - created at
 - updated at
 
-The current artifact implementation is a metadata registry, not a file transfer service. Clients can register references such as `workspace:///workspace/reports/test.json`, an HTTPS URL, an object-store URI, a log reference, or a generated screenshot path. Later storage integration can add upload/download, retention, integrity hashes, and access control without changing the fact that artifacts belong to sandboxes and can optionally point at the task that produced them.
+The current artifact implementation is a metadata registry with a narrow workspace-file retention path. Clients can register references such as `workspace:///workspace/reports/test.json`, an HTTPS URL, an object-store URI, a log reference, or a generated screenshot path. `POST /v1/artifacts/{artifactID}/capture` reads a supported `workspace://` file from a running sandbox workspace, stores a small retained byte copy server-side, and records sha256 plus storage-provider metadata. The default provider stores bytes in Postgres for compatibility; the filesystem provider writes bytes under a configured local artifact directory and keeps Postgres as the metadata index. `GET /v1/artifacts/{artifactID}/content` returns retained bytes first, then falls back to reading the running workspace when no retained copy exists. Later storage integration can add client uploads, object-store download, retention policies, and access control without changing the fact that artifacts belong to sandboxes and can optionally point at the task that produced them.
+
+### ProjectPolicy
+
+- project id
+- enforcement: `disabled` or `enforced`
+- allowed image prefixes
+- allowed service account names
+- allowed secret reference names
+- created at
+- updated at
+
+The first policy object is a project-scoped sandbox launch gate. When absent or disabled, sandbox launch behavior stays unchanged except for the base cross-project template check. When enforced, `POST /v1/sandboxes` and template validation launches check the selected template image prefix, requested sandbox ServiceAccount, and declared template `secretRefs` by name before creating the sandbox record. This is not full RBAC, credential mounting, custom network projection, or lifecycle policy management; it is the first enforceable product boundary that prevents out-of-scope runtime shapes from launching.
+
+### ProjectQuotaPolicy
+
+- project id
+- enforcement: `disabled` or `enforced`
+- max active sandboxes
+- max retained artifact bytes
+- created at
+- updated at
+
+The first quota policy object is a project-record guard, not billing, capacity reservation, live Kubernetes metrics, or a scheduler contract. When absent or disabled, sandbox creation and artifact retention behave normally. When enforced, sandbox creation is denied once the product-record active sandbox count is at or above `maxActiveSandboxes`, and artifact capture/upload is denied when current retained artifact bytes plus incoming bytes would exceed `maxRetainedArtifactBytes`.
+
+### ProjectCredential
+
+- id
+- project id
+- name and slug
+- type: `git`, `registry`, `kubernetes`, `ssh`, or `generic`
+- target, such as repository URL, registry host, cluster name, or service endpoint
+- Kubernetes Secret reference by name/key
+- usage labels
+- metadata
+- created at
+- updated at
+
+Project credentials are reference records, not secret-value records. They catalog which project-scoped Secret may be used for which target and purpose so future task/session/upper-layer integrations can request narrow credentials explicitly. The current runtime adapter does not mount these credentials into sandbox Pods and mbox does not copy or store secret values.
 
 ### UpperLayerWorkflow
 
@@ -424,6 +468,8 @@ Stop/start is represented as product lifecycle state on the mbox sandbox record 
 
 The generated sandbox ServiceAccount and pod template both set token automount to false. Runtime credentials should be introduced later as narrow, explicit capabilities rather than inherited cluster access.
 
+The boundary summary routes are read-only views of this runtime contract. `GET /v1/templates/{templateID}/boundary` can resolve a global template against a `projectId` query to show the namespace, default runtime identity, launch policy state, and project credential references that would apply. `GET /v1/sandboxes/{sandboxID}/boundary` shows the sandbox's resolved namespace, ServiceAccount, runtime reference, secret reference projection, credential-reference projection, network policy projection, lifecycle policy projection, project launch policy state, runtime access paths, and cleanup behavior. These routes do not mount secrets, mount project credentials, or project custom network policy yet; they make the current safety contract explicit so later policy and credential work has a stable baseline. Template `lifecyclePolicy.ttlSeconds` is enforced by the reconciler as automatic sandbox cleanup; idle timeout and richer cleanup policies remain future work.
+
 When an environment template includes `storageRequest`, the adapter projects a `workspace` `volumeClaimTemplates` entry into the generated `SandboxTemplate` and mounts it at the template `workingDir`, defaulting to `/workspace`. This is the current persistence contract for interactive sandboxes: workspace data should survive runtime Pod replacement and stop/start while the sandbox exists. Files written outside the persistent workspace are container-local and can be lost when stop/start removes and recreates the Pod.
 
 Runtime access is intentionally gated separately from reconciliation through `MBOX_RUNTIME_ACCESS_ENABLED=true`. Enabling reconciliation alone may create or delete Kubernetes runtime resources, but it does not expose terminal, execution task, logs, events, or runtime target APIs. When runtime access is enabled, the server resolves a running mbox sandbox through `Sandbox.runtimeRef`, `SandboxClaim.status.sandbox.name`, `Sandbox.status.selector`, and the matching Pod, preferring the `workspace` container when present.
@@ -432,4 +478,4 @@ Runtime target responses include PVC-backed storage metadata resolved from the s
 
 The browser terminal is a WebSocket proxy to Kubernetes `pods/exec`. The HTTP layer rejects non-running sandboxes before upgrading the connection and only permits `sh` or `bash` as shell selectors. Local Vite development depends on the `/v1/*` proxy forwarding WebSocket upgrades.
 
-Sandbox execution tasks use the same runtime target resolution and Kubernetes `pods/exec` boundary without TTY. `POST /v1/sandboxes/{sandboxID}/tasks` requires runtime access, a running sandbox, and a ready runtime reference. It records command metadata, timing, stdout, stderr, exit code when Kubernetes reports one, timeout/cancellation status, output truncation, and the runtime reference used for execution. Task cancellation is process-local in this slice because the cancel function lives in the API server currently running the exec; persisted task status remains in Postgres. Shell behavior is explicit: API clients should pass `["sh", "-lc", "..."]` when they need shell parsing.
+Sandbox execution tasks use the same runtime target resolution and Kubernetes `pods/exec` boundary without TTY. `POST /v1/sandboxes/{sandboxID}/tasks` requires runtime access, a running sandbox, and a ready runtime reference. It records command metadata, timing, stdout, stderr, exit code when Kubernetes reports one, timeout/cancellation status, output truncation, and the runtime reference used for execution. `GET /v1/tasks/{taskID}/events` streams process-local newline-delimited JSON events for snapshot, status, stdout/stderr chunks, and done; finished tasks still return persisted snapshot/done events. Task cancellation is process-local in this slice because the cancel function lives in the API server currently running the exec; persisted task status remains in Postgres. Shell behavior is explicit: API clients should pass `["sh", "-lc", "..."]` when they need shell parsing.

@@ -46,6 +46,20 @@ Current progress:
 - Done: E2B-style template library surface that treats templates as ready-to-run environments, with Essentials first and raw image/command/policy fields behind Advanced settings.
 - Done: sandbox-backed execution tasks with asynchronous command runs, persisted status, stdout/stderr, exit result, timeout/cancellation state, and Runtime Workspace Tasks tab.
 - Done: artifact reference records for sandbox and task outputs, with API and Runtime Workspace registration/listing.
+- Done: read-only template and sandbox boundary summaries across API, CLI, SDK, smoke tests, and the Runtime Workspace Boundary tab. These expose namespace, ServiceAccount, token automount, secret reference projection, network policy projection, lifecycle policy projection, runtime access, and cleanup behavior without claiming full policy or credential enforcement.
+- Done: retained artifact content starter with API/CLI/SDK/Web support for capturing small `workspace://` files, accepting client-uploaded bytes, and serving retained bytes after sandbox cleanup.
+- Done: S3-compatible retained artifact content backend starter for remote durability while keeping Postgres as the artifact metadata index.
+- Done: first project-scoped launch policy object with API/CLI/SDK/Web visibility and enforcement on sandbox creation and template validation launches for allowed image prefixes, sandbox ServiceAccounts, and template secret reference names.
+- Done: project credential-reference starter with API/CLI/SDK/Web visibility and Boundary summary projection for typed Secret references without storing or mounting credential values.
+- Done: lifecycle `ttlSeconds` enforcement in the reconciler, using the normal soft-delete and runtime cleanup path.
+- Done: project deletion cleanup guard that blocks project hard-delete until sandboxes are deleted and runtime references are cleared.
+- Done: runtime orphan audit and explicitly gated one-resource cleanup across API, CLI, SDK, and runtime smoke coverage for detecting and safely removing managed resource drift.
+- Done: read-only project usage summaries across API, CLI, SDK, and Web for product-record visibility into sandboxes, sessions, tasks, artifacts, template requests, declared active/running sandbox request totals, credential references, retained bytes, and cleanup-pending rows.
+- Done: best-effort product audit-event starter across API, CLI, SDK, and Web project inspector visibility for successful mbox API mutations.
+- Done: project quota policy starter across API, CLI, SDK, Web visibility, and smoke coverage, enforcing active sandbox count and retained artifact bytes from product records.
+- Done: Web launch preflight visibility for policy and active-sandbox quota blockers, with server-side policy/quota enforcement remaining authoritative.
+- Done: `policy.denied` audit-event starter for launch-policy, active-sandbox quota, and retained-artifact-byte quota denials.
+- Done: OpenAPI and TypeScript SDK audit contract hardening for known audit actions and typed `policy.denied` metadata without expanding audit into a strong transactional log.
 
 Scope:
 
@@ -90,6 +104,9 @@ Scope:
 
 - Template creation and editing UI.
 - Template validation by launching a test sandbox.
+- Read-only boundary summaries that make the current namespace, identity, secret, network, lifecycle, runtime access, and cleanup contract inspectable before full policy management exists.
+- First enforceable project launch policy for ordinary sandbox launches and validation launches.
+- Project credential-reference registry for narrow Git, registry, Kubernetes, SSH, or generic Secret references.
 - Resource presets for CPU, memory, GPU, and storage.
 - Environment variables and secret references.
 - Lifecycle policy: TTL, idle timeout, auto cleanup.
@@ -110,18 +127,28 @@ Goal: make mbox useful as a programmable execution substrate for external agents
 
 Current progress:
 
+- Done: runtime session records with Postgres persistence, sandbox/session API routes, SDK wrappers, and a Runtime Workspace Sessions tab.
+- Done: terminal WebSocket connections automatically create terminal session records and close them as ended or failed.
 - Done: sandbox-backed execution task model and Postgres table.
 - Done: `POST /v1/sandboxes/{sandboxID}/tasks`, `GET /v1/sandboxes/{sandboxID}/tasks`, `GET /v1/tasks/{taskID}`, and `POST /v1/tasks/{taskID}/cancel`.
 - Done: asynchronous command execution path through runtime `pods/exec`, with timeout, cancellation, and output truncation.
 - Done: Runtime Workspace Tasks tab for running, polling, canceling, and inspecting command tasks.
 - Done: artifact records and Runtime Workspace Artifacts tab for registering files, reports, screenshots, logs, images, links, or other output references.
+- Done: `GET /v1/tasks/{taskID}/events` task watch stream with snapshot, status, output, and done events, plus SDK/Web live output support.
+- Done: `GET /v1/artifacts/{artifactID}/content` for running-sandbox `workspace://` file artifact reads inside the resolved workspace mount.
+- Done: `POST /v1/artifacts/{artifactID}/capture` for retaining small workspace-file artifact bytes with sha256 metadata.
+- Done: filesystem retained-content provider starter, with `MBOX_ARTIFACT_CONTENT_BACKEND=filesystem`, provider/key metadata in Postgres, and the same artifact content download route.
+- Done: S3-compatible retained-content provider starter, with `MBOX_ARTIFACT_CONTENT_BACKEND=s3`, server-side SigV4 PUT/GET, provider/key metadata in Postgres, and the same artifact content download route.
+- Done: lifecycle `ttlSeconds` auto-cleanup through the runtime reconciler.
+- Done: `PUT /v1/artifacts/{artifactID}/content` for client-provided retained artifact bytes, with CLI/SDK wrappers and smoke coverage.
+- Done: project deletion guard to prevent cascading away sandbox rows while runtime cleanup is still pending.
 
 Scope:
 
-- Runtime session model for terminal, IDE, notebook, browser, command, and custom clients.
+- Extend runtime sessions beyond audit records into richer attachment metadata or protocol-specific session records when needed.
 - Extend execution tasks beyond the first sandbox command MVP.
-- Task watch/streaming, cleanup state, and richer log streaming.
-- Extend artifact records beyond metadata references into download, retention, and storage-provider integration.
+- Cleanup state and richer log streaming for execution tasks.
+- Extend artifact records beyond workspace file capture/upload into retention policy, object-store download, and managed remote storage-provider integration.
 - Preview records beyond raw sandbox port declarations when useful.
 - API and UI for inspecting sessions, tasks, logs, previews, and artifacts.
 - Kubernetes Job adapter for isolated batch tasks when a full interactive sandbox is unnecessary.
@@ -148,7 +175,7 @@ Goal: make mbox usable outside the web console by developers, external agents, a
 Scope:
 
 - CLI authentication and context selection.
-- CLI commands for project, template, sandbox, session, task, logs, ports, previews, and artifacts.
+- CLI commands for project, policy, credential-reference, template, sandbox, session, task, logs, ports, previews, and artifacts.
 - API schema publication for implemented resources.
 - API documentation site or generated docs for public endpoints.
 - First official SDK package for automation clients.
@@ -163,8 +190,39 @@ Exit criteria:
 
 Current status:
 
-- Started: TypeScript SDK in `sdk/typescript` with typed wrappers for health, projects, templates, sandboxes, runtime target/log/event/port reads, execution tasks, task polling/cancel, and artifact references.
-- Remaining: authentication model, package publication workflow, generated schema alignment, CLI, runtime-session APIs, and broader versioning rules.
+- Started: TypeScript SDK in `sdk/typescript` with typed wrappers for API info/version/capability handshake, runtime orphan audit/cleanup, health, projects, project policy, project quota policy, project credential references, templates, template validation, template/sandbox boundary summaries, sandboxes, runtime target/log/event/port reads, runtime sessions, execution tasks, task polling/watch/cancel, artifact references, retained artifact upload/capture/content, and workspace artifact content fallback.
+- Started: Go CLI in `cmd/mbox` as a thin HTTP client for API info/version/capability handshake, runtime orphan audit/cleanup, health, projects, project policy, project quota policy, project credential references, templates, template validation, template/sandbox boundary summaries, sandboxes, sessions, tasks, artifacts, retained artifact upload/capture/content, logs, ports, and terminal access.
+- Done: `GET /v1/info` as a read-only server capability manifest for API version, server version, runtime controller/access state, artifact-content backend, and CLI/SDK compatibility hints.
+- Done: `GET /v1/openapi.json` OpenAPI contract starter plus CLI/SDK readers and smoke coverage for implemented public routes and schemas.
+- Done: SDK route contract plus OpenAPI path/method alignment check for route-backed TypeScript helpers.
+- Done: audit-event list helpers for global and project-scoped product mutation history.
+- Done: request correlation starter with `X-Mbox-Request-ID` response headers, server log correlation, CLI/SDK request-id options, and audit metadata request IDs for write events.
+- Done: client-supplied audit actor/source attribution and filtering across API, CLI, SDK, Web project inspector, docs, and CLI smoke coverage.
+- Done: typed audit-event action and `policy.denied` metadata contracts in OpenAPI and TypeScript SDK.
+- Done: audit-event `action` filtering across API, CLI, SDK, Web project inspector, OpenAPI, and docs for narrowing operational feeds without turning audit into a strong transactional log.
+- Done: audit-event `requestId` filtering across API, Postgres indexes, CLI, SDK, OpenAPI, docs, and CLI smoke path for retrieving request-correlated audit feed slices.
+- Done: audit-event metadata `operation` filtering across API, Postgres indexes, CLI, SDK, OpenAPI, docs, and CLI smoke path for narrowing typed policy-denial feeds.
+- Done: audit-event inclusive `since` / `until` time-window filtering across API, CLI, SDK, OpenAPI, docs, and tests for bounded operator investigation windows.
+- Done: audit-event action query indexes for global and project-scoped feeds ordered by recency.
+- Done: SDK/OpenAPI alignment guard now checks SDK-used query parameters in addition to route paths and methods.
+- Done: SDK/OpenAPI alignment guard now checks focused SDK-consumed schema required fields and properties for project usage and audit contracts.
+- Done: SDK/OpenAPI alignment guard now checks focused SDK helper response schemas, list item refs, NDJSON task events, binary responses, and no-content delete routes.
+- Done: SDK/OpenAPI alignment guard now checks focused SDK helper request body schema refs and binary upload media types.
+- Done: explicit SDK and CLI compatibility preflight helpers compare client API labels with the server `/v1/info` minimum CLI/SDK API versions before longer automation runs.
+- Done: SDK and CLI compatibility preflight can require server capabilities such as `execution-tasks`, `task-events`, and `artifact-client-upload` before clients start a longer run.
+- Done: SDK local smoke gate now builds the package and exercises compatibility helpers plus OpenAPI alignment success/failure paths without requiring a live API server.
+- Done: SDK package dry-run gate now verifies `npm pack` would include the README, package manifest, compiled JavaScript, and TypeScript declarations while excluding source-only files.
+- Done: SDK package consumer smoke now installs a real local `npm pack` tarball into a minimal ESM consumer and verifies exported helpers load from the installed package.
+- Done: SDK publish gate now runs typecheck, local smoke, package dry-run, and package consumer smoke via `npm run verify`, with `prepublishOnly` wired to the same gate.
+- Done: starter API compatibility policy documented and regression-tested for same-family `vNalphaM`, `vNbetaM`, and stable `vN` ordering, with capabilities kept as separate feature gates.
+- Done: starter shared API token model for automation clients: optional `MBOX_API_TOKEN` server gate, public health/info discovery, CLI `MBOX_TOKEN`/`--token`, SDK `token`, and smoke/test coverage.
+- Done: OpenAPI auth contract hardening for the starter token model: `bearerAuth` security scheme, explicit public health/info operations, private bearer operations, `401` error responses, and SDK alignment checks for route auth metadata.
+- Done: starter CLI context selection through `--context`, `MBOX_CONTEXT`, `--config`, `MBOX_CONFIG`, and `~/.mbox/config.json`, with API URL/token/audit-label loading, explicit flag overrides, and local `context current/list` inspection that redacts token values.
+- Done: CLI local context management with `context set`, `context use`, and `context remove`, including parent-directory creation, token-env support for reusable configs, redacted JSON output, and CLI smoke coverage against an authenticated API.
+- Done: TypeScript SDK environment factory `createMboxClientFromEnv()` for automation scripts that share the CLI `MBOX_API_URL`, `MBOX_TOKEN`/`MBOX_API_TOKEN`, and audit-label conventions without reading local context files.
+- Done: CLI `tasks wait` polling helper for automation scripts that need SDK-style task terminal-state waiting without parsing the NDJSON watch stream.
+- Done: read-only runtime managed-resource inventory, namespace/kind filtering, live kind/namespace/owner summary, and structured OpenAPI/SDK orphan-audit contracts across API, CLI, SDK, OpenAPI, docs, and smoke coverage, reusing the runtime auditor without adding automatic cleanup or new write paths.
+- Remaining: user/project RBAC beyond the shared automation token, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
 
 ## Phase 4: Upper-layer Workflow Integrations
 
@@ -198,7 +256,7 @@ Scope:
 - Stronger runtime isolation with RuntimeClass where available.
 - Network egress controls.
 - Idle detection.
-- Orphan resource cleanup.
+- Orphan resource detection and cleanup.
 - Quota enforcement.
 - Multi-tenant metrics.
 - Backup and restore plan for control-plane state.
@@ -207,7 +265,7 @@ Exit criteria:
 
 - Operators can identify who created, accessed, deployed, or deleted each resource.
 - Stale sandboxes and volumes are cleaned safely.
-- Policy denial reasons are visible in the UI.
+- Policy and quota denial reasons are visible in the UI before known-blocked launches and in API error feedback.
 - Runtime resource usage is observable at project and user levels.
 
 ## Phase 6: Advanced Platform Capabilities
@@ -247,6 +305,36 @@ First slice status:
 11. Done: template metadata for runtime type, use case, resource preset, and validation status now persists with the product record.
 12. Done: first execution task API and Runtime Workspace Tasks tab for asynchronous sandbox commands with cancel.
 13. Done: artifact reference registry and Runtime Workspace Artifacts tab.
-14. Next: task watch/streaming plus artifact retrieval/retention, or runtime session records if we want better auditability first.
+14. Done: task watch/streaming plus running-sandbox workspace artifact content retrieval.
+15. Done: runtime session records across API, terminal attachment, Web, CLI, SDK, and smoke tests.
+16. Done: server-backed template validation runs with shared API, Web, CLI, SDK, and smoke coverage.
+17. Done: policy and credential boundary starter as read-only API/CLI/SDK/Web summaries, with smoke coverage for the current runtime trust contract.
+18. Done: artifact retention starter for small `workspace://` files, including retained bytes, sha256 metadata, API/CLI/SDK/Web support, and runtime smoke coverage.
+19. Done: first enforceable project launch policy object across API, CLI, SDK, Web visibility, and smoke coverage.
+20. Done: project credential-reference starter across API, CLI, SDK, Web visibility, and Boundary smoke coverage without secret-value storage or runtime mounting.
+21. Done: artifact storage-provider starter for filesystem-backed retained bytes.
+22. Done: lifecycle `ttlSeconds` enforcement for automatic sandbox cleanup.
+23. Done: client-uploaded retained artifact content across API, CLI, SDK, docs, and smoke coverage.
+24. Done: project deletion guard that preserves sandbox runtime cleanup state before project cascade deletion.
+25. Done: API info/version/capability manifest across API, CLI, SDK, docs, and smoke coverage.
+26. Done: runtime orphan audit for mbox-managed `agent-sandbox` resources.
+27. Done: explicitly gated orphan cleanup for one currently reported runtime resource at a time.
+28. Done: read-only project usage visibility starter for quota and operational-hardening groundwork.
+29. Done: best-effort product audit-event starter for successful API mutations across API, CLI, SDK, Web inspector, docs, and smoke coverage.
+30. Done: project quota policy starter for active sandbox count and retained artifact bytes across API, CLI, SDK, Web inspector, docs, and smoke coverage.
+31. Done: OpenAPI contract starter across API, CLI, SDK, docs, and smoke coverage.
+32. Done: Web launch preflight visibility for policy and active-sandbox quota blockers.
+33. Done: best-effort `policy.denied` audit events for selected policy/quota denials.
+34. Done: OpenAPI/SDK contract hardening for known audit actions and typed `policy.denied` metadata.
+35. Done: project usage declared active/running sandbox request totals across API, SDK, Web inspector, docs, and tests.
+36. Done: structured OpenAPI schema for project usage, sandbox request totals, and quantity counters.
+37. Done: read-only runtime managed-resource inventory as the first live runtime visibility hardening slice.
+38. Done: runtime managed-resource inventory summary with namespace/kind filtering and label-derived owner grouping, plus focused OpenAPI/SDK schema contract hardening for inventory and orphan-audit responses.
+39. Done: S3-compatible retained artifact content backend starter for remote durability, keeping Postgres as metadata source of truth and preserving the existing artifact content API.
+40. Done: request correlation starter for API responses, server logs, CLI/SDK clients, OpenAPI docs, and best-effort audit metadata.
+41. Done: request-correlated audit feed filtering with `requestId` query support and JSONB expression indexes.
+42. Done: action-specific audit metadata operation filtering with `operation` query support and JSONB expression indexes.
+43. Done: audit feed RFC3339 `since` / `until` time-window filtering for bounded operator investigations.
+44. Next: operational hardening around richer live runtime usage metrics or remaining audit-feed ergonomics.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.
