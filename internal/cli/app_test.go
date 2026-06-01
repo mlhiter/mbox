@@ -835,6 +835,94 @@ func TestTasksWaitPollsUntilTerminalStatus(t *testing.T) {
 	}
 }
 
+func TestTasksWaitRequireSuccessReturnsErrorForUnsuccessfulTerminalStatuses(t *testing.T) {
+	for _, status := range []string{"failed", "canceled", "timed_out"} {
+		t.Run(status, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/v1/tasks/task-1" {
+					t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"id":"task-1","status":"` + status + `","exitCode":2}`))
+			}))
+			defer server.Close()
+
+			stdout := &bytes.Buffer{}
+			app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+			err := app.Run(context.Background(), []string{
+				"--api-url", server.URL,
+				"tasks", "wait", "task-1",
+				"--interval", "1ms",
+				"--timeout", "1s",
+				"--require-success",
+			})
+			if err == nil {
+				t.Fatalf("expected %s task to return an error", status)
+			}
+			if !strings.Contains(err.Error(), "task task-1 finished with status "+status) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !strings.Contains(stdout.String(), `"status": "`+status+`"`) {
+				t.Fatalf("expected final task JSON before error, got %q", stdout.String())
+			}
+		})
+	}
+}
+
+func TestTasksWaitRequireSuccessAllowsSucceededTask(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/tasks/task-1" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"task-1","status":"succeeded","exitCode":0}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"tasks", "wait",
+		"--require-success",
+		"--interval", "1ms",
+		"--timeout", "1s",
+		"task-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), `"status": "succeeded"`) {
+		t.Fatalf("expected final task JSON, got %q", stdout.String())
+	}
+}
+
+func TestTasksWaitWithoutRequireSuccessAllowsFailedTask(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/tasks/task-1" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"task-1","status":"failed","exitCode":2}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"tasks", "wait", "task-1",
+		"--interval", "1ms",
+		"--timeout", "1s",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), `"status": "failed"`) {
+		t.Fatalf("expected final task JSON, got %q", stdout.String())
+	}
+}
+
 func TestTasksWaitTimesOut(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

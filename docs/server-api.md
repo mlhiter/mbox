@@ -640,7 +640,7 @@ Current command groups:
 - `templates`: list, create, get, boundary, validate, decide-validation, delete.
 - `sandboxes`: list, create, get, start, stop, delete.
 - `sessions`: list, create, get, end.
-- `tasks`: list, create, get, wait, cancel, watch.
+- `tasks`: list, create, get, wait, cancel, watch. `tasks wait --require-success` keeps stdout as final task JSON and returns a nonzero exit when the terminal status is not `succeeded`.
 - `artifacts`: list, create, get, capture, upload, content.
 - `logs`, `ports`, and `terminal` for sandbox runtime access.
 

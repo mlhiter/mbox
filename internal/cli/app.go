@@ -184,7 +184,8 @@ Commands:
   sessions get|end <session-id>
   tasks list <sandbox-id>
   tasks create <sandbox-id> --arg sh --arg -lc --arg 'echo ok' [--timeout 60]
-  tasks get|cancel|watch|wait <task-id>
+  tasks get|cancel|watch <task-id>
+  tasks wait <task-id> [--interval 1500ms] [--timeout 5m] [--require-success]
   artifacts list <sandbox-id>
   artifacts create <sandbox-id> --kind KIND --name NAME --uri URI
   artifacts get|capture|content <artifact-id>
@@ -1079,6 +1080,7 @@ func (a *App) runTaskWait(ctx context.Context, client *Client, args []string) er
 	fs.SetOutput(a.streams.Stderr)
 	intervalRaw := fs.String("interval", "1500ms", "")
 	timeoutRaw := fs.String("timeout", "", "")
+	requireSuccess := fs.Bool("require-success", false, "")
 	taskID := ""
 	parseArgs := args
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -1091,10 +1093,10 @@ func (a *App) runTaskWait(ctx context.Context, client *Client, args []string) er
 	if taskID == "" && fs.NArg() == 1 {
 		taskID = strings.TrimSpace(fs.Arg(0))
 	} else if fs.NArg() != 0 {
-		return usageError("usage: mbox tasks wait <task-id> [--interval 1500ms] [--timeout 5m]")
+		return usageError("usage: mbox tasks wait <task-id> [--interval 1500ms] [--timeout 5m] [--require-success]")
 	}
 	if taskID == "" {
-		return usageError("usage: mbox tasks wait <task-id> [--interval 1500ms] [--timeout 5m]")
+		return usageError("usage: mbox tasks wait <task-id> [--interval 1500ms] [--timeout 5m] [--require-success]")
 	}
 	interval, err := parsePositiveDuration(*intervalRaw, "interval")
 	if err != nil {
@@ -1118,7 +1120,14 @@ func (a *App) runTaskWait(ctx context.Context, client *Client, args []string) er
 			return err
 		}
 		if isTerminalTaskStatus(task["status"]) {
-			return WriteJSON(a.streams.Stdout, task)
+			if err := WriteJSON(a.streams.Stdout, task); err != nil {
+				return err
+			}
+			status, _ := task["status"].(string)
+			if *requireSuccess && status != "succeeded" {
+				return fmt.Errorf("task %s finished with status %s", taskID, status)
+			}
+			return nil
 		}
 		if err := sleepContext(ctx, interval); err != nil {
 			return fmt.Errorf("timed out waiting for task %s", taskID)

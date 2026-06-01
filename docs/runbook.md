@@ -328,9 +328,10 @@ The CLI polling helper mirrors the SDK `waitForTask()` convenience:
 
 ```sh
 go run ./cmd/mbox tasks wait "$TASK_ID" --interval 500ms --timeout 2m
+go run ./cmd/mbox tasks wait "$TASK_ID" --interval 500ms --timeout 2m --require-success
 ```
 
-It prints the final task JSON when status reaches `succeeded`, `failed`, `canceled`, or `timed_out`.
+It prints the final task JSON when status reaches `succeeded`, `failed`, `canceled`, or `timed_out`. Add `--require-success` when the surrounding script should fail after printing the final JSON unless the terminal status is `succeeded`.
 
 3. Verify the task history:
 
