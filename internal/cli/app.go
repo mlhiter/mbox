@@ -168,9 +168,11 @@ Commands:
   projects add-credential <project-id> --name NAME --type git|registry|kubernetes|ssh|generic --secret-ref NAME [--secret-key KEY]
   projects delete <project-id>
   templates list [--project-id PROJECT]
+  templates create --name NAME --image IMAGE [--project-id PROJECT] [--arg ARG]
   templates get <template-id>
   templates boundary <template-id> [--project-id PROJECT]
   templates validate <template-id> --project-id PROJECT [--name NAME]
+  templates delete <template-id>
   templates decide-validation <template-id> <sandbox-id> --status passed|failed
   sandboxes list [--project-id PROJECT]
   sandboxes create --project-id PROJECT --name NAME [--template-id TEMPLATE]
@@ -184,6 +186,7 @@ Commands:
   tasks create <sandbox-id> --arg sh --arg -lc --arg 'echo ok' [--timeout 60]
   tasks get|cancel|watch|wait <task-id>
   artifacts list <sandbox-id>
+  artifacts create <sandbox-id> --kind KIND --name NAME --uri URI
   artifacts get|capture|content <artifact-id>
   artifacts upload <artifact-id> (--file PATH|--stdin) [--content-type TYPE]
   credentials get|delete <credential-id>
@@ -530,6 +533,17 @@ func parseMetadataFlag(fs *flag.FlagSet, raw string) (json.RawMessage, error) {
 	return ReadJSONObject(raw)
 }
 
+func parseJSONObjectFlag(name string, raw string) (json.RawMessage, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	value, err := ReadJSONObject(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be a JSON object: %w", name, err)
+	}
+	return value, nil
+}
+
 func commandFromFlag(raw string) []string {
 	return ParseStringList(raw)
 }
@@ -743,7 +757,7 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 
 func (a *App) runTemplate(ctx context.Context, client *Client, args []string) error {
 	if len(args) == 0 {
-		return usageError("usage: mbox templates list|get|boundary|validate|decide-validation")
+		return usageError("usage: mbox templates list|create|get|boundary|validate|decide-validation|delete")
 	}
 	switch args[0] {
 	case "list":
@@ -758,11 +772,67 @@ func (a *App) runTemplate(ctx context.Context, client *Client, args []string) er
 			path += "?projectId=" + url.QueryEscape(*projectID)
 		}
 		return a.get(ctx, client, path)
+	case "create":
+		fs := flag.NewFlagSet("templates create", flag.ContinueOnError)
+		fs.SetOutput(a.streams.Stderr)
+		projectID := fs.String("project-id", "", "")
+		name := fs.String("name", "", "")
+		slug := fs.String("slug", "", "")
+		image := fs.String("image", "", "")
+		command := fs.String("command", "", "")
+		commandJSON := fs.String("command-json", "", "")
+		var commandArgs stringListFlag
+		fs.Var(&commandArgs, "arg", "")
+		workingDir := fs.String("working-dir", "", "")
+		cpuRequest := fs.String("cpu-request", "", "")
+		memoryRequest := fs.String("memory-request", "", "")
+		storageRequest := fs.String("storage-request", "", "")
+		env := fs.String("env", "", "")
+		metadata := fs.String("metadata", "", "")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return usageError("usage: mbox templates create --name NAME --image IMAGE [--project-id PROJECT] [--arg ARG]")
+		}
+		startupCommand, err := parseCommandFlags(commandArgs, *command, *commandJSON)
+		if err != nil {
+			return err
+		}
+		rawEnv, err := parseJSONObjectFlag("env", *env)
+		if err != nil {
+			return err
+		}
+		rawMetadata, err := parseMetadataFlag(fs, *metadata)
+		if err != nil {
+			return err
+		}
+		payload := map[string]any{
+			"name":  *name,
+			"image": *image,
+		}
+		SetNonEmpty(payload, "projectId", *projectID)
+		SetNonEmpty(payload, "slug", *slug)
+		if len(startupCommand) > 0 {
+			payload["startupCommand"] = startupCommand
+		}
+		SetNonEmpty(payload, "workingDir", *workingDir)
+		SetNonEmpty(payload, "cpuRequest", *cpuRequest)
+		SetNonEmpty(payload, "memoryRequest", *memoryRequest)
+		SetNonEmpty(payload, "storageRequest", *storageRequest)
+		SetRaw(payload, "env", rawEnv)
+		SetRaw(payload, "metadata", rawMetadata)
+		return a.post(ctx, client, "/v1/templates", payload)
 	case "get":
 		if len(args) != 2 {
 			return usageError("usage: mbox templates get <template-id>")
 		}
 		return a.get(ctx, client, "/v1/templates/"+url.PathEscape(args[1]))
+	case "delete":
+		if len(args) != 2 {
+			return usageError("usage: mbox templates delete <template-id>")
+		}
+		return a.delete(ctx, client, "/v1/templates/"+url.PathEscape(args[1]))
 	case "boundary":
 		if len(args) < 2 {
 			return usageError("usage: mbox templates boundary <template-id> [--project-id PROJECT]")
@@ -821,7 +891,7 @@ func (a *App) runTemplate(ctx context.Context, client *Client, args []string) er
 			payload,
 		)
 	default:
-		return usageError("usage: mbox templates list|get|boundary|validate|decide-validation")
+		return usageError("usage: mbox templates list|create|get|boundary|validate|decide-validation|delete")
 	}
 }
 
@@ -1058,7 +1128,7 @@ func (a *App) runTaskWait(ctx context.Context, client *Client, args []string) er
 
 func (a *App) runArtifact(ctx context.Context, client *Client, args []string) error {
 	if len(args) == 0 {
-		return usageError("usage: mbox artifacts list|get|capture|content|upload")
+		return usageError("usage: mbox artifacts list|create|get|capture|content|upload")
 	}
 	switch args[0] {
 	case "list":
@@ -1066,6 +1136,42 @@ func (a *App) runArtifact(ctx context.Context, client *Client, args []string) er
 			return usageError("usage: mbox artifacts list <sandbox-id>")
 		}
 		return a.get(ctx, client, "/v1/sandboxes/"+url.PathEscape(args[1])+"/artifacts")
+	case "create":
+		if len(args) < 2 {
+			return usageError("usage: mbox artifacts create <sandbox-id> --kind KIND --name NAME --uri URI")
+		}
+		sandboxID := args[1]
+		fs := flag.NewFlagSet("artifacts create", flag.ContinueOnError)
+		fs.SetOutput(a.streams.Stderr)
+		taskID := fs.String("task-id", "", "")
+		kind := fs.String("kind", "", "")
+		name := fs.String("name", "", "")
+		uri := fs.String("uri", "", "")
+		contentType := fs.String("content-type", "", "")
+		sizeBytes := fs.Int64("size-bytes", -1, "")
+		metadata := fs.String("metadata", "", "")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return usageError("usage: mbox artifacts create <sandbox-id> --kind KIND --name NAME --uri URI")
+		}
+		rawMetadata, err := parseMetadataFlag(fs, *metadata)
+		if err != nil {
+			return err
+		}
+		payload := map[string]any{
+			"kind": *kind,
+			"name": *name,
+			"uri":  *uri,
+		}
+		SetNonEmpty(payload, "taskId", *taskID)
+		SetNonEmpty(payload, "contentType", *contentType)
+		if *sizeBytes >= 0 {
+			payload["sizeBytes"] = *sizeBytes
+		}
+		SetRaw(payload, "metadata", rawMetadata)
+		return a.post(ctx, client, "/v1/sandboxes/"+url.PathEscape(sandboxID)+"/artifacts", payload)
 	case "get":
 		if len(args) != 2 {
 			return usageError("usage: mbox artifacts get <artifact-id>")
@@ -1127,7 +1233,7 @@ func (a *App) runArtifact(ctx context.Context, client *Client, args []string) er
 		}
 		return WriteJSON(a.streams.Stdout, out)
 	default:
-		return usageError("usage: mbox artifacts list|get|capture|content|upload")
+		return usageError("usage: mbox artifacts list|create|get|capture|content|upload")
 	}
 }
 

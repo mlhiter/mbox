@@ -896,6 +896,119 @@ func TestTemplatesValidatePostsExpectedPayload(t *testing.T) {
 	}
 }
 
+func TestTemplatesCreatePostsExpectedPayload(t *testing.T) {
+	var method string
+	var path string
+	var payload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"template-1","name":"Node"}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"templates", "create",
+		"--project-id", "project-1",
+		"--name", "Node",
+		"--slug", "node",
+		"--image", "node:22",
+		"--arg", "sh",
+		"--arg", "-lc",
+		"--arg", "npm test",
+		"--working-dir", "/workspace",
+		"--cpu-request", "250m",
+		"--memory-request", "512Mi",
+		"--storage-request", "2Gi",
+		"--env", `{"NODE_ENV":"test"}`,
+		"--metadata", `{"runtimeType":"node"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodPost || path != "/v1/templates" {
+		t.Fatalf("unexpected request %s %s", method, path)
+	}
+	if payload["projectId"] != "project-1" ||
+		payload["name"] != "Node" ||
+		payload["slug"] != "node" ||
+		payload["image"] != "node:22" ||
+		payload["workingDir"] != "/workspace" ||
+		payload["cpuRequest"] != "250m" ||
+		payload["memoryRequest"] != "512Mi" ||
+		payload["storageRequest"] != "2Gi" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	command, ok := payload["startupCommand"].([]any)
+	if !ok || len(command) != 3 || command[0] != "sh" || command[1] != "-lc" || command[2] != "npm test" {
+		t.Fatalf("unexpected startupCommand: %#v", payload["startupCommand"])
+	}
+	env, ok := payload["env"].(map[string]any)
+	if !ok || env["NODE_ENV"] != "test" {
+		t.Fatalf("unexpected env: %#v", payload["env"])
+	}
+	metadata, ok := payload["metadata"].(map[string]any)
+	if !ok || metadata["runtimeType"] != "node" {
+		t.Fatalf("unexpected metadata: %#v", payload["metadata"])
+	}
+	if !strings.Contains(stdout.String(), `"template-1"`) {
+		t.Fatalf("expected JSON response, got %q", stdout.String())
+	}
+}
+
+func TestTemplatesCreateRejectsMixedCommandFlags(t *testing.T) {
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", "http://127.0.0.1:1",
+		"templates", "create",
+		"--name", "Node",
+		"--image", "node:22",
+		"--arg", "sh",
+		"--command-json", `["sh","-lc","npm test"]`,
+	})
+	if err == nil {
+		t.Fatal("expected mixed command flag error")
+	}
+	if !strings.Contains(err.Error(), "use only one of --arg, --command, or --command-json") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestTemplatesDeleteUsesTemplateRoute(t *testing.T) {
+	var method string
+	var path string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"templates", "delete", "template-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodDelete || path != "/v1/templates/template-1" {
+		t.Fatalf("unexpected request %s %s", method, path)
+	}
+	if strings.TrimSpace(stdout.String()) != "deleted" {
+		t.Fatalf("expected deleted output, got %q", stdout.String())
+	}
+}
+
 func TestTemplatesBoundaryUsesProjectQuery(t *testing.T) {
 	var method string
 	var rawQuery string
@@ -969,6 +1082,58 @@ func TestArtifactsCaptureUsesCaptureRoute(t *testing.T) {
 	}
 	if method != http.MethodPost || path != "/v1/artifacts/artifact-1/capture" {
 		t.Fatalf("unexpected request %s %s", method, path)
+	}
+}
+
+func TestArtifactsCreatePostsExpectedPayload(t *testing.T) {
+	var method string
+	var path string
+	var payload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"artifact-1","kind":"report"}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"artifacts", "create", "sandbox-1",
+		"--task-id", "task-1",
+		"--kind", "report",
+		"--name", "Report",
+		"--uri", "workspace:///workspace/report.txt",
+		"--content-type", "text/plain",
+		"--size-bytes", "128",
+		"--metadata", `{"source":"cli-test"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodPost || path != "/v1/sandboxes/sandbox-1/artifacts" {
+		t.Fatalf("unexpected request %s %s", method, path)
+	}
+	if payload["taskId"] != "task-1" ||
+		payload["kind"] != "report" ||
+		payload["name"] != "Report" ||
+		payload["uri"] != "workspace:///workspace/report.txt" ||
+		payload["contentType"] != "text/plain" ||
+		payload["sizeBytes"] != float64(128) {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	metadata, ok := payload["metadata"].(map[string]any)
+	if !ok || metadata["source"] != "cli-test" {
+		t.Fatalf("unexpected metadata: %#v", payload["metadata"])
+	}
+	if !strings.Contains(stdout.String(), `"artifact-1"`) {
+		t.Fatalf("expected JSON response, got %q", stdout.String())
 	}
 }
 

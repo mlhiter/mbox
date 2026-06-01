@@ -19,7 +19,7 @@ cleanup() {
 		"${CLI[@]}" sandboxes delete "$sandbox_id" >/dev/null 2>&1 || true
 	fi
 	if [[ -n "${denied_template_id:-}" ]]; then
-		curl -fsS -X DELETE "$MBOX_API_URL/v1/templates/$denied_template_id" >/dev/null 2>&1 || true
+		"${CLI[@]}" templates delete "$denied_template_id" >/dev/null 2>&1 || true
 	fi
 	if [[ -n "${credential_id:-}" ]]; then
 		"${CLI[@]}" credentials delete "$credential_id" >/dev/null 2>&1 || true
@@ -27,7 +27,7 @@ cleanup() {
 	if [[ -n "${project_id:-}" ]]; then
 		"${CLI[@]}" projects delete "$project_id" >/dev/null 2>&1 || true
 	elif [[ -n "${template_id:-}" ]]; then
-		curl -fsS -X DELETE "$MBOX_API_URL/v1/templates/$template_id" >/dev/null 2>&1 || true
+		"${CLI[@]}" templates delete "$template_id" >/dev/null 2>&1 || true
 	fi
 	if [[ "$started_api" == "true" && -n "$api_pid" ]]; then
 		kill "$api_pid" >/dev/null 2>&1 || true
@@ -207,21 +207,16 @@ echo "Creating project with CLI"
 project_json="$("${CLI[@]}" projects create --name "$project_name" --slug "$project_name" --namespace "$project_name")"
 project_id="$(jq -r '.id' <<<"$project_json")"
 
-echo "Creating template through API"
-template_json="$(curl -fsS -X POST "$MBOX_API_URL/v1/templates" \
-	-H 'content-type: application/json' \
-	-d "$(jq -n \
-		--arg projectId "$project_id" \
-		--arg name "$template_name" \
-		--arg slug "$template_name" \
-		'{
-			projectId: $projectId,
-			name: $name,
-			slug: $slug,
-			image: "busybox:1.36",
-			startupCommand: ["sh", "-c", "echo mbox cli smoke ready && tail -f /dev/null"],
-			workingDir: "/workspace"
-		}')")"
+echo "Creating template with CLI"
+template_json="$("${CLI[@]}" templates create \
+	--project-id "$project_id" \
+	--name "$template_name" \
+	--slug "$template_name" \
+	--image "busybox:1.36" \
+	--arg sh \
+	--arg -c \
+	--arg "echo mbox cli smoke ready && tail -f /dev/null" \
+	--working-dir /workspace)"
 template_id="$(jq -r '.id' <<<"$template_json")"
 
 echo "Setting enforced project launch policy with CLI"
@@ -253,27 +248,22 @@ credential_id="$(jq -r '.id' <<<"$credential_json")"
 "${CLI[@]}" credentials get "$credential_id" | jq -e --arg id "$credential_id" '.id == $id and .type == "git"' >/dev/null
 
 echo "Checking policy denial path"
-denied_template_json="$(curl -fsS -X POST "$MBOX_API_URL/v1/templates" \
-	-H 'content-type: application/json' \
-	-d "$(jq -n \
-		--arg projectId "$project_id" \
-		--arg name "cli-smoke-denied-$suffix" \
-		--arg slug "cli-smoke-denied-$suffix" \
-		'{
-			projectId: $projectId,
-			name: $name,
-			slug: $slug,
-			image: "ubuntu:24.04",
-			startupCommand: ["sh", "-c", "tail -f /dev/null"],
-			workingDir: "/workspace"
-		}')")"
+denied_template_json="$("${CLI[@]}" templates create \
+	--project-id "$project_id" \
+	--name "cli-smoke-denied-$suffix" \
+	--slug "cli-smoke-denied-$suffix" \
+	--image "ubuntu:24.04" \
+	--arg sh \
+	--arg -c \
+	--arg "tail -f /dev/null" \
+	--working-dir /workspace)"
 denied_template_id="$(jq -r '.id' <<<"$denied_template_json")"
 if "${CLI[@]}" sandboxes create --project-id "$project_id" --template-id "$denied_template_id" --name "cli-smoke-denied-$suffix" --slug "cli-smoke-denied-$suffix" >/tmp/mbox-cli-policy-denied.out 2>&1; then
 	echo "expected policy-denied sandbox launch to fail" >&2
 	exit 1
 fi
 grep -F "policy denied" /tmp/mbox-cli-policy-denied.out >/dev/null
-curl -fsS -X DELETE "$MBOX_API_URL/v1/templates/$denied_template_id" >/dev/null
+"${CLI[@]}" templates delete "$denied_template_id" >/dev/null
 denied_template_id=""
 
 echo "Checking quota denial path"
@@ -319,14 +309,11 @@ session_id="$(jq -r '.id' <<<"$session_json")"
 "${CLI[@]}" sessions end "$session_id" | jq -e '.status == "ended" and (.endedAt | type == "string")' >/dev/null
 
 echo "Checking client artifact upload with CLI"
-artifact_json="$(curl -fsS -X POST "$MBOX_API_URL/v1/sandboxes/$sandbox_id/artifacts" \
-	-H 'content-type: application/json' \
-	-d "$(jq -n '{
-		kind: "report",
-		name: "cli-upload.txt",
-		uri: "client://cli-smoke/cli-upload.txt",
-		contentType: "text/plain"
-	}')")"
+artifact_json="$("${CLI[@]}" artifacts create "$sandbox_id" \
+	--kind report \
+	--name "cli-upload.txt" \
+	--uri "client://cli-smoke/cli-upload.txt" \
+	--content-type "text/plain")"
 artifact_id="$(jq -r '.id' <<<"$artifact_json")"
 printf 'cli-upload-ok' | "${CLI[@]}" artifacts upload "$artifact_id" --stdin --content-type text/plain | jq -e '.retainedContent.sizeBytes == 13 and (.retainedContent.sha256 | length == 64)' >/dev/null
 "${CLI[@]}" artifacts get "$artifact_id" | jq -e '.retainedContent.storageProvider == "postgres"' >/dev/null

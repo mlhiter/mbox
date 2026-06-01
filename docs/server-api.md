@@ -637,11 +637,11 @@ Current command groups:
 - `runtime orphans` for the read-only runtime orphan audit. Use `--project-id` to inspect drift for one runtime owner project label.
 - `projects`: list, create, get, usage, audit-events, policy, set-policy, quota-policy, set-quota-policy, credentials, add-credential, delete.
 - `credentials`: get, delete.
-- `templates`: list, get.
+- `templates`: list, create, get, boundary, validate, decide-validation, delete.
 - `sandboxes`: list, create, get, start, stop, delete.
 - `sessions`: list, create, get, end.
 - `tasks`: list, create, get, wait, cancel, watch.
-- `artifacts`: list, get, capture, upload, content.
+- `artifacts`: list, create, get, capture, upload, content.
 - `logs`, `ports`, and `terminal` for sandbox runtime access.
 
 The CLI should remain API-bound. Do not teach it to bypass mbox product records by writing Postgres directly or operating Kubernetes resources directly.

@@ -254,6 +254,7 @@ For runtime-enabled sandboxes, the CLI maps to the same lower-level primitives a
 
 ```sh
 go run ./cmd/mbox runtime resources --namespace <namespace>
+go run ./cmd/mbox templates create --project-id <project-id> --name "BusyBox" --image busybox:1.36 --arg sh --arg -c --arg 'tail -f /dev/null' --working-dir /workspace
 go run ./cmd/mbox templates validate <template-id> --project-id <project-id>
 go run ./cmd/mbox templates decide-validation <template-id> <validation-sandbox-id> --status passed
 go run ./cmd/mbox sessions list <sandbox-id>
@@ -358,9 +359,12 @@ Poll task history, or use `tasks wait`, until it reports `canceled`.
 
 ```sh
 TASK_ID='<task-id>'
-curl -fsS -X POST "http://127.0.0.1:18080/v1/sandboxes/$SANDBOX_ID/artifacts" \
-  -H 'content-type: application/json' \
-  -d '{"taskId":"'"$TASK_ID"'","kind":"report","name":"Task report","uri":"workspace:///workspace/reports/task.json","contentType":"application/json"}'
+go run ./cmd/mbox artifacts create "$SANDBOX_ID" \
+  --task-id "$TASK_ID" \
+  --kind report \
+  --name "Task report" \
+  --uri workspace:///workspace/reports/task.json \
+  --content-type application/json
 ```
 
 Verify the sandbox and task artifact lists:
