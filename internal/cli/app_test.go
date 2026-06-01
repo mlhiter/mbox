@@ -1128,6 +1128,205 @@ func TestTemplatesValidatePostsExpectedPayload(t *testing.T) {
 	}
 }
 
+func TestTemplatesValidateRunRunsTaskAndDecidesPassed(t *testing.T) {
+	var calls []string
+	var validationPayload map[string]any
+	var taskPayload map[string]any
+	var decisionPayload map[string]any
+	var taskPolls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/templates/template-1/validation-runs":
+			if err := json.NewDecoder(r.Body).Decode(&validationPayload); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"template":{"id":"template-1"},"sandbox":{"id":"sandbox-1","status":"pending"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/sandboxes/sandbox-1":
+			_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"running","runtimeRef":{"name":"claim-1","namespace":"mbox-smoke"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/sandbox-1/tasks":
+			if err := json.NewDecoder(r.Body).Decode(&taskPayload); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"task-1","status":"queued"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/tasks/task-1":
+			taskPolls++
+			if taskPolls == 1 {
+				_, _ = w.Write([]byte(`{"id":"task-1","status":"running"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":"task-1","status":"succeeded","stdout":"ok"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/templates/template-1/validation-runs/sandbox-1/decision":
+			if err := json.NewDecoder(r.Body).Decode(&decisionPayload); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"template":{"id":"template-1","metadata":{"validationStatus":"passed"}},"sandbox":{"id":"sandbox-1","metadata":{"validationResult":"passed"}}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"templates", "validate-run", "template-1",
+		"--project-id", "project-1",
+		"--name", "Validate Node",
+		"--metadata", `{"caller":"cli-test"}`,
+		"--task-metadata", `{"kind":"smoke"}`,
+		"--interval", "1ms",
+		"--wait-timeout", "1s",
+		"--task-timeout", "30",
+		"--require-success",
+		"--",
+		"sh", "-lc", "echo ok",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCalls := []string{
+		"POST /v1/templates/template-1/validation-runs",
+		"GET /v1/sandboxes/sandbox-1",
+		"POST /v1/sandboxes/sandbox-1/tasks",
+		"GET /v1/tasks/task-1",
+		"GET /v1/tasks/task-1",
+		"POST /v1/templates/template-1/validation-runs/sandbox-1/decision",
+	}
+	if strings.Join(calls, "\n") != strings.Join(wantCalls, "\n") {
+		t.Fatalf("unexpected calls:\n%s", strings.Join(calls, "\n"))
+	}
+	if validationPayload["projectId"] != "project-1" || validationPayload["name"] != "Validate Node" {
+		t.Fatalf("unexpected validation payload: %#v", validationPayload)
+	}
+	if metadata, ok := validationPayload["metadata"].(map[string]any); !ok || metadata["caller"] != "cli-test" {
+		t.Fatalf("unexpected validation metadata: %#v", validationPayload["metadata"])
+	}
+	if taskPayload["timeoutSeconds"] != float64(30) {
+		t.Fatalf("unexpected task payload: %#v", taskPayload)
+	}
+	command, ok := taskPayload["command"].([]any)
+	if !ok || len(command) != 3 || command[0] != "sh" || command[2] != "echo ok" {
+		t.Fatalf("unexpected task command: %#v", taskPayload["command"])
+	}
+	if metadata, ok := taskPayload["metadata"].(map[string]any); !ok || metadata["kind"] != "smoke" {
+		t.Fatalf("unexpected task metadata: %#v", taskPayload["metadata"])
+	}
+	if decisionPayload["status"] != "passed" {
+		t.Fatalf("unexpected decision payload: %#v", decisionPayload)
+	}
+	if !strings.Contains(stdout.String(), `"status": "passed"`) || !strings.Contains(stdout.String(), `"task"`) {
+		t.Fatalf("expected combined JSON output, got %q", stdout.String())
+	}
+}
+
+func TestTemplatesValidateRunDecidesFailedForFailedTask(t *testing.T) {
+	var decisionPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/templates/template-1/validation-runs":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"template":{"id":"template-1"},"sandbox":{"id":"sandbox-1","status":"pending"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/sandboxes/sandbox-1":
+			_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"running","runtimeRef":{"name":"claim-1","namespace":"mbox-smoke"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/sandboxes/sandbox-1/tasks":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"task-1","status":"queued"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/tasks/task-1":
+			_, _ = w.Write([]byte(`{"id":"task-1","status":"failed","exitCode":7}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/templates/template-1/validation-runs/sandbox-1/decision":
+			if err := json.NewDecoder(r.Body).Decode(&decisionPayload); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"template":{"id":"template-1","metadata":{"validationStatus":"failed"}},"sandbox":{"id":"sandbox-1","metadata":{"validationResult":"failed"}}}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"templates", "validate-run", "template-1",
+		"--project-id", "project-1",
+		"--interval", "1ms",
+		"--wait-timeout", "1s",
+		"--require-success",
+		"--command", "sh,-lc,exit 7",
+	})
+	if err == nil {
+		t.Fatal("expected failed validation task to return an error")
+	}
+	if !strings.Contains(err.Error(), "template validation task task-1 finished with status failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decisionPayload["status"] != "failed" {
+		t.Fatalf("unexpected decision payload: %#v", decisionPayload)
+	}
+	if !strings.Contains(stdout.String(), `"status": "failed"`) || !strings.Contains(stdout.String(), `"exitCode": 7`) {
+		t.Fatalf("expected failed combined JSON output, got %q", stdout.String())
+	}
+}
+
+func TestTemplatesValidateRunDecidesFailedWhenSandboxFails(t *testing.T) {
+	var calls []string
+	var decisionPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/templates/template-1/validation-runs":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"template":{"id":"template-1"},"sandbox":{"id":"sandbox-1","status":"pending"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/sandboxes/sandbox-1":
+			_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"failed"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/templates/template-1/validation-runs/sandbox-1/decision":
+			if err := json.NewDecoder(r.Body).Decode(&decisionPayload); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"template":{"id":"template-1","metadata":{"validationStatus":"failed"}},"sandbox":{"id":"sandbox-1","metadata":{"validationResult":"failed"}}}`))
+		case r.URL.Path == "/v1/sandboxes/sandbox-1/tasks":
+			t.Fatal("task should not be created when validation sandbox fails")
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"templates", "validate-run", "template-1",
+		"--project-id", "project-1",
+		"--interval", "1ms",
+		"--wait-timeout", "1s",
+		"--command", "sh,-lc,echo ok",
+	})
+	if err == nil {
+		t.Fatal("expected failed sandbox wait to return an error")
+	}
+	if !strings.Contains(err.Error(), "sandbox sandbox-1 reached terminal status failed while waiting for running") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decisionPayload["status"] != "failed" {
+		t.Fatalf("unexpected decision payload: %#v", decisionPayload)
+	}
+	if strings.Contains(strings.Join(calls, "\n"), "/tasks") {
+		t.Fatalf("task route should not be called:\n%s", strings.Join(calls, "\n"))
+	}
+	if !strings.Contains(stdout.String(), `"decisionStatus": "failed"`) || !strings.Contains(stdout.String(), `"decision"`) {
+		t.Fatalf("expected failed combined JSON output, got %q", stdout.String())
+	}
+}
+
 func TestTemplatesCreatePostsExpectedPayload(t *testing.T) {
 	var method string
 	var path string

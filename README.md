@@ -436,6 +436,8 @@ For a disposable local API database, `npm run smoke:api` exercises the SDK again
 
 For a running runtime-enabled API and sandbox, `npm run smoke:runtime` exercises SDK task execution, successful task waiting, task-scoped artifact listing, workspace content capture, and retained content reads. `scripts/smoke-agent-sandbox.sh` calls this SDK runtime smoke after it launches a sandbox, and uses `mbox sandboxes wait --require-runtime-ref` before runtime actions, so the cluster smoke covers API, CLI, and SDK runtime paths without making the SDK create or clean up Kubernetes resources directly.
 
+For scriptable template checks, `mbox templates validate-run <template-id> --project-id <project-id> -- sh -lc '...'` creates a validation sandbox, waits for runtime readiness, runs one task, and writes a passed/failed validation decision. It is a CLI convenience over existing mbox primitives, not a server-side pipeline engine.
+
 The SDK also exports the current audit-event action types, `PolicyDeniedAuditMetadata`, and `isPolicyDeniedAuditEvent()` for safely rendering selected policy/quota denial audit events. Audit metadata includes `requestId` when a request writes an event, and audit list helpers accept `requestId`, `operation`, `since`, and `until` to filter feeds for one request, script run, typed denial operation, or known time window. Audit events are still best-effort product records, not authentication claims or a strong transactional audit log.
 
 ## Runtime Smoke Test

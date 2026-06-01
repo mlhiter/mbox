@@ -642,7 +642,7 @@ Current command groups:
 - `runtime orphans` for the read-only runtime orphan audit. Use `--project-id` to inspect drift for one runtime owner project label.
 - `projects`: list, create, get, usage, audit-events, policy, set-policy, quota-policy, set-quota-policy, credentials, add-credential, delete.
 - `credentials`: get, delete.
-- `templates`: list, create, get, boundary, validate, decide-validation, delete.
+- `templates`: list, create, get, boundary, validate, validate-run, decide-validation, delete. `templates validate-run <template-id> --project-id <project-id> -- ...` is a CLI-only composition over validation-run creation, sandbox wait, execution task creation/waiting, and validation decision; it does not add a server route or CI workflow model.
 - `sandboxes`: list, create, get, boundary, start, stop, wait, delete. `sandboxes wait <sandbox-id> --status running --require-runtime-ref` prints final sandbox JSON when ready, and exits nonzero after printing the final JSON if the sandbox reaches `failed` or `deleted` first.
 - `sessions`: list, create, get, end.
 - `tasks`: list, create, run, get, wait, cancel, watch, artifacts. `tasks run <sandbox-id> -- ...` creates an execution task and waits for its terminal task JSON; `--timeout` is the task execution timeout, while `--wait-timeout` is the client-side polling limit. `tasks wait --require-success` and `tasks run --require-success` keep stdout as final task JSON and return a nonzero exit when the terminal status is not `succeeded`. `tasks artifacts <task-id>` lists artifact references linked to one task.

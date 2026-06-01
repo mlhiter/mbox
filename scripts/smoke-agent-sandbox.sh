@@ -510,11 +510,30 @@ cli_json sandboxes wait "$sandbox_id" --status running --require-runtime-ref --i
 	--arg id "$sandbox_id" \
 	'.id == $id and .status == "running" and (.runtimeRef.name | type == "string")' >/dev/null
 
-echo "Checking mbox template validation APIs"
-validation="$(api_json POST "/v1/templates/$template_id/validation-runs" "$(jq -n --arg projectId "$project_id" '{projectId: $projectId, metadata: {caller: "runtime-smoke"}}')")"
-validation_sandbox_id="$(jq -r '.sandbox.id' <<<"$validation")"
-jq -e --arg sandboxId "$validation_sandbox_id" '.template.metadata.validationStatus == "testing" and .template.metadata.validationSandboxId == $sandboxId and .sandbox.metadata.purpose == "environment-validation"' <<<"$validation" >/dev/null
-api_json POST "/v1/templates/$template_id/validation-runs/$validation_sandbox_id/decision" "$(jq -n '{status: "passed"}')" | jq -e '.template.metadata.validationStatus == "passed" and .sandbox.metadata.validationResult == "passed"' >/dev/null
+echo "Checking mbox template validation run CLI"
+validation_run="$(cli_json templates validate-run "$template_id" \
+	--project-id "$project_id" \
+	--metadata '{"caller":"runtime-smoke"}' \
+	--task-metadata '{"caller":"runtime-smoke"}' \
+	--interval 500ms \
+	--wait-timeout "${TIMEOUT_SECONDS}s" \
+	--task-timeout 30 \
+	--require-success \
+	-- sh -lc 'printf validation-run-ok')"
+validation_sandbox_id="$(jq -r '.validation.sandbox.id' <<<"$validation_run")"
+jq -e --arg sandboxId "$validation_sandbox_id" '
+	.status == "passed" and
+	.decisionStatus == "passed" and
+	.validation.template.metadata.validationStatus == "testing" and
+	.validation.template.metadata.validationSandboxId == $sandboxId and
+	.validation.sandbox.metadata.purpose == "environment-validation" and
+	.sandbox.status == "running" and
+	(.sandbox.runtimeRef.name | type == "string") and
+	.task.status == "succeeded" and
+	(.task.stdout | contains("validation-run-ok")) and
+	.decision.template.metadata.validationStatus == "passed" and
+	.decision.sandbox.metadata.validationResult == "passed"
+' <<<"$validation_run" >/dev/null
 validation_claim_name="$(wait_claim_name "$validation_sandbox_id")"
 api_json DELETE "/v1/sandboxes/$validation_sandbox_id" >/dev/null || true
 wait_deleted "sandboxclaim.extensions.agents.x-k8s.io/$validation_claim_name"

@@ -222,6 +222,7 @@ Current status:
 - Done: CLI context preflight through `context check`, combining redacted context selection, `/healthz`, `/v1/info`, and capability-aware CLI compatibility checks without implying login, whoami, RBAC, or token validity.
 - Done: TypeScript SDK environment factory `createMboxClientFromEnv()` for automation scripts that share the CLI `MBOX_API_URL`, `MBOX_TOKEN`/`MBOX_API_TOKEN`, and audit-label conventions without reading local context files.
 - Done: CLI `sandboxes wait` and SDK `waitForSandbox()` polling conveniences for scripts that need a sandbox to reach `running` with a resolved `runtimeRef` before calling runtime routes.
+- Done: CLI `templates validate-run` composition for scriptable template validation: create validation sandbox, wait for runtime readiness, run one execution task, and write a passed/failed validation decision without introducing a new server-side workflow primitive.
 - Done: CLI `tasks wait --require-success` and SDK `waitForTask({ requireSuccess: true })` terminal success gates for automation scripts that need SDK-style task terminal-state waiting without parsing the NDJSON watch stream.
 - Done: CLI task-scoped artifact listing through `tasks artifacts <task-id>`, matching the existing task artifact API and SDK helper.
 - Done: CLI one-shot execution through `tasks run <sandbox-id> -- ...`, composing task creation with terminal polling while keeping `--timeout` as task execution timeout and `--wait-timeout` as the client wait limit, with runtime smoke coverage for the successful task/artifact path.

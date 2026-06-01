@@ -256,9 +256,7 @@ For runtime-enabled sandboxes, the CLI maps to the same lower-level primitives a
 ```sh
 go run ./cmd/mbox runtime resources --namespace <namespace>
 go run ./cmd/mbox templates create --project-id <project-id> --name "BusyBox" --image busybox:1.36 --arg sh --arg -c --arg 'tail -f /dev/null' --working-dir /workspace
-go run ./cmd/mbox templates validate <template-id> --project-id <project-id>
-go run ./cmd/mbox sandboxes wait <validation-sandbox-id> --status running --require-runtime-ref --timeout 5m
-go run ./cmd/mbox templates decide-validation <template-id> <validation-sandbox-id> --status passed
+go run ./cmd/mbox templates validate-run <template-id> --project-id <project-id> --wait-timeout 5m --require-success -- sh -lc 'pwd && echo template-ok'
 go run ./cmd/mbox sessions list <sandbox-id>
 go run ./cmd/mbox tasks create <sandbox-id> --arg sh --arg -lc --arg 'pwd && echo task-ok'
 go run ./cmd/mbox tasks wait <task-id> --timeout 2m
@@ -269,6 +267,8 @@ go run ./cmd/mbox artifacts content <artifact-id>
 The CLI should remain a thin HTTP client. It must not write to Postgres directly or operate Kubernetes resources directly.
 
 `sandboxes wait` polls the public sandbox record until it reaches the requested status, defaulting to `running`. Add `--require-runtime-ref` when a script is about to call runtime routes, so a sandbox that reports `running` before the runtime reference is visible keeps polling until the reference appears. The command prints the final sandbox JSON on success; if the sandbox reaches `failed` or `deleted` while waiting for another status, it prints that final JSON and exits nonzero.
+
+`templates validate-run` is a CLI composition over existing primitives: it creates a template validation sandbox, waits for the sandbox record to become `running` with a `runtimeRef`, starts one execution task, waits for the terminal task record, and posts the validation decision as `passed` only when the task succeeds. It prints one combined JSON document with `validation`, `sandbox`, `task`, `decision`, and `decisionStatus`. Add `--require-success` when task failure should also make the command exit nonzero after printing the combined JSON. This is a script convenience, not a server-side CI workflow primitive.
 
 `scripts/smoke-cli.sh` starts a local API server when needed, exercises the OpenAPI contract route, runtime-auditor disabled errors, project, launch policy, quota policy, project credential-reference, audit-event reads, policy denial, quota denial, template validation, sandbox, artifact upload, and session commands through the CLI, then deletes the created records. It expects a reachable Postgres from `DATABASE_URL`; on this development machine the reusable default is `postgres://mbox:mbox@127.0.0.1:32768/mbox?sslmode=disable`.
 

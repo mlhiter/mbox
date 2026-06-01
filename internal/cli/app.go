@@ -172,6 +172,7 @@ Commands:
   templates get <template-id>
   templates boundary <template-id> [--project-id PROJECT]
   templates validate <template-id> --project-id PROJECT [--name NAME]
+  templates validate-run <template-id> --project-id PROJECT [--name NAME] [--wait-timeout 5m] [--task-timeout 60] [--require-success] -- sh -lc 'echo ok'
   templates delete <template-id>
   templates decide-validation <template-id> <sandbox-id> --status passed|failed
   sandboxes list [--project-id PROJECT]
@@ -761,7 +762,7 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 
 func (a *App) runTemplate(ctx context.Context, client *Client, args []string) error {
 	if len(args) == 0 {
-		return usageError("usage: mbox templates list|create|get|boundary|validate|decide-validation|delete")
+		return usageError("usage: mbox templates list|create|get|boundary|validate|validate-run|decide-validation|delete")
 	}
 	switch args[0] {
 	case "list":
@@ -875,6 +876,8 @@ func (a *App) runTemplate(ctx context.Context, client *Client, args []string) er
 		SetNonEmpty(payload, "name", *name)
 		SetRaw(payload, "metadata", rawMetadata)
 		return a.post(ctx, client, "/v1/templates/"+url.PathEscape(templateID)+"/validation-runs", payload)
+	case "validate-run":
+		return a.runTemplateValidateRun(ctx, client, args[1:])
 	case "decide-validation":
 		if len(args) < 3 {
 			return usageError("usage: mbox templates decide-validation <template-id> <sandbox-id> --status passed|failed")
@@ -895,8 +898,223 @@ func (a *App) runTemplate(ctx context.Context, client *Client, args []string) er
 			payload,
 		)
 	default:
-		return usageError("usage: mbox templates list|create|get|boundary|validate|decide-validation|delete")
+		return usageError("usage: mbox templates list|create|get|boundary|validate|validate-run|decide-validation|delete")
 	}
+}
+
+func (a *App) runTemplateValidateRun(ctx context.Context, client *Client, args []string) error {
+	input, err := a.parseTemplateValidateRun(args)
+	if err != nil {
+		return err
+	}
+	validationPayload := map[string]any{}
+	SetNonEmpty(validationPayload, "projectId", input.ProjectID)
+	SetNonEmpty(validationPayload, "name", input.Name)
+	SetRaw(validationPayload, "metadata", input.ValidationMetadata)
+
+	var validation map[string]any
+	if err := client.JSON(ctx, http.MethodPost, "/v1/templates/"+url.PathEscape(input.TemplateID)+"/validation-runs", validationPayload, &validation); err != nil {
+		return err
+	}
+	sandboxID, err := validationSandboxID(validation)
+	if err != nil {
+		return err
+	}
+	sandbox, err := a.waitForSandboxValue(ctx, client, sandboxID, sandboxWaitOptions{
+		Status:            "running",
+		Interval:          input.Interval,
+		Timeout:           input.WaitTimeout,
+		RequireRuntimeRef: true,
+	})
+	if err != nil {
+		return a.failTemplateValidationRun(ctx, client, input.TemplateID, sandboxID, validation, sandbox, nil, err)
+	}
+
+	taskPayload := map[string]any{
+		"command":        input.Command,
+		"timeoutSeconds": input.TaskTimeoutSeconds,
+	}
+	SetRaw(taskPayload, "metadata", input.TaskMetadata)
+	var createdTask map[string]any
+	if err := client.JSON(ctx, http.MethodPost, "/v1/sandboxes/"+url.PathEscape(sandboxID)+"/tasks", taskPayload, &createdTask); err != nil {
+		return a.failTemplateValidationRun(ctx, client, input.TemplateID, sandboxID, validation, sandbox, nil, err)
+	}
+	taskID, _ := createdTask["id"].(string)
+	if strings.TrimSpace(taskID) == "" {
+		return a.failTemplateValidationRun(ctx, client, input.TemplateID, sandboxID, validation, sandbox, nil, fmt.Errorf("task create response missing id"))
+	}
+	task, err := a.waitForTaskValue(ctx, client, taskID, taskWaitOptions{
+		Interval:       input.Interval,
+		Timeout:        input.WaitTimeout,
+		RequireSuccess: false,
+	})
+	if err != nil {
+		return a.failTemplateValidationRun(ctx, client, input.TemplateID, sandboxID, validation, sandbox, task, err)
+	}
+	taskStatus, _ := task["status"].(string)
+	decisionStatus := "failed"
+	if taskStatus == "succeeded" {
+		decisionStatus = "passed"
+	}
+	decision, err := a.decideTemplateValidation(ctx, client, input.TemplateID, sandboxID, decisionStatus)
+	if err != nil {
+		return err
+	}
+
+	result := map[string]any{
+		"validation":     validation,
+		"sandbox":        sandbox,
+		"task":           task,
+		"decision":       decision,
+		"decisionStatus": decisionStatus,
+		"status":         decisionStatus,
+	}
+	if err := WriteJSON(a.streams.Stdout, result); err != nil {
+		return err
+	}
+	if input.RequireSuccess && taskStatus != "succeeded" {
+		return fmt.Errorf("template validation task %s finished with status %s", taskID, taskStatus)
+	}
+	return nil
+}
+
+func (a *App) failTemplateValidationRun(
+	ctx context.Context,
+	client *Client,
+	templateID string,
+	sandboxID string,
+	validation map[string]any,
+	sandbox map[string]any,
+	task map[string]any,
+	cause error,
+) error {
+	decision, decisionErr := a.decideTemplateValidation(ctx, client, templateID, sandboxID, "failed")
+	if decisionErr != nil {
+		return errors.Join(cause, decisionErr)
+	}
+	result := map[string]any{
+		"validation":     validation,
+		"sandbox":        sandbox,
+		"decision":       decision,
+		"decisionStatus": "failed",
+		"status":         "failed",
+	}
+	if task != nil {
+		result["task"] = task
+	}
+	if writeErr := WriteJSON(a.streams.Stdout, result); writeErr != nil {
+		return writeErr
+	}
+	return cause
+}
+
+func (a *App) decideTemplateValidation(ctx context.Context, client *Client, templateID string, sandboxID string, status string) (map[string]any, error) {
+	var decision map[string]any
+	if err := client.JSON(
+		ctx,
+		http.MethodPost,
+		"/v1/templates/"+url.PathEscape(templateID)+"/validation-runs/"+url.PathEscape(sandboxID)+"/decision",
+		map[string]any{"status": status},
+		&decision,
+	); err != nil {
+		return nil, err
+	}
+	return decision, nil
+}
+
+type templateValidateRunInput struct {
+	TemplateID         string
+	ProjectID          string
+	Name               string
+	Command            []string
+	TaskTimeoutSeconds int
+	Interval           time.Duration
+	WaitTimeout        time.Duration
+	RequireSuccess     bool
+	ValidationMetadata json.RawMessage
+	TaskMetadata       json.RawMessage
+}
+
+func (a *App) parseTemplateValidateRun(args []string) (templateValidateRunInput, error) {
+	if len(args) < 1 {
+		return templateValidateRunInput{}, usageError("usage: mbox templates validate-run <template-id> --project-id PROJECT [--name NAME] [--wait-timeout 5m] [--task-timeout 60] [--require-success] -- sh -lc 'echo ok'")
+	}
+	input := templateValidateRunInput{TemplateID: args[0]}
+	fs := flag.NewFlagSet("templates validate-run", flag.ContinueOnError)
+	fs.SetOutput(a.streams.Stderr)
+	projectID := fs.String("project-id", "", "")
+	name := fs.String("name", "", "")
+	command := fs.String("command", "", "")
+	commandJSON := fs.String("command-json", "", "")
+	var commandArgs stringListFlag
+	fs.Var(&commandArgs, "arg", "")
+	taskTimeoutSeconds := fs.Int("task-timeout", 60, "")
+	intervalRaw := fs.String("interval", "1500ms", "")
+	waitTimeoutRaw := fs.String("wait-timeout", "", "")
+	requireSuccess := fs.Bool("require-success", false, "")
+	validationMetadata := fs.String("metadata", "", "")
+	taskMetadata := fs.String("task-metadata", "", "")
+	if err := fs.Parse(args[1:]); err != nil {
+		return templateValidateRunInput{}, err
+	}
+	positionalCommand := fs.Args()
+	if len(positionalCommand) > 0 && (len(commandArgs) > 0 || strings.TrimSpace(*command) != "" || strings.TrimSpace(*commandJSON) != "") {
+		return templateValidateRunInput{}, usageError("use only one of --arg, --command, --command-json, or positional command after --")
+	}
+	parsedCommand, err := parseCommandFlags(commandArgs, *command, *commandJSON)
+	if err != nil {
+		return templateValidateRunInput{}, err
+	}
+	if len(positionalCommand) > 0 {
+		parsedCommand = positionalCommand
+	}
+	if len(parsedCommand) == 0 {
+		return templateValidateRunInput{}, usageError("usage: mbox templates validate-run <template-id> --project-id PROJECT [--name NAME] [--wait-timeout 5m] [--task-timeout 60] [--require-success] -- sh -lc 'echo ok'")
+	}
+	if *taskTimeoutSeconds <= 0 {
+		return templateValidateRunInput{}, usageError("task-timeout must be greater than zero")
+	}
+	interval, err := parsePositiveDuration(*intervalRaw, "interval")
+	if err != nil {
+		return templateValidateRunInput{}, err
+	}
+	var waitTimeout time.Duration
+	if strings.TrimSpace(*waitTimeoutRaw) != "" {
+		waitTimeout, err = parsePositiveDuration(*waitTimeoutRaw, "wait-timeout")
+		if err != nil {
+			return templateValidateRunInput{}, err
+		}
+	}
+	rawValidationMetadata, err := parseMetadataFlag(fs, *validationMetadata)
+	if err != nil {
+		return templateValidateRunInput{}, err
+	}
+	rawTaskMetadata, err := parseMetadataFlag(fs, *taskMetadata)
+	if err != nil {
+		return templateValidateRunInput{}, err
+	}
+	input.ProjectID = *projectID
+	input.Name = *name
+	input.Command = parsedCommand
+	input.TaskTimeoutSeconds = *taskTimeoutSeconds
+	input.Interval = interval
+	input.WaitTimeout = waitTimeout
+	input.RequireSuccess = *requireSuccess
+	input.ValidationMetadata = rawValidationMetadata
+	input.TaskMetadata = rawTaskMetadata
+	return input, nil
+}
+
+func validationSandboxID(validation map[string]any) (string, error) {
+	sandbox, ok := validation["sandbox"].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("template validation response missing sandbox")
+	}
+	sandboxID, _ := sandbox["id"].(string)
+	if strings.TrimSpace(sandboxID) == "" {
+		return "", fmt.Errorf("template validation response missing sandbox id")
+	}
+	return sandboxID, nil
 }
 
 func (a *App) runSandbox(ctx context.Context, client *Client, args []string) error {
@@ -1017,6 +1235,16 @@ func (a *App) runSandboxWait(ctx context.Context, client *Client, args []string)
 }
 
 func (a *App) waitForSandbox(ctx context.Context, client *Client, sandboxID string, options sandboxWaitOptions) error {
+	sandbox, err := a.waitForSandboxValue(ctx, client, sandboxID, options)
+	if sandbox != nil {
+		if writeErr := WriteJSON(a.streams.Stdout, sandbox); writeErr != nil {
+			return writeErr
+		}
+	}
+	return err
+}
+
+func (a *App) waitForSandboxValue(ctx context.Context, client *Client, sandboxID string, options sandboxWaitOptions) (map[string]any, error) {
 	if options.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, options.Timeout)
@@ -1035,7 +1263,7 @@ func (a *App) waitForSandbox(ctx context.Context, client *Client, sandboxID stri
 	for {
 		var sandbox map[string]any
 		if err := client.JSON(ctx, http.MethodGet, "/v1/sandboxes/"+url.PathEscape(sandboxID), nil, &sandbox); err != nil {
-			return err
+			return nil, err
 		}
 		status, _ := sandbox["status"].(string)
 		lastStatus = status
@@ -1043,27 +1271,21 @@ func (a *App) waitForSandbox(ctx context.Context, client *Client, sandboxID stri
 		if status == expectedStatus {
 			if options.RequireRuntimeRef && !lastRuntimeRef {
 				if err := sleepContext(ctx, interval); err != nil {
-					return fmt.Errorf("timed out waiting for sandbox %s to reach status %s with runtimeRef; last status=%s runtimeRef=%t", sandboxID, expectedStatus, lastStatus, lastRuntimeRef)
+					return nil, fmt.Errorf("timed out waiting for sandbox %s to reach status %s with runtimeRef; last status=%s runtimeRef=%t", sandboxID, expectedStatus, lastStatus, lastRuntimeRef)
 				}
 				continue
 			}
-			if err := WriteJSON(a.streams.Stdout, sandbox); err != nil {
-				return err
-			}
-			return nil
+			return sandbox, nil
 		}
 		if isTerminalSandboxStatus(status) {
-			if err := WriteJSON(a.streams.Stdout, sandbox); err != nil {
-				return err
-			}
-			return fmt.Errorf("sandbox %s reached terminal status %s while waiting for %s", sandboxID, status, expectedStatus)
+			return sandbox, fmt.Errorf("sandbox %s reached terminal status %s while waiting for %s", sandboxID, status, expectedStatus)
 		}
 		if err := sleepContext(ctx, interval); err != nil {
 			suffix := ""
 			if options.RequireRuntimeRef {
 				suffix = " with runtimeRef"
 			}
-			return fmt.Errorf("timed out waiting for sandbox %s to reach status %s%s; last status=%s runtimeRef=%t", sandboxID, expectedStatus, suffix, lastStatus, lastRuntimeRef)
+			return nil, fmt.Errorf("timed out waiting for sandbox %s to reach status %s%s; last status=%s runtimeRef=%t", sandboxID, expectedStatus, suffix, lastStatus, lastRuntimeRef)
 		}
 	}
 }
@@ -1274,6 +1496,16 @@ func (a *App) runTaskWait(ctx context.Context, client *Client, args []string) er
 }
 
 func (a *App) waitForTask(ctx context.Context, client *Client, taskID string, options taskWaitOptions) error {
+	task, err := a.waitForTaskValue(ctx, client, taskID, options)
+	if task != nil {
+		if writeErr := WriteJSON(a.streams.Stdout, task); writeErr != nil {
+			return writeErr
+		}
+	}
+	return err
+}
+
+func (a *App) waitForTaskValue(ctx context.Context, client *Client, taskID string, options taskWaitOptions) (map[string]any, error) {
 	if options.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, options.Timeout)
@@ -1286,20 +1518,17 @@ func (a *App) waitForTask(ctx context.Context, client *Client, taskID string, op
 	for {
 		var task map[string]any
 		if err := client.JSON(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(taskID), nil, &task); err != nil {
-			return err
+			return nil, err
 		}
 		if isTerminalTaskStatus(task["status"]) {
-			if err := WriteJSON(a.streams.Stdout, task); err != nil {
-				return err
-			}
 			status, _ := task["status"].(string)
 			if options.RequireSuccess && status != "succeeded" {
-				return fmt.Errorf("task %s finished with status %s", taskID, status)
+				return task, fmt.Errorf("task %s finished with status %s", taskID, status)
 			}
-			return nil
+			return task, nil
 		}
 		if err := sleepContext(ctx, interval); err != nil {
-			return fmt.Errorf("timed out waiting for task %s", taskID)
+			return nil, fmt.Errorf("timed out waiting for task %s", taskID)
 		}
 	}
 }
