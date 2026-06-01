@@ -68,7 +68,7 @@ export function DetailPane({
   onOpenSandboxWorkspace?: (id: string) => void
   onRefreshProjectAuditEvents?: (
     projectID: string,
-    filters?: { action?: string; actor?: string; source?: string },
+    filters?: AuditEventFilters,
   ) => Promise<AuditEvent[]>
   onClear: () => void
 }) {
@@ -148,13 +148,17 @@ function ProjectInspector({
   sandboxes: Sandbox[]
   onRefreshAuditEvents?: (
     projectID: string,
-    filters?: { action?: string; actor?: string; source?: string },
+    filters?: AuditEventFilters,
   ) => Promise<AuditEvent[]>
 }) {
   const projectSandboxes = sandboxes.filter((sandbox) => sandbox.projectId === project.id)
   const [auditAction, setAuditAction] = useState("")
   const [auditActor, setAuditActor] = useState("")
   const [auditSource, setAuditSource] = useState("")
+  const [auditRequestId, setAuditRequestId] = useState("")
+  const [auditOperation, setAuditOperation] = useState("")
+  const [auditSince, setAuditSince] = useState("")
+  const [auditUntil, setAuditUntil] = useState("")
   const [auditLoading, setAuditLoading] = useState(false)
   const [auditError, setAuditError] = useState<string | null>(null)
 
@@ -170,6 +174,10 @@ function ProjectInspector({
         action: auditAction,
         actor: auditActor,
         source: auditSource,
+        requestId: auditRequestId,
+        operation: auditOperation,
+        since: auditSince,
+        until: auditUntil,
       })
     } catch (refreshError) {
       setAuditError(refreshError instanceof Error ? refreshError.message : "Could not load audit events")
@@ -182,6 +190,10 @@ function ProjectInspector({
     setAuditAction("")
     setAuditActor("")
     setAuditSource("")
+    setAuditRequestId("")
+    setAuditOperation("")
+    setAuditSince("")
+    setAuditUntil("")
     if (!onRefreshAuditEvents) {
       return
     }
@@ -233,11 +245,19 @@ function ProjectInspector({
         action={auditAction}
         actor={auditActor}
         source={auditSource}
+        requestId={auditRequestId}
+        operation={auditOperation}
+        since={auditSince}
+        until={auditUntil}
         loading={auditLoading}
         error={auditError}
         onActionChange={setAuditAction}
         onActorChange={setAuditActor}
         onSourceChange={setAuditSource}
+        onRequestIdChange={setAuditRequestId}
+        onOperationChange={setAuditOperation}
+        onSinceChange={setAuditSince}
+        onUntilChange={setAuditUntil}
         onSubmit={submitAuditFilters}
         onClear={() => void clearAuditFilters()}
       />
@@ -266,6 +286,16 @@ function ProjectInspector({
       />
     </>
   )
+}
+
+type AuditEventFilters = {
+  action?: string
+  actor?: string
+  source?: string
+  requestId?: string
+  operation?: string
+  since?: string
+  until?: string
 }
 
 function projectPolicyText(policy: ProjectPolicy | undefined) {
@@ -384,9 +414,16 @@ function auditEventRows(events: AuditEvent[]) {
   return events.slice(0, 6).flatMap((event) => {
     const subject = event.resourceName || event.resourceType
     const actor = [event.actor || "unknown actor", event.source || "unknown source"].join(" · ")
+    const metadata = event.metadata || {}
+    const requestId = typeof metadata.requestId === "string" ? metadata.requestId : ""
+    const operation = typeof metadata.operation === "string" ? metadata.operation : ""
+    const trace = [operation ? `op:${operation}` : "", requestId ? `req:${requestId}` : ""]
+      .filter(Boolean)
+      .join(" · ")
     return [
       [event.action, `${subject}${event.createdAt ? ` · ${formatDateTime(event.createdAt)}` : ""}`],
       ["Actor/source", actor],
+      ...(trace ? ([["Trace", trace]] as Array<[string, string]>) : []),
     ] as Array<[string, string]>
   })
 }
@@ -396,11 +433,19 @@ function AuditEventGroup({
   action,
   actor,
   source,
+  requestId,
+  operation,
+  since,
+  until,
   loading,
   error,
   onActionChange,
   onActorChange,
   onSourceChange,
+  onRequestIdChange,
+  onOperationChange,
+  onSinceChange,
+  onUntilChange,
   onSubmit,
   onClear,
 }: {
@@ -408,11 +453,19 @@ function AuditEventGroup({
   action: string
   actor: string
   source: string
+  requestId: string
+  operation: string
+  since: string
+  until: string
   loading: boolean
   error: string | null
   onActionChange: (value: string) => void
   onActorChange: (value: string) => void
   onSourceChange: (value: string) => void
+  onRequestIdChange: (value: string) => void
+  onOperationChange: (value: string) => void
+  onSinceChange: (value: string) => void
+  onUntilChange: (value: string) => void
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
   onClear: () => void
 }) {
@@ -448,6 +501,42 @@ function AuditEventGroup({
             value={source}
             onChange={(event) => onSourceChange(event.target.value)}
             placeholder="sdk"
+          />
+        </div>
+        <div>
+          <Label htmlFor="audit-filter-request-id">Request ID</Label>
+          <Input
+            id="audit-filter-request-id"
+            value={requestId}
+            onChange={(event) => onRequestIdChange(event.target.value)}
+            placeholder="req-..."
+          />
+        </div>
+        <div>
+          <Label htmlFor="audit-filter-operation">Operation</Label>
+          <Input
+            id="audit-filter-operation"
+            value={operation}
+            onChange={(event) => onOperationChange(event.target.value)}
+            placeholder="sandbox.launch"
+          />
+        </div>
+        <div>
+          <Label htmlFor="audit-filter-since">Since</Label>
+          <Input
+            id="audit-filter-since"
+            value={since}
+            onChange={(event) => onSinceChange(event.target.value)}
+            placeholder="2026-06-01T00:00:00Z"
+          />
+        </div>
+        <div>
+          <Label htmlFor="audit-filter-until">Until</Label>
+          <Input
+            id="audit-filter-until"
+            value={until}
+            onChange={(event) => onUntilChange(event.target.value)}
+            placeholder="2026-06-01T23:59:59Z"
           />
         </div>
         <div className="audit-event-filter-actions">

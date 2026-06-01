@@ -350,12 +350,27 @@ export function useMboxData() {
   }, [])
 
   const refreshProjectAuditEvents = useCallback(
-    async (projectID: string, filters: { action?: string; actor?: string; source?: string } = {}) => {
+    async (
+      projectID: string,
+      filters: {
+        action?: string
+        actor?: string
+        source?: string
+        requestId?: string
+        operation?: string
+        since?: string
+        until?: string
+      } = {},
+    ) => {
       const result = await listProjectAuditEvents(projectID, {
         limit: 20,
         action: filters.action,
         actor: filters.actor,
         source: filters.source,
+        requestId: filters.requestId,
+        operation: filters.operation,
+        since: filters.since,
+        until: filters.until,
       })
       const events = result.items || []
       setProjectAuditEvents((current) => ({ ...current, [projectID]: events }))

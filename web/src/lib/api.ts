@@ -122,6 +122,10 @@ export type AuditEventListOptions = {
   source?: string
   resourceType?: string
   resourceId?: string
+  requestId?: string
+  operation?: string
+  since?: string
+  until?: string
 }
 
 export function listProjectAuditEvents(projectID: string, options: AuditEventListOptions = {}) {
@@ -141,6 +145,18 @@ export function listProjectAuditEvents(projectID: string, options: AuditEventLis
   }
   if (options.resourceId?.trim()) {
     query.set("resourceId", options.resourceId.trim())
+  }
+  if (options.requestId?.trim()) {
+    query.set("requestId", options.requestId.trim())
+  }
+  if (options.operation?.trim()) {
+    query.set("operation", options.operation.trim())
+  }
+  if (options.since?.trim()) {
+    query.set("since", options.since.trim())
+  }
+  if (options.until?.trim()) {
+    query.set("until", options.until.trim())
   }
   return request<ListResponse<AuditEvent>>(`/v1/projects/${projectID}/audit-events?${query.toString()}`)
 }

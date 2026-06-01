@@ -46,7 +46,15 @@ export function AppShell({
   onOpenSandboxWorkspace?: (id: string) => void
   onRefreshProjectAuditEvents?: (
     projectID: string,
-    filters?: { action?: string; actor?: string; source?: string },
+    filters?: {
+      action?: string
+      actor?: string
+      source?: string
+      requestId?: string
+      operation?: string
+      since?: string
+      until?: string
+    },
   ) => Promise<AuditEvent[]>
   projects: Project[]
   projectAuditEvents: Record<string, AuditEvent[]>

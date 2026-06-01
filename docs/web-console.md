@@ -13,7 +13,7 @@ The current console supports the first product slice:
 - project launch policy and credential-reference visibility in the project table and selected-resource inspector
 - project quota policy visibility in the project table and selected-resource inspector
 - project usage visibility in the project table and inspector, backed by product-record counts and declared sandbox request totals rather than live Kubernetes metrics
-- recent project audit-event visibility in the selected-resource inspector, with action/actor/source display and filtering backed by product records rather than auth or Kubernetes audit logs
+- recent project audit-event visibility in the selected-resource inspector, with action, actor, source, request ID, operation, and time-window filtering backed by product records rather than auth or Kubernetes audit logs
 - sandbox launch preflight visibility for obvious project policy and active-sandbox quota blockers, while the API remains the authoritative enforcement point
 - template library for ready-to-run environments, with create/edit dialogs that foreground runtime type, use case, entrypoints, resource preset, and workspace storage
 - advanced template settings for image, startup command, working directory, CPU, memory, env, secret refs, network preset, and lifecycle JSON
@@ -202,7 +202,7 @@ Useful manual checks:
 
 - `http://127.0.0.1:5174/` loads the console.
 - API status shows healthy when the Go server is running.
-- Selecting a project shows recent activity with actor/source attribution, and filtering by actor or source reloads the project audit feed through the API.
+- Selecting a project shows recent activity with actor/source attribution and trace fields when present, and filtering by action, actor, source, request ID, operation, since, or until reloads the project audit feed through the API.
 - Selecting a project shows active/running declared sandbox request totals in the Usage group; these are summed from saved template requests and may show missing or invalid request counts for incomplete product records.
 - Project, template, and sandbox create dialogs fill the modal width on desktop and mobile.
 - Templates table shows Environment, Use case, Entrypoints, Preset, and Status rather than leading with raw image/resource fields.

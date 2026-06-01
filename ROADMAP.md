@@ -223,6 +223,7 @@ Current status:
 - Done: CLI `tasks wait` polling helper for automation scripts that need SDK-style task terminal-state waiting without parsing the NDJSON watch stream.
 - Done: read-only runtime managed-resource inventory, namespace/kind filtering, live kind/namespace/owner summary, and structured OpenAPI/SDK orphan-audit contracts across API, CLI, SDK, OpenAPI, docs, and smoke coverage, reusing the runtime auditor without adding automatic cleanup or new write paths.
 - Done: Web Runtime inventory view at `#runtime` for read-only operator triage over `/v1/runtime/resources`, including summary, owner, label, and disabled-auditor handling without adding runtime write actions.
+- Done: Web project inspector audit-feed ergonomics for request ID, operation, and RFC3339 time-window filters, with trace metadata display when present.
 - Remaining: user/project RBAC beyond the shared automation token, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
 
 ## Phase 4: Upper-layer Workflow Integrations
@@ -337,6 +338,7 @@ First slice status:
 42. Done: action-specific audit metadata operation filtering with `operation` query support and JSONB expression indexes.
 43. Done: audit feed RFC3339 `since` / `until` time-window filtering for bounded operator investigations.
 44. Done: Web Runtime inventory route for read-only live runtime triage over the existing runtime auditor.
-45. Next: operational hardening around richer live runtime usage metrics or remaining audit-feed ergonomics.
+45. Done: Web project inspector filters for request-correlated and operation-scoped audit feed slices.
+46. Next: operational hardening around richer live runtime usage metrics or remaining audit-feed ergonomics.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.
