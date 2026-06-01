@@ -7,8 +7,8 @@ This document describes the currently implemented mbox web console. It is a sepa
 The current console supports the first product slice:
 
 - API health check through `/healthz`
-- view-switched left navigation for Projects, Environments, and Sandboxes
-- hash-routable console locations for `#projects`, `#environments`, `#sandboxes`, and `#sandboxes/{sandboxID}`
+- view-switched left navigation for Projects, Environments, Sandboxes, and Runtime
+- hash-routable console locations for `#projects`, `#environments`, `#sandboxes`, `#sandboxes/{sandboxID}`, and `#runtime`
 - project list and create dialog
 - project launch policy and credential-reference visibility in the project table and selected-resource inspector
 - project quota policy visibility in the project table and selected-resource inspector
@@ -18,6 +18,7 @@ The current console supports the first product slice:
 - template library for ready-to-run environments, with create/edit dialogs that foreground runtime type, use case, entrypoints, resource preset, and workspace storage
 - advanced template settings for image, startup command, working directory, CPU, memory, env, secret refs, network preset, and lifecycle JSON
 - sandbox list, simplified guarded launch dialog, stop/start actions, and delete confirmation dialog
+- read-only Runtime inventory view backed by `/v1/runtime/resources`, with live kind, namespace, owner, label, and checked-at visibility for mbox-managed Kubernetes resources
 - selected resource inspection panel for resource identity and metadata
 - dedicated sandbox detail page with a main workspace runtime panel and local inspector
 - browser terminal for ready sandboxes, with a starting state while new runtimes are pending
@@ -29,7 +30,7 @@ The current console supports the first product slice:
 - toast feedback for API failures and successful writes
 - runtime readiness notices when terminal access is blocked by missing runtime projection or non-running sandbox status
 
-The console does not yet provide artifact upload, object-store retention, credential injection, or a full policy editor. Project launch policy, quota policy, and credential-reference visibility exists, while broader policy and credential management remain roadmap items. Pipeline and deployment screens should be treated as upper-layer integrations, not as the base console model.
+The console does not yet provide artifact upload, object-store retention, credential injection, live runtime metrics, runtime cleanup, or a full policy editor. Project launch policy, quota policy, and credential-reference visibility exists, while broader policy and credential management remain roadmap items. Pipeline and deployment screens should be treated as upper-layer integrations, not as the base console model.
 
 ## Local Development
 
@@ -96,7 +97,7 @@ Key files:
 - `web/src/lib/resource-utils.ts`: resource naming, runtime text, command/port parsing, storage summaries, and form cleanup helpers.
 - `web/src/components/console/`: app shell, left rail, summary strip, detail pane, table state, status badges, and shared resource cells.
 - `web/src/features/resources/`: project, template, and sandbox tables plus sandbox lifecycle and resource create/delete dialogs.
-- `web/src/features/runtime/`: Runtime Workspace, terminal, storage, preview ports, execution tasks, logs, and events panels.
+- `web/src/features/runtime/`: Runtime Workspace, terminal, storage, preview ports, execution tasks, logs, events, and runtime inventory panels.
 - `web/src/components/ui/`: local shadcn source components.
 - `web/vite.config.ts`: Vite, Tailwind, alias, dev port, and API proxy configuration.
 - `web/components.json`: shadcn project configuration.
@@ -151,6 +152,8 @@ The Preview tab edits the sandbox's declared `ports` list. A user can start a se
 The Tasks tab creates controlled command tasks through `POST /v1/sandboxes/{sandboxID}/tasks`. It stays disabled until the sandbox is `running` with a `runtimeRef`, then watches active task events, exposes cancel for `queued` and `running` tasks, and records status, command, live stdout/stderr, exit result, timeout, and truncation state. The UI input is intentionally simple; API and CLI clients should use array-form commands directly, and shell behavior should be explicit through commands such as `sh -lc`.
 
 The Artifacts tab registers output references through `POST /v1/sandboxes/{sandboxID}/artifacts` and lists the sandbox's artifact history. It can link an artifact to an existing task. `workspace://` file artifacts can be downloaded while the sandbox is running and runtime access can read the resolved workspace mount. The tab also exposes a capture action for supported workspace files; captured content is retained server-side with size, sha256, and storage-provider metadata so it can still be downloaded after runtime cleanup. API, CLI, and SDK clients can upload retained bytes directly; the current web tab does not expose a client-file upload control yet. External HTTPS URLs, object-store URIs, and directories remain reference-only.
+
+The Runtime view opens at `#runtime` and lists the current mbox-managed runtime resources reported by the runtime auditor. It is intentionally cross-project and read-only: the summary shows total resources, adapter, namespace counts, and checked-at time, while the table shows resource kind/name, namespace, label-derived owner, selected mbox labels, and creation time. If the server process has no runtime auditor configured, the view shows a local unavailable state instead of failing the rest of the console. Cleanup remains in the explicit orphan-cleanup API/CLI flow and is not exposed as a Runtime table action.
 
 ## Design System
 
@@ -209,6 +212,7 @@ Useful manual checks:
 - Invalid entrypoint text such as `web:abc` shows an error and does not save a template with missing ports.
 - Template create/edit can still save advanced image, command, resources, ports, env, secret refs, network policy, and lifecycle JSON.
 - Left rail buttons switch between Projects, Templates, and Sandboxes instead of scrolling a combined page.
+- The Runtime rail item opens `#runtime` and shows read-only managed runtime resources when the runtime auditor is configured.
 - Switching away from Sandboxes clears sandbox selection and leaves any sandbox detail hash.
 - Opening a sandbox workspace updates the URL to `#sandboxes/{sandboxID}`; refreshing that URL reopens the detail page after data loads.
 - Sandbox detail shows workspace readiness checks for runtime record projection, preview surface, workspace persistence, and run intent above the Runtime Workspace.
@@ -224,4 +228,5 @@ Useful manual checks:
 - The Preview tab can add and remove TCP ports, and links stay disabled until the sandbox is running.
 - The Tasks tab can run a simple command such as `pwd`, streams stdout/stderr while active, and keeps task execution disabled until the sandbox is running.
 - The Artifacts tab can register `workspace://` file references, capture retained content for supported workspace files, and show download actions for supported artifacts.
+- The Runtime route handles both configured auditors and disabled-auditor `503` responses without breaking project, environment, or sandbox views.
 - No page-level horizontal overflow appears on mobile.

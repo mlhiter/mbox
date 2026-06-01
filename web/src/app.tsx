@@ -6,6 +6,7 @@ import { SummaryStrip } from "@/components/console/summary-strip"
 import { ProjectTable } from "@/features/resources/project-table"
 import { SandboxTable } from "@/features/resources/sandbox-table"
 import { TemplateTable } from "@/features/resources/template-table"
+import { RuntimeInventory } from "@/features/runtime/runtime-inventory"
 import { SandboxDetailFallback, SandboxDetailPage } from "@/features/runtime/sandbox-detail-page"
 import { useMboxData } from "@/hooks/use-mbox-data"
 import { collectionFor } from "@/lib/resource-utils"
@@ -31,6 +32,11 @@ const workspaceCopy: Record<WorkspaceView, { eyebrow: string; title: string; not
     eyebrow: "Execution",
     title: "Sandbox",
     note: "Operate one runtime workspace, inspect boundaries, and review outputs.",
+  },
+  runtime: {
+    eyebrow: "Live runtime",
+    title: "Runtime",
+    note: "Inspect mbox-managed Kubernetes resources reported by the runtime auditor.",
   },
 }
 
@@ -63,6 +69,9 @@ function routeFromHash(hash: string): RouteState {
   if (section === "sandboxes" && id) {
     return { view: "sandbox-detail", sandboxId: id }
   }
+  if (section === "runtime") {
+    return { view: "runtime" }
+  }
   return { view: "sandboxes" }
 }
 
@@ -79,6 +88,9 @@ function hashForRoute(route: RouteState) {
   }
   if (route.view === "sandbox-detail" && route.sandboxId) {
     return `#sandboxes/${encodeURIComponent(route.sandboxId)}`
+  }
+  if (route.view === "runtime") {
+    return "#runtime"
   }
   return "#sandboxes"
 }
@@ -114,10 +126,13 @@ export function App() {
     projects,
     refreshSandbox,
     refreshProjectAuditEvents,
+    refreshRuntimeResources,
     sandboxes,
     selectedSandbox,
     selection,
     setSelection,
+    runtimeResources,
+    runtimeResourcesError,
     startSandbox,
     stopSandbox,
     templates,
@@ -133,8 +148,11 @@ export function App() {
     if (activeView === "templates") {
       return templates.length
     }
+    if (activeView === "runtime") {
+      return runtimeResources?.summary.total ?? 0
+    }
     return sandboxes.length
-  }, [activeView, projects.length, sandboxes.length, templates.length])
+  }, [activeView, projects.length, runtimeResources?.summary.total, sandboxes.length, templates.length])
 
   useEffect(() => {
     void loadAll()
@@ -229,7 +247,7 @@ export function App() {
       templates={templates}
       sandboxes={sandboxes}
       selection={selection}
-      showDetailPane={activeView !== "sandbox-detail"}
+      showDetailPane={activeView !== "sandbox-detail" && activeView !== "runtime"}
       onViewChange={navigateToView}
       onValidateTemplate={validateTemplateAndOpen}
       onOpenSandboxWorkspace={openSandboxWorkspace}
@@ -332,6 +350,14 @@ export function App() {
                 onDelete={deleteSandbox}
                 onStart={startSandbox}
                 onStop={stopSandbox}
+              />
+            ) : null}
+            {activeView === "runtime" ? (
+              <RuntimeInventory
+                inventory={runtimeResources}
+                loading={loading}
+                error={runtimeResourcesError}
+                onRefresh={refreshRuntimeResources}
               />
             ) : null}
           </div>

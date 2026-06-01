@@ -18,6 +18,7 @@ import type {
   RuntimeOrphanAudit,
   RuntimeOrphanCleanupRequest,
   RuntimeOrphanCleanupResult,
+  RuntimeResourceList,
   RuntimeSession,
   RuntimeTarget,
   SandboxPort,
@@ -73,6 +74,18 @@ export function getInfo() {
 export function getRuntimeOrphans(namespace?: string) {
   const query = namespace ? `?namespace=${encodeURIComponent(namespace)}` : ""
   return request<RuntimeOrphanAudit>(`/v1/runtime/orphans${query}`)
+}
+
+export function getRuntimeResources(options: { namespace?: string; kind?: string } = {}) {
+  const query = new URLSearchParams()
+  if (options.namespace?.trim()) {
+    query.set("namespace", options.namespace.trim())
+  }
+  if (options.kind?.trim()) {
+    query.set("kind", options.kind.trim())
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : ""
+  return request<RuntimeResourceList>(`/v1/runtime/resources${suffix}`)
 }
 
 export function cleanupRuntimeOrphan(payload: RuntimeOrphanCleanupRequest) {
@@ -248,15 +261,15 @@ export function getPreviewPorts(sandboxID: string) {
 }
 
 export function listExecutionTasks(sandboxID: string) {
-	return request<ListResponse<ExecutionTask>>(`/v1/sandboxes/${sandboxID}/tasks`)
+  return request<ListResponse<ExecutionTask>>(`/v1/sandboxes/${sandboxID}/tasks`)
 }
 
 export function listRuntimeSessions(sandboxID: string) {
-	return request<ListResponse<RuntimeSession>>(`/v1/sandboxes/${sandboxID}/sessions`)
+  return request<ListResponse<RuntimeSession>>(`/v1/sandboxes/${sandboxID}/sessions`)
 }
 
 export function listArtifacts(sandboxID: string) {
-	return request<ListResponse<Artifact>>(`/v1/sandboxes/${sandboxID}/artifacts`)
+  return request<ListResponse<Artifact>>(`/v1/sandboxes/${sandboxID}/artifacts`)
 }
 
 export function createArtifact(

@@ -1,4 +1,4 @@
-import { Boxes, FolderKanban, Layers3 } from "lucide-react"
+import { Boxes, FolderKanban, Layers3, ServerCog } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { APIStatus, WorkspaceView } from "@/types"
 
@@ -10,6 +10,7 @@ const navItems: Array<{
   { id: "projects", label: "Projects", icon: FolderKanban },
   { id: "templates", label: "Environments", icon: Layers3 },
   { id: "sandboxes", label: "Sandboxes", icon: Boxes },
+  { id: "runtime", label: "Runtime", icon: ServerCog },
 ]
 
 export function Rail({

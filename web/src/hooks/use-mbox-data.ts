@@ -11,6 +11,7 @@ import {
   getProjectPolicy,
   getProjectQuotaPolicy,
   getProjectUsage,
+  getRuntimeResources,
   getSandbox,
   listProjectAuditEvents,
   listProjectCredentials,
@@ -37,6 +38,7 @@ import type {
   ProjectPolicy,
   ProjectQuotaPolicy,
   ProjectUsage,
+  RuntimeResourceList,
   Sandbox,
   Selection,
   Template,
@@ -54,6 +56,8 @@ export function useMboxData() {
   const [projectCredentials, setProjectCredentials] = useState<Record<string, ProjectCredential[]>>({})
   const [projectUsage, setProjectUsage] = useState<Record<string, ProjectUsage>>({})
   const [projectAuditEvents, setProjectAuditEvents] = useState<Record<string, AuditEvent[]>>({})
+  const [runtimeResources, setRuntimeResources] = useState<RuntimeResourceList | null>(null)
+  const [runtimeResourcesError, setRuntimeResourcesError] = useState<string | null>(null)
   const [templates, setTemplates] = useState<Template[]>([])
   const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
   const [selection, setSelection] = useState<Selection | null>(null)
@@ -151,6 +155,15 @@ export function useMboxData() {
         }),
       )
       setProjectAuditEvents(Object.fromEntries(auditEvents))
+      try {
+        const inventory = await getRuntimeResources()
+        setRuntimeResources(inventory)
+        setRuntimeResourcesError(null)
+      } catch (runtimeError) {
+        const message = runtimeError instanceof Error ? runtimeError.message : "Runtime inventory unavailable"
+        setRuntimeResources(null)
+        setRuntimeResourcesError(message)
+      }
       setAPIState({
         state: health.status === "ok" ? "ok" : "bad",
         label: health.status || "Unknown",
@@ -351,6 +364,20 @@ export function useMboxData() {
     [],
   )
 
+  const refreshRuntimeResources = useCallback(async () => {
+    try {
+      const inventory = await getRuntimeResources()
+      setRuntimeResources(inventory)
+      setRuntimeResourcesError(null)
+      return inventory
+    } catch (runtimeError) {
+      const message = runtimeError instanceof Error ? runtimeError.message : "Runtime inventory unavailable"
+      setRuntimeResources(null)
+      setRuntimeResourcesError(message)
+      throw runtimeError
+    }
+  }, [])
+
   return {
     apiState,
     counts,
@@ -369,7 +396,10 @@ export function useMboxData() {
     projectUsage,
     projects,
     refreshProjectAuditEvents,
+    refreshRuntimeResources,
     refreshSandbox,
+    runtimeResources,
+    runtimeResourcesError,
     sandboxes,
     selectedSandbox,
     selection,

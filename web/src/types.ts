@@ -34,7 +34,7 @@ export type APIInfo = {
 
 export type ResourceKind = "project" | "template" | "sandbox"
 
-export type WorkspaceView = "projects" | "templates" | "sandboxes" | "sandbox-detail"
+export type WorkspaceView = "projects" | "templates" | "sandboxes" | "sandbox-detail" | "runtime"
 
 export type RuntimeRef = {
   adapter?: string
@@ -48,8 +48,28 @@ export type ManagedResource = {
   kind: string
   namespace?: string
   name: string
+  owner?: ManagedResourceOwner
   labels?: Record<string, string>
   createdAt?: string
+}
+
+export type ManagedResourceCount = {
+  name: string
+  count: number
+}
+
+export type ManagedResourceOwner = {
+  kind: "sandbox" | "template"
+  projectId?: string
+  sandboxId?: string
+  templateId?: string
+}
+
+export type ManagedResourceSummary = {
+  total: number
+  byKind: ManagedResourceCount[]
+  byNamespace: ManagedResourceCount[]
+  byOwner: ManagedResourceCount[]
 }
 
 export type ManagedResourceRef = {
@@ -57,6 +77,13 @@ export type ManagedResourceRef = {
   kind: string
   namespace: string
   name: string
+}
+
+export type RuntimeResourceList = {
+  adapter: string
+  checkedAt: string
+  summary: ManagedResourceSummary
+  items: ManagedResource[]
 }
 
 export type RuntimeOrphanReason =

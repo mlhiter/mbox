@@ -598,6 +598,10 @@
   min-width: 860px;
 }
 
+.records-table .runtime-inventory-table {
+  min-width: 980px;
+}
+
 .records-table th,
 .records-table td {
   padding: 11px 18px;
@@ -748,6 +752,31 @@
 .records-table .sandbox-table th:nth-child(6),
 .records-table .sandbox-table td:nth-child(6) {
   width: 206px;
+}
+
+.records-table .runtime-inventory-table th:nth-child(1),
+.records-table .runtime-inventory-table td:nth-child(1) {
+  width: 24%;
+}
+
+.records-table .runtime-inventory-table th:nth-child(2),
+.records-table .runtime-inventory-table td:nth-child(2) {
+  width: 18%;
+}
+
+.records-table .runtime-inventory-table th:nth-child(3),
+.records-table .runtime-inventory-table td:nth-child(3) {
+  width: 20%;
+}
+
+.records-table .runtime-inventory-table th:nth-child(4),
+.records-table .runtime-inventory-table td:nth-child(4) {
+  width: 26%;
+}
+
+.records-table .runtime-inventory-table th:nth-child(5),
+.records-table .runtime-inventory-table td:nth-child(5) {
+  width: 12%;
 }
 
 .records-table tr {
@@ -936,6 +965,89 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.runtime-inventory-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  background: linear-gradient(180deg, oklch(0.999 0.003 82), var(--paper));
+}
+
+.runtime-inventory-summary > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  min-height: 78px;
+  padding: 13px 18px;
+}
+
+.runtime-inventory-summary > div + div {
+  border-left: 1px solid var(--line);
+}
+
+.runtime-inventory-summary span,
+.runtime-inventory-summary small {
+  color: var(--muted-copy);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.runtime-inventory-summary strong {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-inventory-resource,
+.runtime-inventory-owner {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.runtime-inventory-resource strong,
+.runtime-inventory-owner strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.runtime-inventory-resource code,
+.runtime-inventory-owner code,
+.runtime-inventory-labels code {
+  color: var(--muted-copy);
+  font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
+    monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.runtime-inventory-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  min-width: 0;
+}
+
+.runtime-inventory-labels code {
+  display: inline-flex;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: oklch(0.982 0.006 82);
+  padding: 2px 7px;
+}
+
+.runtime-inventory-muted {
+  color: var(--muted-copy);
+  font-size: 12px;
 }
 
 .sandbox-title-cell,
@@ -3025,6 +3137,7 @@
   }
 
   .runtime-output-summary,
+  .runtime-inventory-summary,
   .workspace-readiness-grid,
   .boundary-summary-grid,
   .boundary-columns,
@@ -3034,6 +3147,7 @@
   }
 
   .runtime-output-summary > div + div,
+  .runtime-inventory-summary > div + div,
   .workspace-readiness-item + .workspace-readiness-item,
   .runtime-ledger-head > div + div {
     border-top: 1px solid var(--line);
