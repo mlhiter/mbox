@@ -592,6 +592,24 @@ function schemaComponents() {
       "storageClassName",
       "message",
     ]),
+    RuntimeTarget: objectSchema(["namespace", "podName", "container", "phase", "selector"], [
+      "commands",
+      "storage",
+    ]),
+    RuntimeEvent: objectSchema([], [
+      "type",
+      "reason",
+      "message",
+      "count",
+      "firstTimestamp",
+      "lastTimestamp",
+    ]),
+    ExecutionTaskEvent: objectSchema(["type", "createdAt"], [
+      "task",
+      "stream",
+      "data",
+      "offset",
+    ]),
     RuntimeOrphanAudit: objectSchema([
       "adapter",
       "checkedAt",

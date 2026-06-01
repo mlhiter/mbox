@@ -525,16 +525,16 @@ func openAPIComponents() map[string]any {
 			"SandboxUpdate":                 sandboxUpdateSchema(),
 			"SandboxPort":                   objectSchema(requiredProps("name", "port", "protocol"), prop("name", stringSchema()), prop("port", integerSchema()), prop("protocol", stringSchema()), prop("previewUrl", stringSchema())),
 			"RuntimeRef":                    objectSchema(requiredProps("kind", "namespace", "name"), prop("adapter", stringSchema()), prop("kind", stringSchema()), prop("namespace", stringSchema()), prop("name", stringSchema())),
-			"RuntimeTarget":                 looseObjectSchema("Resolved runtime Pod target."),
+			"RuntimeTarget":                 runtimeTargetSchema(),
 			"LogResult":                     objectSchema(requiredProps("target", "logs"), prop("target", schemaRef("RuntimeTarget")), prop("logs", stringSchema())),
-			"RuntimeEvent":                  looseObjectSchema("Kubernetes event summary."),
+			"RuntimeEvent":                  runtimeEventSchema(),
 			"PreviewPortsResult":            objectSchema(requiredProps("target", "items"), prop("target", schemaRef("RuntimeTarget")), prop("items", arraySchema(schemaRef("PreviewPort")))),
 			"PreviewPort":                   objectSchema(requiredProps("name", "port", "protocol", "available"), prop("name", stringSchema()), prop("port", integerSchema()), prop("protocol", stringSchema()), prop("previewUrl", stringSchema()), prop("available", boolSchema()), prop("message", stringSchema())),
 			"RuntimeSession":                runtimeSessionSchema(false),
 			"RuntimeSessionCreate":          runtimeSessionSchema(true),
 			"ExecutionTask":                 executionTaskSchema(false),
 			"ExecutionTaskCreate":           executionTaskSchema(true),
-			"ExecutionTaskEvent":            looseObjectSchema("Task watch event. Each line is one JSON object."),
+			"ExecutionTaskEvent":            executionTaskEventSchema(),
 			"Artifact":                      artifactSchema(false),
 			"ArtifactCreate":                artifactSchema(true),
 			"ArtifactContent":               artifactContentSchema(),
@@ -933,6 +933,46 @@ func runtimeResourceObservationSchema() map[string]any {
 		prop("message", stringSchema()),
 	)
 	schema["description"] = "Best-effort read-only runtime observation from current Kubernetes Pod and PVC state. It is not metrics-server CPU or memory usage, quota, billing, or capacity reservation."
+	return schema
+}
+
+func runtimeTargetSchema() map[string]any {
+	schema := objectSchema(requiredProps("namespace", "podName", "container", "phase", "selector"),
+		prop("namespace", stringSchema()),
+		prop("podName", stringSchema()),
+		prop("container", stringSchema()),
+		prop("phase", stringSchema()),
+		prop("selector", stringSchema()),
+		prop("commands", arraySchema(stringSchema())),
+		prop("storage", arraySchema(schemaRef("RuntimeStorage"))),
+	)
+	schema["description"] = "Resolved runtime Pod target used by terminal, task, logs, preview, and workspace artifact access routes."
+	return schema
+}
+
+func runtimeEventSchema() map[string]any {
+	schema := objectSchema(nil,
+		prop("type", stringSchema()),
+		prop("reason", stringSchema()),
+		prop("message", stringSchema()),
+		prop("count", integerSchema()),
+		prop("firstTimestamp", dateTimeSchema()),
+		prop("lastTimestamp", dateTimeSchema()),
+	)
+	schema["description"] = "Kubernetes event summary for the resolved sandbox runtime target."
+	return schema
+}
+
+func executionTaskEventSchema() map[string]any {
+	schema := objectSchema(requiredProps("type", "createdAt"),
+		prop("type", enumSchema("snapshot", "status", "output", "done")),
+		prop("task", schemaRef("ExecutionTask")),
+		prop("stream", enumSchema("stdout", "stderr")),
+		prop("data", stringSchema()),
+		prop("offset", integerSchema()),
+		prop("createdAt", dateTimeSchema()),
+	)
+	schema["description"] = "One newline-delimited task watch event. Snapshot, status, and done events include task; output events include stream and data."
 	return schema
 }
 

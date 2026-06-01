@@ -534,6 +534,20 @@ export const SDK_SCHEMA_CONTRACT = [
     properties: ["name", "mountPath", "claimName", "phase", "capacity", "storageClassName", "message"],
   },
   {
+    schema: "RuntimeTarget",
+    required: ["namespace", "podName", "container", "phase", "selector"],
+    properties: ["namespace", "podName", "container", "phase", "selector", "commands", "storage"],
+  },
+  {
+    schema: "RuntimeEvent",
+    properties: ["type", "reason", "message", "count", "firstTimestamp", "lastTimestamp"],
+  },
+  {
+    schema: "ExecutionTaskEvent",
+    required: ["type", "createdAt"],
+    properties: ["type", "task", "stream", "data", "offset", "createdAt"],
+  },
+  {
     schema: "RuntimeOrphanAudit",
     required: ["adapter", "checkedAt", "resourceCount", "orphanCount", "expectedClean", "items"],
     properties: ["adapter", "checkedAt", "namespace", "resourceCount", "orphanCount", "expectedClean", "items"],
