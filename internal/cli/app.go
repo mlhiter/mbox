@@ -185,6 +185,7 @@ Commands:
   tasks list <sandbox-id>
   tasks create <sandbox-id> --arg sh --arg -lc --arg 'echo ok' [--timeout 60]
   tasks get|cancel|watch <task-id>
+  tasks artifacts <task-id>
   tasks wait <task-id> [--interval 1500ms] [--timeout 5m] [--require-success]
   artifacts list <sandbox-id>
   artifacts create <sandbox-id> --kind KIND --name NAME --uri URI
@@ -1015,7 +1016,7 @@ func (a *App) runSession(ctx context.Context, client *Client, args []string) err
 
 func (a *App) runTask(ctx context.Context, client *Client, args []string) error {
 	if len(args) == 0 {
-		return usageError("usage: mbox tasks list|create|get|cancel|watch|wait")
+		return usageError("usage: mbox tasks list|create|get|cancel|watch|wait|artifacts")
 	}
 	switch args[0] {
 	case "list":
@@ -1038,6 +1039,11 @@ func (a *App) runTask(ctx context.Context, client *Client, args []string) error 
 			return usageError("usage: mbox tasks watch <task-id>")
 		}
 		return a.stream(ctx, client, "/v1/tasks/"+url.PathEscape(args[1])+"/events")
+	case "artifacts":
+		if len(args) != 2 {
+			return usageError("usage: mbox tasks artifacts <task-id>")
+		}
+		return a.get(ctx, client, "/v1/tasks/"+url.PathEscape(args[1])+"/artifacts")
 	case "wait":
 		return a.runTaskWait(ctx, client, args[1:])
 	case "create":
@@ -1071,7 +1077,7 @@ func (a *App) runTask(ctx context.Context, client *Client, args []string) error 
 		SetRaw(payload, "metadata", rawMetadata)
 		return a.post(ctx, client, "/v1/sandboxes/"+url.PathEscape(sandboxID)+"/tasks", payload)
 	default:
-		return usageError("usage: mbox tasks list|create|get|cancel|watch|wait")
+		return usageError("usage: mbox tasks list|create|get|cancel|watch|wait|artifacts")
 	}
 }
 

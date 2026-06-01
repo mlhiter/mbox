@@ -382,6 +382,7 @@ Verify the sandbox and task artifact lists:
 ```sh
 curl -fsS "http://127.0.0.1:18080/v1/sandboxes/$SANDBOX_ID/artifacts"
 curl -fsS "http://127.0.0.1:18080/v1/tasks/$TASK_ID/artifacts"
+go run ./cmd/mbox tasks artifacts "$TASK_ID"
 ```
 
 Capture and read content for a supported workspace file artifact while the sandbox is running:

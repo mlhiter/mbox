@@ -287,6 +287,7 @@ go run ./cmd/mbox tasks create <sandbox-id> --arg sh --arg -lc --arg 'pwd && ech
 go run ./cmd/mbox tasks wait <task-id> --timeout 2m
 go run ./cmd/mbox tasks wait <task-id> --timeout 2m --require-success
 go run ./cmd/mbox tasks watch <task-id>
+go run ./cmd/mbox tasks artifacts <task-id>
 go run ./cmd/mbox sessions list <sandbox-id>
 go run ./cmd/mbox artifacts upload <artifact-id> --file report.txt --content-type text/plain
 ```

@@ -800,6 +800,34 @@ func TestTasksCreateParsesRepeatedArgs(t *testing.T) {
 	}
 }
 
+func TestTasksArtifactsUsesTaskArtifactsRoute(t *testing.T) {
+	var method string
+	var path string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[{"id":"artifact-1","taskId":"task-1","kind":"report"}]}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"tasks", "artifacts", "task-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || path != "/v1/tasks/task-1/artifacts" {
+		t.Fatalf("unexpected request %s %s", method, path)
+	}
+	if !strings.Contains(stdout.String(), `"artifact-1"`) {
+		t.Fatalf("expected JSON response, got %q", stdout.String())
+	}
+}
+
 func TestTasksWaitPollsUntilTerminalStatus(t *testing.T) {
 	var requests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
