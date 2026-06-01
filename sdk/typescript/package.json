@@ -23,6 +23,7 @@
     "prepublishOnly": "npm run verify",
     "smoke": "npm run build && node scripts/smoke.mjs",
     "smoke:api": "npm run build && node scripts/smoke-api.mjs",
+    "smoke:runtime": "npm run build && node scripts/smoke-runtime.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "verify": "npm run typecheck && npm run smoke && npm run check:pack && npm run check:pack:consumer"
   },

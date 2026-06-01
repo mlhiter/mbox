@@ -278,6 +278,7 @@ cleanup_namespace() {
 require_command curl
 require_command jq
 require_command kubectl
+require_command npm
 
 echo "Checking mbox API at $API_URL"
 api_json GET /healthz | jq -e '.status == "ok"' >/dev/null
@@ -581,6 +582,16 @@ artifact="$(api_json POST "/v1/sandboxes/$sandbox_id/artifacts" "$artifact_json"
 artifact_id="$(jq -r '.id' <<<"$artifact")"
 api_raw GET "/v1/artifacts/$artifact_id/content" | grep -F "task-watch-ok" >/dev/null
 api_json POST "/v1/artifacts/$artifact_id/capture" | jq -e --arg backend "$EXPECTED_ARTIFACT_CONTENT_BACKEND" '.retainedContent.sizeBytes > 0 and (.retainedContent.sha256 | length == 64) and .retainedContent.storageProvider == $backend' >/dev/null
+
+echo "Checking mbox TypeScript SDK runtime path"
+(
+	cd sdk/typescript
+	MBOX_API_URL="$API_URL" \
+		MBOX_SDK_RUNTIME_SANDBOX_ID="$sandbox_id" \
+		MBOX_EXPECTED_ARTIFACT_CONTENT_BACKEND="$EXPECTED_ARTIFACT_CONTENT_BACKEND" \
+		MBOX_SMOKE_TIMEOUT_SECONDS="$TIMEOUT_SECONDS" \
+		npm run smoke:runtime
+)
 
 echo "Checking mbox CLI task, session, and artifact paths"
 cli_session="$(cli_json sessions create "$sandbox_id" --type custom --client cli-runtime-smoke)"

@@ -197,6 +197,16 @@ MBOX_API_URL=http://127.0.0.1:18080 npm run smoke:api
 
 The live API smoke builds the package, connects to an already running mbox API server, creates a temporary project, project-scoped template, sandbox, runtime session record, and client-uploaded artifact, verifies retained artifact content and request-correlated audit metadata, then deletes the sandbox and project. It does not enable runtime access or Kubernetes reconciliation, and it is intentionally not part of `npm run verify` because it writes to the selected development API database.
 
+## Runtime Smoke
+
+```sh
+MBOX_API_URL=http://127.0.0.1:18080 \
+MBOX_SDK_RUNTIME_SANDBOX_ID='<running-sandbox-id>' \
+npm run smoke:runtime
+```
+
+The runtime smoke builds the package, connects to an already running runtime-enabled mbox API server, requires a running sandbox with a runtime reference, starts an execution task through the SDK, waits for success, registers a task artifact, captures retained workspace content, and reads the retained bytes back. It is intentionally not part of `npm run verify` because it requires Kubernetes runtime access and writes task/artifact records to the selected development API.
+
 ## Package Dry Run
 
 ```sh

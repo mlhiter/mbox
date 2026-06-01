@@ -225,6 +225,7 @@ Current status:
 - Done: CLI task-scoped artifact listing through `tasks artifacts <task-id>`, matching the existing task artifact API and SDK helper.
 - Done: CLI one-shot execution through `tasks run <sandbox-id> -- ...`, composing task creation with terminal polling while keeping `--timeout` as task execution timeout and `--wait-timeout` as the client wait limit, with runtime smoke coverage for the successful task/artifact path.
 - Done: TypeScript SDK live API smoke for disposable local APIs, covering project/template/sandbox/session/artifact upload/content/audit paths without enabling runtime access or Kubernetes reconciliation.
+- Done: TypeScript SDK runtime smoke for running sandboxes, covering SDK task creation, `waitForTask({ requireSuccess: true })`, task-scoped artifact listing, workspace capture, and retained content reads against the real `agent-sandbox` runtime.
 - Done: read-only runtime managed-resource inventory, namespace/kind filtering, live kind/namespace/owner summary, and structured OpenAPI/SDK orphan-audit contracts across API, CLI, SDK, OpenAPI, docs, and smoke coverage, reusing the runtime auditor without adding automatic cleanup or new write paths.
 - Done: Web Runtime inventory view at `#runtime` for read-only operator triage over `/v1/runtime/resources`, including summary, owner, label, and disabled-auditor handling without adding runtime write actions.
 - Done: Web project inspector audit-feed ergonomics for request ID, operation, and RFC3339 time-window filters, with trace metadata display when present.

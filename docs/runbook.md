@@ -278,6 +278,17 @@ MBOX_API_URL=http://127.0.0.1:18080 npm run smoke:api
 
 The SDK live smoke writes temporary product records through the public API, verifies retained client-uploaded artifact content and request-correlated audit metadata, and deletes the sandbox and project before exiting. It does not enable runtime access or Kubernetes reconciliation.
 
+For a live SDK runtime smoke against an already running runtime-enabled API and sandbox, use:
+
+```sh
+cd sdk/typescript
+MBOX_API_URL=http://127.0.0.1:18080 \
+MBOX_SDK_RUNTIME_SANDBOX_ID='<running-sandbox-id>' \
+npm run smoke:runtime
+```
+
+The SDK runtime smoke uses the SDK task, wait, task-artifact, capture, and content helpers against a real `agent-sandbox` runtime. It is also called by `scripts/smoke-agent-sandbox.sh` after that script has launched a sandbox and before cleanup. It does not create or delete the sandbox on its own.
+
 ## Node.js Preview Smoke
 
 Use this when checking the console flow that users expect from a fresh sandbox.
