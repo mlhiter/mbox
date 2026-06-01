@@ -221,6 +221,7 @@ Current status:
 - Done: CLI local context management with `context set`, `context use`, and `context remove`, including parent-directory creation, token-env support for reusable configs, redacted JSON output, and CLI smoke coverage against an authenticated API.
 - Done: CLI context preflight through `context check`, combining redacted context selection, `/healthz`, `/v1/info`, and capability-aware CLI compatibility checks without implying login, whoami, RBAC, or token validity.
 - Done: TypeScript SDK environment factory `createMboxClientFromEnv()` for automation scripts that share the CLI `MBOX_API_URL`, `MBOX_TOKEN`/`MBOX_API_TOKEN`, and audit-label conventions without reading local context files.
+- Done: CLI `sandboxes wait` and SDK `waitForSandbox()` polling conveniences for scripts that need a sandbox to reach `running` with a resolved `runtimeRef` before calling runtime routes.
 - Done: CLI `tasks wait --require-success` and SDK `waitForTask({ requireSuccess: true })` terminal success gates for automation scripts that need SDK-style task terminal-state waiting without parsing the NDJSON watch stream.
 - Done: CLI task-scoped artifact listing through `tasks artifacts <task-id>`, matching the existing task artifact API and SDK helper.
 - Done: CLI one-shot execution through `tasks run <sandbox-id> -- ...`, composing task creation with terminal polling while keeping `--timeout` as task execution timeout and `--wait-timeout` as the client wait limit, with runtime smoke coverage for the successful task/artifact path.

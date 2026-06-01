@@ -179,6 +179,7 @@ Commands:
   sandboxes get <sandbox-id>
   sandboxes boundary <sandbox-id>
   sandboxes start|stop|delete <sandbox-id>
+  sandboxes wait <sandbox-id> [--status running] [--interval 1500ms] [--timeout 5m] [--require-runtime-ref]
   sessions list <sandbox-id>
   sessions create <sandbox-id> --type TYPE [--client CLIENT]
   sessions get|end <session-id>
@@ -900,7 +901,7 @@ func (a *App) runTemplate(ctx context.Context, client *Client, args []string) er
 
 func (a *App) runSandbox(ctx context.Context, client *Client, args []string) error {
 	if len(args) == 0 {
-		return usageError("usage: mbox sandboxes list|create|get|start|stop|delete")
+		return usageError("usage: mbox sandboxes list|create|get|boundary|start|stop|wait|delete")
 	}
 	switch args[0] {
 	case "list":
@@ -935,6 +936,8 @@ func (a *App) runSandbox(ctx context.Context, client *Client, args []string) err
 			return usageError("usage: mbox sandboxes start|stop <sandbox-id>")
 		}
 		return a.post(ctx, client, "/v1/sandboxes/"+url.PathEscape(args[1])+"/"+args[0], nil)
+	case "wait":
+		return a.runSandboxWait(ctx, client, args[1:])
 	case "create":
 		fs := flag.NewFlagSet("sandboxes create", flag.ContinueOnError)
 		fs.SetOutput(a.streams.Stderr)
@@ -963,7 +966,140 @@ func (a *App) runSandbox(ctx context.Context, client *Client, args []string) err
 		SetRaw(payload, "metadata", rawMetadata)
 		return a.post(ctx, client, "/v1/sandboxes", payload)
 	default:
-		return usageError("usage: mbox sandboxes list|create|get|start|stop|delete")
+		return usageError("usage: mbox sandboxes list|create|get|boundary|start|stop|wait|delete")
+	}
+}
+
+func (a *App) runSandboxWait(ctx context.Context, client *Client, args []string) error {
+	fs := flag.NewFlagSet("sandboxes wait", flag.ContinueOnError)
+	fs.SetOutput(a.streams.Stderr)
+	status := fs.String("status", "running", "")
+	intervalRaw := fs.String("interval", "1500ms", "")
+	timeoutRaw := fs.String("timeout", "", "")
+	requireRuntimeRef := fs.Bool("require-runtime-ref", false, "")
+	sandboxID := ""
+	parseArgs := args
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		sandboxID = strings.TrimSpace(args[0])
+		parseArgs = args[1:]
+	}
+	if err := fs.Parse(parseArgs); err != nil {
+		return err
+	}
+	if sandboxID == "" && fs.NArg() == 1 {
+		sandboxID = strings.TrimSpace(fs.Arg(0))
+	} else if fs.NArg() != 0 {
+		return usageError("usage: mbox sandboxes wait <sandbox-id> [--status running] [--interval 1500ms] [--timeout 5m] [--require-runtime-ref]")
+	}
+	if sandboxID == "" {
+		return usageError("usage: mbox sandboxes wait <sandbox-id> [--status running] [--interval 1500ms] [--timeout 5m] [--require-runtime-ref]")
+	}
+	if !isSandboxStatus(*status) {
+		return usageError("status must be one of pending, running, stopped, failed, or deleted")
+	}
+	interval, err := parsePositiveDuration(*intervalRaw, "interval")
+	if err != nil {
+		return err
+	}
+	var timeout time.Duration
+	if strings.TrimSpace(*timeoutRaw) != "" {
+		timeout, err = parsePositiveDuration(*timeoutRaw, "timeout")
+		if err != nil {
+			return err
+		}
+	}
+	return a.waitForSandbox(ctx, client, sandboxID, sandboxWaitOptions{
+		Status:            *status,
+		Interval:          interval,
+		Timeout:           timeout,
+		RequireRuntimeRef: *requireRuntimeRef,
+	})
+}
+
+func (a *App) waitForSandbox(ctx context.Context, client *Client, sandboxID string, options sandboxWaitOptions) error {
+	if options.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, options.Timeout)
+		defer cancel()
+	}
+	interval := options.Interval
+	if interval <= 0 {
+		interval = 1500 * time.Millisecond
+	}
+	expectedStatus := strings.TrimSpace(options.Status)
+	if expectedStatus == "" {
+		expectedStatus = "running"
+	}
+	lastStatus := ""
+	lastRuntimeRef := false
+	for {
+		var sandbox map[string]any
+		if err := client.JSON(ctx, http.MethodGet, "/v1/sandboxes/"+url.PathEscape(sandboxID), nil, &sandbox); err != nil {
+			return err
+		}
+		status, _ := sandbox["status"].(string)
+		lastStatus = status
+		lastRuntimeRef = hasRuntimeRef(sandbox)
+		if status == expectedStatus {
+			if options.RequireRuntimeRef && !lastRuntimeRef {
+				if err := sleepContext(ctx, interval); err != nil {
+					return fmt.Errorf("timed out waiting for sandbox %s to reach status %s with runtimeRef; last status=%s runtimeRef=%t", sandboxID, expectedStatus, lastStatus, lastRuntimeRef)
+				}
+				continue
+			}
+			if err := WriteJSON(a.streams.Stdout, sandbox); err != nil {
+				return err
+			}
+			return nil
+		}
+		if isTerminalSandboxStatus(status) {
+			if err := WriteJSON(a.streams.Stdout, sandbox); err != nil {
+				return err
+			}
+			return fmt.Errorf("sandbox %s reached terminal status %s while waiting for %s", sandboxID, status, expectedStatus)
+		}
+		if err := sleepContext(ctx, interval); err != nil {
+			suffix := ""
+			if options.RequireRuntimeRef {
+				suffix = " with runtimeRef"
+			}
+			return fmt.Errorf("timed out waiting for sandbox %s to reach status %s%s; last status=%s runtimeRef=%t", sandboxID, expectedStatus, suffix, lastStatus, lastRuntimeRef)
+		}
+	}
+}
+
+type sandboxWaitOptions struct {
+	Status            string
+	Interval          time.Duration
+	Timeout           time.Duration
+	RequireRuntimeRef bool
+}
+
+func hasRuntimeRef(sandbox map[string]any) bool {
+	runtimeRef, ok := sandbox["runtimeRef"].(map[string]any)
+	if !ok {
+		return false
+	}
+	name, _ := runtimeRef["name"].(string)
+	namespace, _ := runtimeRef["namespace"].(string)
+	return strings.TrimSpace(name) != "" && strings.TrimSpace(namespace) != ""
+}
+
+func isSandboxStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "pending", "running", "stopped", "failed", "deleted":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTerminalSandboxStatus(status string) bool {
+	switch status {
+	case "failed", "deleted":
+		return true
+	default:
+		return false
 	}
 }
 

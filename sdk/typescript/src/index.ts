@@ -847,6 +847,14 @@ export type WaitForTaskOptions = {
   signal?: AbortSignal
 }
 
+export type WaitForSandboxOptions = {
+  status?: SandboxStatus
+  intervalMs?: number
+  timeoutMs?: number
+  requireRuntimeRef?: boolean
+  signal?: AbortSignal
+}
+
 export type WatchExecutionTaskOptions = RequestOptions & {
   onEvent?: (event: ExecutionTaskEvent) => void | Promise<void>
 }
@@ -882,6 +890,28 @@ export class MboxTaskStatusError extends Error {
     super(`task ${task.id} finished with status ${task.status}`)
     this.name = "MboxTaskStatusError"
     this.task = task
+  }
+}
+
+export class MboxSandboxStatusError extends Error {
+  readonly sandbox: Sandbox
+  readonly expectedStatus: SandboxStatus
+
+  constructor(sandbox: Sandbox, expectedStatus: SandboxStatus) {
+    super(`sandbox ${sandbox.id} reached status ${sandbox.status}, expected ${expectedStatus}`)
+    this.name = "MboxSandboxStatusError"
+    this.sandbox = sandbox
+    this.expectedStatus = expectedStatus
+  }
+}
+
+export class MboxSandboxRuntimeRefError extends Error {
+  readonly sandbox: Sandbox
+
+  constructor(sandbox: Sandbox) {
+    super(`sandbox ${sandbox.id} reached status ${sandbox.status} without runtimeRef`)
+    this.name = "MboxSandboxRuntimeRefError"
+    this.sandbox = sandbox
   }
 }
 
@@ -1152,6 +1182,32 @@ export class MboxClient {
 
   getSandbox(sandboxId: string, options?: RequestOptions) {
     return this.request<Sandbox>(`/v1/sandboxes/${encodeURIComponent(sandboxId)}`, options)
+  }
+
+  async waitForSandbox(sandboxId: string, options: WaitForSandboxOptions = {}) {
+    const expectedStatus = options.status ?? "running"
+    const intervalMs = options.intervalMs ?? 1500
+    const started = Date.now()
+    for (;;) {
+      const sandbox = await this.getSandbox(sandboxId, { signal: options.signal })
+      if (sandbox.status === expectedStatus) {
+        if (options.requireRuntimeRef && !sandbox.runtimeRef?.name) {
+          if (options.timeoutMs && Date.now() - started >= options.timeoutMs) {
+            throw new MboxSandboxRuntimeRefError(sandbox)
+          }
+          await sleep(intervalMs, options.signal)
+          continue
+        }
+        return sandbox
+      }
+      if (isTerminalSandboxStatus(sandbox.status)) {
+        throw new MboxSandboxStatusError(sandbox, expectedStatus)
+      }
+      if (options.timeoutMs && Date.now() - started >= options.timeoutMs) {
+        throw new Error(`timed out waiting for sandbox ${sandboxId}`)
+      }
+      await sleep(intervalMs, options.signal)
+    }
   }
 
   updateSandbox(sandboxId: string, payload: SandboxUpdate, options?: RequestOptions) {
@@ -1615,6 +1671,10 @@ function normalizeCapabilities(capabilities: readonly string[] | undefined) {
     }
   }
   return out
+}
+
+function isTerminalSandboxStatus(status: SandboxStatus) {
+  return status === "failed" || status === "deleted"
 }
 
 function normalizeAPIVersion(version: string | undefined) {

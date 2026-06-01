@@ -506,7 +506,9 @@ api_json PATCH "/v1/sandboxes/$sandbox_id" "$(jq -n '{ports: [{name: "web", port
 wait_preview_port "$sandbox_id" 8080
 
 echo "Waiting for mbox API sandbox status running"
-wait_api_sandbox_status "$sandbox_id" running
+cli_json sandboxes wait "$sandbox_id" --status running --require-runtime-ref --interval 500ms --timeout "${TIMEOUT_SECONDS}s" | jq -e \
+	--arg id "$sandbox_id" \
+	'.id == $id and .status == "running" and (.runtimeRef.name | type == "string")' >/dev/null
 
 echo "Checking mbox template validation APIs"
 validation="$(api_json POST "/v1/templates/$template_id/validation-runs" "$(jq -n --arg projectId "$project_id" '{projectId: $projectId, metadata: {caller: "runtime-smoke"}}')")"

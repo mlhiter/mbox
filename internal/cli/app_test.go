@@ -1317,6 +1317,124 @@ func TestArtifactsCaptureUsesCaptureRoute(t *testing.T) {
 	}
 }
 
+func TestSandboxesWaitPollsUntilExpectedStatus(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/sandboxes/sandbox-1" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		if requests == 1 {
+			_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"pending"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"running","runtimeRef":{"name":"claim-1","namespace":"mbox-smoke"}}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"sandboxes", "wait", "sandbox-1",
+		"--interval", "1ms",
+		"--timeout", "1s",
+		"--require-runtime-ref",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want 2", requests)
+	}
+	if !strings.Contains(stdout.String(), `"status": "running"`) || !strings.Contains(stdout.String(), `"runtimeRef"`) {
+		t.Fatalf("expected final sandbox JSON, got %q", stdout.String())
+	}
+}
+
+func TestSandboxesWaitRequiresRuntimeRefBeforeSuccess(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/sandboxes/sandbox-1" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		if requests == 1 {
+			_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"running"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"running","runtimeRef":{"name":"claim-1","namespace":"mbox-smoke"}}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"sandboxes", "wait",
+		"--status", "running",
+		"--require-runtime-ref",
+		"--interval", "1ms",
+		"--timeout", "1s",
+		"sandbox-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want 2", requests)
+	}
+	if strings.Count(stdout.String(), `"status": "running"`) != 1 {
+		t.Fatalf("expected only final sandbox JSON, got %q", stdout.String())
+	}
+}
+
+func TestSandboxesWaitReturnsErrorForTerminalStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/sandboxes/sandbox-1" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"sandbox-1","status":"failed"}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"sandboxes", "wait", "sandbox-1",
+		"--interval", "1ms",
+		"--timeout", "1s",
+	})
+	if err == nil {
+		t.Fatal("expected terminal sandbox status to return an error")
+	}
+	if !strings.Contains(err.Error(), "sandbox sandbox-1 reached terminal status failed while waiting for running") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"status": "failed"`) {
+		t.Fatalf("expected final sandbox JSON before error, got %q", stdout.String())
+	}
+}
+
+func TestSandboxesWaitRejectsUnknownStatus(t *testing.T) {
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", "http://127.0.0.1:18080",
+		"sandboxes", "wait", "sandbox-1",
+		"--status", "ready",
+	})
+	if err == nil {
+		t.Fatal("expected unknown sandbox status to return an error")
+	}
+	if !strings.Contains(err.Error(), "status must be one of pending, running, stopped, failed, or deleted") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestArtifactsCreatePostsExpectedPayload(t *testing.T) {
 	var method string
 	var path string

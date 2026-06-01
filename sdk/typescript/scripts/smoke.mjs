@@ -3,6 +3,8 @@ import assert from "node:assert/strict"
 import {
   MboxClient,
   MboxCompatibilityError,
+  MboxSandboxRuntimeRefError,
+  MboxSandboxStatusError,
   MboxTaskStatusError,
   OpenAPIAlignmentError,
   assertOpenAPIAlignment,
@@ -294,6 +296,96 @@ const succeededTaskClient = new MboxClient({
 assert.equal(
   (await succeededTaskClient.waitForTask("task-succeeded", { requireSuccess: true })).status,
   "succeeded",
+)
+
+let sandboxPolls = 0
+const sandboxWaitClient = new MboxClient({
+  baseUrl: "http://sandboxes.example.test",
+  fetch: async (url) => {
+    assert.equal(new URL(url).pathname, "/v1/sandboxes/sandbox-1")
+    sandboxPolls += 1
+    if (sandboxPolls === 1) {
+      return jsonResponse({
+        id: "sandbox-1",
+        projectId: "project-1",
+        name: "Smoke",
+        slug: "smoke",
+        namespace: "mbox-smoke",
+        serviceAccountName: "mbox-sandbox",
+        status: "pending",
+      })
+    }
+    return jsonResponse({
+      id: "sandbox-1",
+      projectId: "project-1",
+      name: "Smoke",
+      slug: "smoke",
+      namespace: "mbox-smoke",
+      serviceAccountName: "mbox-sandbox",
+      status: "running",
+      runtimeRef: {
+        adapter: "agent-sandbox",
+        kind: "SandboxClaim",
+        namespace: "mbox-smoke",
+        name: "claim-1",
+      },
+    })
+  },
+})
+assert.equal(
+  (await sandboxWaitClient.waitForSandbox("sandbox-1", {
+    intervalMs: 1,
+    timeoutMs: 1000,
+    requireRuntimeRef: true,
+  })).runtimeRef.name,
+  "claim-1",
+)
+assert.equal(sandboxPolls, 2)
+
+const failedSandboxClient = new MboxClient({
+  baseUrl: "http://sandboxes.example.test",
+  fetch: async () =>
+    jsonResponse({
+      id: "sandbox-failed",
+      projectId: "project-1",
+      name: "Failed",
+      slug: "failed",
+      namespace: "mbox-smoke",
+      serviceAccountName: "mbox-sandbox",
+      status: "failed",
+    }),
+})
+await assert.rejects(
+  () => failedSandboxClient.waitForSandbox("sandbox-failed", { status: "running" }),
+  (error) =>
+    error instanceof MboxSandboxStatusError &&
+    error.sandbox.id === "sandbox-failed" &&
+    error.expectedStatus === "running",
+)
+
+const missingRuntimeRefClient = new MboxClient({
+  baseUrl: "http://sandboxes.example.test",
+  fetch: async () =>
+    jsonResponse({
+      id: "sandbox-running",
+      projectId: "project-1",
+      name: "Running",
+      slug: "running",
+      namespace: "mbox-smoke",
+      serviceAccountName: "mbox-sandbox",
+      status: "running",
+    }),
+})
+await assert.rejects(
+  () =>
+    missingRuntimeRefClient.waitForSandbox("sandbox-running", {
+      requireRuntimeRef: true,
+      intervalMs: 1,
+      timeoutMs: 1,
+    }),
+  (error) =>
+    error instanceof MboxSandboxRuntimeRefError &&
+    error.sandbox.id === "sandbox-running",
 )
 
 assert.equal(assertOpenAPIAlignment(buildOpenAPI()).ok, true)

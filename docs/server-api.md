@@ -563,6 +563,7 @@ The package currently includes:
 - project quota policy get/set helpers
 - project credential-reference list/create/get/delete helpers
 - sandbox lifecycle helpers for start and stop
+- `waitForSandbox(sandboxId)` polling convenience for scripts that need a sandbox status, optionally requiring `runtimeRef`
 - runtime target, log, event, and preview-port readers
 - runtime session create/list/get/end helpers
 - execution task create/list/get/cancel helpers
@@ -589,6 +590,8 @@ const finished = await mbox.waitForTask(task.id, { requireSuccess: true })
 ```
 
 By default, `waitForTask()` returns any terminal task status. Pass `{ requireSuccess: true }` when automation should throw `MboxTaskStatusError` for `failed`, `canceled`, or `timed_out`; the error keeps the final task record on `error.task`. Use `watchExecutionTask(task.id, { onEvent })` when a client needs live stdout/stderr chunks instead of polling final task output.
+
+`waitForSandbox()` defaults to waiting for `running`. Pass `{ requireRuntimeRef: true }` before calling runtime routes so clients wait for the product sandbox record to expose the resolved runtime reference. If a sandbox reaches `failed` or `deleted` while waiting for another status, the SDK throws `MboxSandboxStatusError` with the final sandbox on `error.sandbox`; if the requested status is reached but `runtimeRef` never appears before the timeout, it throws `MboxSandboxRuntimeRefError`.
 
 The SDK exports `SDK_ROUTE_CONTRACT`, `SDK_SCHEMA_CONTRACT`, `checkOpenAPIAlignment`, `assertOpenAPIAlignment`, and `fetchAndAssertOpenAPIAlignment` as a starter route-alignment guard. The guard verifies SDK route-backed helpers against the published OpenAPI path, method, SDK-used query parameter set, route auth metadata, focused request bodies, and focused response shapes. Auth checks cover the bearer security scheme, explicit public operations, private bearer operations, and `401` responses. Request checks cover JSON schema refs and binary upload media types. Response checks cover direct schema refs, list item refs, NDJSON task-event streams, binary responses, and no-content delete routes. It then checks a focused set of SDK-consumed schema required fields and properties. It is not yet a generated client or full request/response schema validator. Usage and audit contracts are no longer entirely loose objects: the SDK and OpenAPI both expose project usage request-total types, known audit action string types, the current `PolicyDeniedAuditMetadata` shape, and `isPolicyDeniedAuditEvent()` so clients can safely render selected denial events without treating all audit metadata as stable. `createMboxClientFromEnv()` mirrors the CLI environment convention for `MBOX_API_URL`, `MBOX_TOKEN`/`MBOX_API_TOKEN`, `MBOX_REQUEST_ID`, and audit labels, but it does not read CLI context files.
 
@@ -640,7 +643,7 @@ Current command groups:
 - `projects`: list, create, get, usage, audit-events, policy, set-policy, quota-policy, set-quota-policy, credentials, add-credential, delete.
 - `credentials`: get, delete.
 - `templates`: list, create, get, boundary, validate, decide-validation, delete.
-- `sandboxes`: list, create, get, start, stop, delete.
+- `sandboxes`: list, create, get, boundary, start, stop, wait, delete. `sandboxes wait <sandbox-id> --status running --require-runtime-ref` prints final sandbox JSON when ready, and exits nonzero after printing the final JSON if the sandbox reaches `failed` or `deleted` first.
 - `sessions`: list, create, get, end.
 - `tasks`: list, create, run, get, wait, cancel, watch, artifacts. `tasks run <sandbox-id> -- ...` creates an execution task and waits for its terminal task JSON; `--timeout` is the task execution timeout, while `--wait-timeout` is the client-side polling limit. `tasks wait --require-success` and `tasks run --require-success` keep stdout as final task JSON and return a nonzero exit when the terminal status is not `succeeded`. `tasks artifacts <task-id>` lists artifact references linked to one task.
 - `artifacts`: list, create, get, capture, upload, content.
