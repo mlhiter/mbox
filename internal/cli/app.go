@@ -151,7 +151,7 @@ Commands:
   context use NAME
   context remove NAME
   openapi
-  runtime resources [--namespace NAMESPACE] [--kind KIND]
+  runtime resources [--namespace NAMESPACE] [--kind KIND] [--summary]
   runtime orphans [--namespace NAMESPACE] [--kind KIND]
   runtime cleanup-orphan --adapter ADAPTER --kind KIND --namespace NAMESPACE --name NAME --reason REASON --confirm delete-orphan-runtime-resource
   audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--since RFC3339] [--until RFC3339] [--limit N]
@@ -237,11 +237,12 @@ func (a *App) runRuntime(ctx context.Context, client *Client, args []string) err
 		fs.SetOutput(a.streams.Stderr)
 		namespace := fs.String("namespace", "", "")
 		kind := fs.String("kind", "", "")
+		summaryOnly := fs.Bool("summary", false, "")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 0 {
-			return usageError("usage: mbox runtime resources [--namespace NAMESPACE] [--kind KIND]")
+			return usageError("usage: mbox runtime resources [--namespace NAMESPACE] [--kind KIND] [--summary]")
 		}
 		path := "/v1/runtime/resources"
 		values := url.Values{}
@@ -253,6 +254,17 @@ func (a *App) runRuntime(ctx context.Context, client *Client, args []string) err
 		}
 		if encoded := values.Encode(); encoded != "" {
 			path += "?" + encoded
+		}
+		if *summaryOnly {
+			var response map[string]any
+			if err := client.JSON(ctx, http.MethodGet, path, nil, &response); err != nil {
+				return err
+			}
+			summary, ok := response["summary"]
+			if !ok {
+				return fmt.Errorf("runtime resources response did not include summary")
+			}
+			return WriteJSON(a.streams.Stdout, summary)
 		}
 		return a.get(ctx, client, path)
 	case "orphan", "orphans":

@@ -326,6 +326,59 @@ func TestRuntimeResourcesUsesRuntimeResourcesRoute(t *testing.T) {
 	}
 }
 
+func TestRuntimeResourcesSummaryPrintsSummaryOnly(t *testing.T) {
+	var method string
+	var uri string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		uri = r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"adapter":"agent-sandbox",
+			"summary":{
+				"total":2,
+				"workload":{
+					"observedResources":1,
+					"observedPods":1,
+					"requests":{"cpu":"250m"}
+				}
+			},
+			"items":[{"kind":"SandboxClaim","namespace":"mbox-smoke","name":"claim"}]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "runtime", "resources", "--summary", "--namespace", "mbox-smoke", "--kind", "SandboxClaim"}); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || uri != "/v1/runtime/resources?kind=SandboxClaim&namespace=mbox-smoke" {
+		t.Fatalf("unexpected request %s %s", method, uri)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, `"total": 2`) ||
+		!strings.Contains(output, `"observedResources": 1`) ||
+		!strings.Contains(output, `"cpu": "250m"`) ||
+		strings.Contains(output, `"items"`) {
+		t.Fatalf("expected summary-only runtime resource output, got %q", output)
+	}
+}
+
+func TestRuntimeResourcesSummaryRequiresSummaryField(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"adapter":"agent-sandbox","items":[]}`))
+	}))
+	defer server.Close()
+
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{"--api-url", server.URL, "runtime", "resources", "--summary"})
+	if err == nil || !strings.Contains(err.Error(), "runtime resources response did not include summary") {
+		t.Fatalf("expected missing summary error, got %v", err)
+	}
+}
+
 func TestRuntimeCleanupOrphanPostsExpectedPayload(t *testing.T) {
 	var method string
 	var path string

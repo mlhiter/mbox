@@ -633,7 +633,7 @@ Current command groups:
 - `context set|use|remove|current|list` for local CLI context management and inspection. Token values are never printed; outputs only include `hasToken`.
 - `openapi` for the machine-readable OpenAPI contract.
 - `audit-events` for recent product audit events.
-- `runtime resources` for the read-only managed runtime resource inventory.
+- `runtime resources` for the read-only managed runtime resource inventory. Add `--summary` to print only the filtered `summary` object.
 - `runtime orphans` for the read-only runtime orphan audit.
 - `projects`: list, create, get, usage, audit-events, policy, set-policy, quota-policy, set-quota-policy, credentials, add-credential, delete.
 - `credentials`: get, delete.

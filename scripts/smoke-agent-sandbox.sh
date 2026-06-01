@@ -438,6 +438,14 @@ api_json GET "/v1/runtime/resources?namespace=$NAMESPACE&kind=SandboxClaim" | jq
 	$inventory.summary.workload.runningPods >= 1 and
 	$inventory.summary.workload.requests.cpu == "50m" and
 	$inventory.summary.workload.requests.memory == "64Mi"' >/dev/null
+cli_json runtime resources --summary --namespace "$NAMESPACE" --kind SandboxClaim | jq -e '
+	.total >= 1 and
+	.workload.observedResources >= 1 and
+	.workload.observedPods >= 1 and
+	.workload.runningPods >= 1 and
+	.workload.requests.cpu == "50m" and
+	.workload.requests.memory == "64Mi"
+' >/dev/null
 
 service_account_name="$("${kubectl_cmd[@]}" get pod "$pod_name" -n "$NAMESPACE" -o jsonpath='{.spec.serviceAccountName}')"
 token_automount="$("${kubectl_cmd[@]}" get pod "$pod_name" -n "$NAMESPACE" -o jsonpath='{.spec.automountServiceAccountToken}')"

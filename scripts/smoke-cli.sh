@@ -180,6 +180,11 @@ if "${CLI[@]}" runtime resources >/tmp/mbox-cli-runtime-resources.out 2>&1; then
 	exit 1
 fi
 grep -F "runtime auditor is not configured" /tmp/mbox-cli-runtime-resources.out >/dev/null
+if "${CLI[@]}" runtime resources --summary >/tmp/mbox-cli-runtime-resources-summary.out 2>&1; then
+	echo "expected runtime resources summary to require a configured runtime auditor" >&2
+	exit 1
+fi
+grep -F "runtime auditor is not configured" /tmp/mbox-cli-runtime-resources-summary.out >/dev/null
 if "${CLI[@]}" runtime orphans >/tmp/mbox-cli-runtime-orphans.out 2>&1; then
 	echo "expected runtime orphan audit to require a configured runtime auditor" >&2
 	exit 1
