@@ -376,6 +376,7 @@ Build it locally:
 cd sdk/typescript
 npm install
 npm run build
+npm run smoke
 ```
 
 Run a task and register a referenced artifact:
@@ -427,6 +428,8 @@ const mbox = new MboxClient({
 For scripts that follow the CLI environment convention, `createMboxClientFromEnv()` reads `MBOX_API_URL`, `MBOX_TOKEN` or `MBOX_API_TOKEN`, `MBOX_REQUEST_ID`, `MBOX_AUDIT_ACTOR`, and `MBOX_AUDIT_SOURCE`. It does not read CLI context files.
 
 Retained artifact metadata includes `retainedContent.storageProvider`, currently `postgres`, `filesystem`, or `s3`, so clients can tell where retained bytes are backed without changing the content download route. `captureArtifactContent` reads from a running sandbox workspace, while `uploadArtifactContent` attaches client-provided bytes directly to the artifact.
+
+For a disposable local API database, `npm run smoke:api` exercises the SDK against a live server without enabling runtime/Kubernetes access. It creates and cleans up a temporary project, template, sandbox, session record, and client-uploaded artifact.
 
 The SDK also exports the current audit-event action types, `PolicyDeniedAuditMetadata`, and `isPolicyDeniedAuditEvent()` for safely rendering selected policy/quota denial audit events. Audit metadata includes `requestId` when a request writes an event, and audit list helpers accept `requestId`, `operation`, `since`, and `until` to filter feeds for one request, script run, typed denial operation, or known time window. Audit events are still best-effort product records, not authentication claims or a strong transactional audit log.
 

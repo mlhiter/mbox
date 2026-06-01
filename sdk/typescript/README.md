@@ -188,6 +188,14 @@ npm run smoke
 
 The smoke check builds the package, then runs a local Node-based guard over the exported compatibility helpers, `MboxClient.assertCompatibility()`, and the OpenAPI alignment success and failure paths. It does not require a running API server.
 
+## Live API Smoke
+
+```sh
+MBOX_API_URL=http://127.0.0.1:18080 npm run smoke:api
+```
+
+The live API smoke builds the package, connects to an already running mbox API server, creates a temporary project, project-scoped template, sandbox, runtime session record, and client-uploaded artifact, verifies retained artifact content and request-correlated audit metadata, then deletes the sandbox and project. It does not enable runtime access or Kubernetes reconciliation, and it is intentionally not part of `npm run verify` because it writes to the selected development API database.
+
 ## Package Dry Run
 
 ```sh

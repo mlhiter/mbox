@@ -268,6 +268,15 @@ The CLI should remain a thin HTTP client. It must not write to Postgres directly
 
 `scripts/smoke-cli.sh` starts a local API server when needed, exercises the OpenAPI contract route, runtime-auditor disabled errors, project, launch policy, quota policy, project credential-reference, audit-event reads, policy denial, quota denial, template validation, sandbox, artifact upload, and session commands through the CLI, then deletes the created records. It expects a reachable Postgres from `DATABASE_URL`; on this development machine the reusable default is `postgres://mbox:mbox@127.0.0.1:32768/mbox?sslmode=disable`.
 
+For a live SDK/API smoke against an already running local API, use:
+
+```sh
+cd sdk/typescript
+MBOX_API_URL=http://127.0.0.1:18080 npm run smoke:api
+```
+
+The SDK live smoke writes temporary product records through the public API, verifies retained client-uploaded artifact content and request-correlated audit metadata, and deletes the sandbox and project before exiting. It does not enable runtime access or Kubernetes reconciliation.
+
 ## Node.js Preview Smoke
 
 Use this when checking the console flow that users expect from a fresh sandbox.

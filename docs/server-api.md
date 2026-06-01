@@ -596,6 +596,8 @@ The SDK also exposes `checkCompatibility()` and `assertCompatibility()` on `Mbox
 
 Run `npm run smoke` in `sdk/typescript` before packaging or changing SDK contract helpers. The smoke check builds the package and exercises the exported compatibility helpers, `MboxClient.assertCompatibility()`, and OpenAPI alignment success/failure paths without requiring a live API server.
 
+Run `npm run smoke:api` in `sdk/typescript` when a disposable local API database is available. It builds the package, calls the live API through the SDK, creates a temporary project/template/sandbox/session/artifact graph, uploads and downloads retained artifact content, verifies request-correlated audit metadata, and then deletes the sandbox and project. It does not require runtime access or Kubernetes reconciliation and is not part of `npm run verify`.
+
 Run `npm run check:pack` in `sdk/typescript` before publishing a package. It builds the SDK, runs `npm pack --dry-run --json`, and verifies the tarball includes the README, package manifest, compiled JavaScript, and TypeScript declaration files while excluding source-only files. It does not publish anything.
 
 Run `npm run check:pack:consumer` in `sdk/typescript` when changing package exports or publish files. It builds the SDK, creates a real local `npm pack` tarball in a temporary directory, installs it into a minimal private ESM consumer project with `--ignore-scripts`, and verifies that `@mbox/sdk` imports from the installed tarball. It does not publish anything or contact the public npm registry.
