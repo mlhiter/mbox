@@ -12,7 +12,6 @@ import { ConsolePanel } from "@/components/console/console-panel"
 import { EmptyRow, SkeletonRows } from "@/components/console/table-state"
 import type {
   ManagedResource,
-  ManagedResourceCount,
   ManagedResourceOwner,
   RuntimeResourceList,
 } from "@/types"
@@ -37,6 +36,7 @@ export function RuntimeInventory({
 }) {
   const items = inventory?.items || []
   const summary = inventory?.summary
+  const observedPods = observedPodSummary(items)
   const checkedAt = inventory?.checkedAt ? formatTimestamp(inventory.checkedAt) : "Not checked"
   const adapter = inventory?.adapter || "runtime auditor"
   return (
@@ -55,7 +55,7 @@ export function RuntimeInventory({
       <div className="runtime-inventory-summary" aria-label="Runtime inventory summary">
         <SummaryCell label="Managed" value={String(summary?.total ?? 0)} detail="runtime resources" />
         <SummaryCell label="Adapter" value={adapter} detail="auditor source" mono />
-        <SummaryCell label="Namespaces" value={formatCounts(summary?.byNamespace)} detail="live scope" />
+        <SummaryCell label="Pods" value={observedPods.value} detail={observedPods.detail} />
         <SummaryCell label="Checked" value={checkedAt} detail="latest inventory" mono />
       </div>
       <Table className="resource-table runtime-inventory-table">
@@ -64,17 +64,18 @@ export function RuntimeInventory({
             <TableHead>Resource</TableHead>
             <TableHead>Namespace</TableHead>
             <TableHead>Owner</TableHead>
+            <TableHead>Runtime</TableHead>
+            <TableHead>Requests</TableHead>
             <TableHead>Labels</TableHead>
-            <TableHead>Created</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {loading ? (
-            <SkeletonRows columns={5} />
+            <SkeletonRows columns={6} />
           ) : error ? (
-            <EmptyRow columns={5} title="Runtime inventory unavailable" detail={error} />
+            <EmptyRow columns={6} title="Runtime inventory unavailable" detail={error} />
           ) : items.length === 0 ? (
-            <EmptyRow columns={5} title="No managed runtime resources" detail="The auditor did not report mbox-managed Kubernetes resources." />
+            <EmptyRow columns={6} title="No managed runtime resources" detail="The auditor did not report mbox-managed Kubernetes resources." />
           ) : (
             items.map((resource) => (
               <TableRow key={`${resource.adapter}:${resource.kind}:${resource.namespace}:${resource.name}`}>
@@ -82,6 +83,7 @@ export function RuntimeInventory({
                   <div className="runtime-inventory-resource">
                     <strong>{resource.kind}</strong>
                     <code>{resource.name}</code>
+                    <small>{formatTimestamp(resource.createdAt)}</small>
                   </div>
                 </TableCell>
                 <TableCell className="mono">{resource.namespace || "-"}</TableCell>
@@ -89,15 +91,68 @@ export function RuntimeInventory({
                   <OwnerCell owner={resource.owner} />
                 </TableCell>
                 <TableCell>
+                  <ObservationCell resource={resource} />
+                </TableCell>
+                <TableCell>
+                  <RequestCell resource={resource} />
+                </TableCell>
+                <TableCell>
                   <LabelCell resource={resource} />
                 </TableCell>
-                <TableCell className="mono">{formatTimestamp(resource.createdAt)}</TableCell>
               </TableRow>
             ))
           )}
         </TableBody>
       </Table>
     </ConsolePanel>
+  )
+}
+
+function ObservationCell({ resource }: { resource: ManagedResource }) {
+  const observation = resource.observation
+  if (!observation) {
+    return <span className="runtime-inventory-muted">No live observation</span>
+  }
+  const ready =
+    observation.containersTotal && observation.containersTotal > 0
+      ? `${observation.containersReady ?? 0}/${observation.containersTotal} ready`
+      : ""
+  const pods =
+    observation.podCount && observation.podCount > 0
+      ? `${observation.runningPodCount ?? 0}/${observation.podCount} running`
+      : ""
+  const details = [
+    observation.podName ? `pod/${shortID(observation.podName)}` : "",
+    ready,
+    pods,
+    observation.restartCount ? `${observation.restartCount} restarts` : "",
+  ].filter(Boolean)
+  return (
+    <div className="runtime-inventory-observation">
+      <strong>{observation.podPhase || observation.readyCondition || "Observed"}</strong>
+      {observation.runtimeName ? <code>{observation.runtimeName}</code> : null}
+      {details.length > 0 ? <span>{details.join(" · ")}</span> : null}
+      {observation.message ? <small>{observation.message}</small> : null}
+    </div>
+  )
+}
+
+function RequestCell({ resource }: { resource: ManagedResource }) {
+  const observation = resource.observation
+  const values = [
+    ...resourcePairs("req", observation?.requests),
+    ...resourcePairs("lim", observation?.limits),
+    ...storagePairs(observation?.storage),
+  ]
+  if (values.length === 0) {
+    return <span className="runtime-inventory-muted">No observed requests</span>
+  }
+  return (
+    <div className="runtime-inventory-labels">
+      {values.map((value) => (
+        <code key={value}>{value}</code>
+      ))}
+    </div>
   )
 }
 
@@ -178,14 +233,39 @@ function shortID(value: string) {
   return `${value.slice(0, 8)}...${value.slice(-4)}`
 }
 
-function formatCounts(counts?: ManagedResourceCount[]) {
-  if (!counts || counts.length === 0) {
-    return "0"
+function observedPodSummary(items: ManagedResource[]) {
+  const podCount = items.reduce((total, item) => total + (item.observation?.podCount ?? 0), 0)
+  const runningPodCount = items.reduce((total, item) => total + (item.observation?.runningPodCount ?? 0), 0)
+  const observedResources = items.filter((item) => item.observation).length
+  if (podCount === 0) {
+    return {
+      value: "0",
+      detail: observedResources ? `${observedResources} resources observed` : "no live pod observations",
+    }
   }
-  return counts
-    .slice(0, 2)
-    .map((item) => `${item.name} ${item.count}`)
-    .join(" · ")
+  return {
+    value: `${runningPodCount}/${podCount}`,
+    detail: "running / observed pods",
+  }
+}
+
+function resourcePairs(prefix: string, values?: Record<string, string>) {
+  if (!values) {
+    return []
+  }
+  return Object.entries(values)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${prefix} ${key}=${value}`)
+}
+
+function storagePairs(storage?: Array<{ phase?: string; capacity?: string; claimName?: string }>) {
+  if (!storage || storage.length === 0) {
+    return []
+  }
+  return storage.map((item) => {
+    const state = [item.phase, item.capacity].filter(Boolean).join(" ")
+    return `pvc ${state || shortID(item.claimName || "workspace")}`
+  })
 }
 
 function formatTimestamp(value?: string) {

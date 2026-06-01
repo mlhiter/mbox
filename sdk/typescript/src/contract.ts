@@ -465,12 +465,37 @@ export const SDK_SCHEMA_CONTRACT = [
   {
     schema: "RuntimeResource",
     required: ["adapter", "kind", "name"],
-    properties: ["adapter", "kind", "namespace", "name", "owner", "labels", "createdAt"],
+    properties: ["adapter", "kind", "namespace", "name", "owner", "observation", "labels", "createdAt"],
   },
   {
     schema: "RuntimeResourceOwner",
     required: ["kind"],
     properties: ["kind", "projectId", "sandboxId", "templateId"],
+  },
+  {
+    schema: "RuntimeResourceObservation",
+    properties: [
+      "runtimeName",
+      "selector",
+      "replicas",
+      "podCount",
+      "runningPodCount",
+      "podName",
+      "podPhase",
+      "containersReady",
+      "containersTotal",
+      "restartCount",
+      "requests",
+      "limits",
+      "storage",
+      "readyCondition",
+      "message",
+    ],
+  },
+  {
+    schema: "RuntimeStorage",
+    required: ["name", "mountPath"],
+    properties: ["name", "mountPath", "claimName", "phase", "capacity", "storageClassName", "message"],
   },
   {
     schema: "RuntimeOrphanAudit",

@@ -110,13 +110,32 @@ type RuntimeEvent struct {
 }
 
 type ManagedResource struct {
-	Adapter   string                `json:"adapter"`
-	Kind      string                `json:"kind"`
-	Namespace string                `json:"namespace,omitempty"`
-	Name      string                `json:"name"`
-	Owner     *ManagedResourceOwner `json:"owner,omitempty"`
-	Labels    map[string]string     `json:"labels,omitempty"`
-	CreatedAt time.Time             `json:"createdAt,omitempty"`
+	Adapter     string                      `json:"adapter"`
+	Kind        string                      `json:"kind"`
+	Namespace   string                      `json:"namespace,omitempty"`
+	Name        string                      `json:"name"`
+	Owner       *ManagedResourceOwner       `json:"owner,omitempty"`
+	Observation *ManagedResourceObservation `json:"observation,omitempty"`
+	Labels      map[string]string           `json:"labels,omitempty"`
+	CreatedAt   time.Time                   `json:"createdAt,omitempty"`
+}
+
+type ManagedResourceObservation struct {
+	RuntimeName     string            `json:"runtimeName,omitempty"`
+	Selector        string            `json:"selector,omitempty"`
+	Replicas        *int64            `json:"replicas,omitempty"`
+	PodCount        int               `json:"podCount,omitempty"`
+	RunningPodCount int               `json:"runningPodCount,omitempty"`
+	PodName         string            `json:"podName,omitempty"`
+	PodPhase        string            `json:"podPhase,omitempty"`
+	ContainersReady int               `json:"containersReady,omitempty"`
+	ContainersTotal int               `json:"containersTotal,omitempty"`
+	RestartCount    int32             `json:"restartCount,omitempty"`
+	Requests        map[string]string `json:"requests,omitempty"`
+	Limits          map[string]string `json:"limits,omitempty"`
+	Storage         []RuntimeStorage  `json:"storage,omitempty"`
+	ReadyCondition  string            `json:"readyCondition,omitempty"`
+	Message         string            `json:"message,omitempty"`
 }
 
 type ManagedResourceList struct {

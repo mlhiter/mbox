@@ -180,7 +180,9 @@ Capabilities are separate feature gates. A client that needs task streaming shou
 
 ## Runtime Inventory And Orphan Audit
 
-`GET /v1/runtime/resources` is a read-only operational route. It lists the current mbox-managed `agent-sandbox` runtime resources reported by the runtime adapter, including kind, namespace, name, label-derived owner, raw labels, and creation time when available. It also returns a small summary with total resources plus counts by kind, namespace, and owner. This is live runtime inventory visibility, not product-record usage, quota, billing, or live cluster capacity management. It does not compare against Postgres product records and does not delete or patch Kubernetes resources.
+`GET /v1/runtime/resources` is a read-only operational route. It lists the current mbox-managed `agent-sandbox` runtime resources reported by the runtime adapter, including kind, namespace, name, label-derived owner, raw labels, and creation time when available. For `SandboxClaim` resources, the adapter also adds a best-effort `observation` block from current Kubernetes state: resolved runtime sandbox name, selector, replica count, selected Pod name and phase, observed/running Pod counts, container readiness, restart count, summed Pod resource requests and limits, and resolved PVC storage state. It also returns a small summary with total resources plus counts by kind, namespace, and owner.
+
+This is live runtime inventory and workload-shape visibility. It is not metrics-server CPU or memory utilization, product-record usage, quota, billing, or live cluster capacity reservation. It does not compare against Postgres product records and does not delete or patch Kubernetes resources.
 
 Use `?namespace=<name>` to scope the response to one namespace, and `?kind=SandboxClaim` or `?kind=SandboxTemplate` to inspect one managed resource kind. Filters can be combined, which is useful for per-smoke or per-project checks on clusters that may already contain older mbox-managed resources.
 
@@ -231,6 +233,33 @@ The inventory response shape is:
         "kind": "sandbox",
         "projectId": "...",
         "sandboxId": "..."
+      },
+      "observation": {
+        "runtimeName": "resolved-sandbox",
+        "selector": "agents.x-k8s.io/sandbox=resolved-sandbox",
+        "replicas": 1,
+        "podCount": 1,
+        "runningPodCount": 1,
+        "podName": "resolved-sandbox-abcde",
+        "podPhase": "Running",
+        "containersReady": 1,
+        "containersTotal": 1,
+        "restartCount": 0,
+        "requests": {
+          "cpu": "50m",
+          "memory": "64Mi"
+        },
+        "storage": [
+          {
+            "name": "workspace",
+            "mountPath": "/workspace",
+            "claimName": "workspace-resolved-sandbox",
+            "phase": "Bound",
+            "capacity": "1Gi"
+          }
+        ],
+        "readyCondition": "True",
+        "message": "runtime ready"
       },
       "labels": {
         "mbox.dev/project-id": "...",

@@ -158,7 +158,7 @@ go run ./cmd/mbox --api-url http://127.0.0.1:18080 runtime orphans --namespace m
 go run ./cmd/mbox --api-url http://127.0.0.1:18080 runtime orphans --kind SandboxTemplate
 ```
 
-The resource inventory lists mbox-managed `SandboxClaim` and `SandboxTemplate` objects reported by the runtime auditor, with a small live summary by kind, namespace, and label-derived owner. The inventory and orphan audit can be scoped by namespace, kind, or both. The orphan audit compares that inventory with product records and reports resources whose labels no longer line up cleanly, including cleanup-pending soft-deleted sandboxes. The inventory summary is not quota, billing, or product-record usage; it is only the current runtime auditor view.
+The resource inventory lists mbox-managed `SandboxClaim` and `SandboxTemplate` objects reported by the runtime auditor, with a small live summary by kind, namespace, and label-derived owner. For `SandboxClaim` rows, it also includes a best-effort runtime observation: resolved runtime sandbox, selected Pod phase, Pod counts, container readiness, restart count, summed Pod requests/limits, and workspace PVC state when available. The inventory and orphan audit can be scoped by namespace, kind, or both. The orphan audit compares that inventory with product records and reports resources whose labels no longer line up cleanly, including cleanup-pending soft-deleted sandboxes. The inventory summary is not metrics-server utilization, quota, billing, or product-record usage; it is only the current runtime auditor view.
 
 Cleanup is deliberately gated and one-resource-at-a-time:
 

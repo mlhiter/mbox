@@ -276,8 +276,8 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		t.Fatalf("expected RuntimeResource schema in %#v", schemas["RuntimeResource"])
 	}
 	runtimeResourceProperties, ok := runtimeResource["properties"].(map[string]any)
-	if !ok || runtimeResourceProperties["owner"] == nil {
-		t.Fatalf("expected runtime resource owner property, got %#v", runtimeResource["properties"])
+	if !ok || runtimeResourceProperties["owner"] == nil || runtimeResourceProperties["observation"] == nil {
+		t.Fatalf("expected runtime resource owner and observation properties, got %#v", runtimeResource["properties"])
 	}
 	runtimeResourceOwner, ok := schemas["RuntimeResourceOwner"].(map[string]any)
 	if !ok {
@@ -286,6 +286,27 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	runtimeResourceOwnerRequired, ok := runtimeResourceOwner["required"].([]any)
 	if !ok || !anySliceContainsString(runtimeResourceOwnerRequired, "kind") {
 		t.Fatalf("expected runtime resource owner required fields, got %#v", runtimeResourceOwner["required"])
+	}
+	runtimeResourceObservation, ok := schemas["RuntimeResourceObservation"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected RuntimeResourceObservation schema in %#v", schemas["RuntimeResourceObservation"])
+	}
+	runtimeResourceObservationProperties, ok := runtimeResourceObservation["properties"].(map[string]any)
+	if !ok ||
+		runtimeResourceObservationProperties["podPhase"] == nil ||
+		runtimeResourceObservationProperties["requests"] == nil ||
+		runtimeResourceObservationProperties["storage"] == nil {
+		t.Fatalf("expected runtime observation properties, got %#v", runtimeResourceObservation["properties"])
+	}
+	runtimeStorage, ok := schemas["RuntimeStorage"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected RuntimeStorage schema in %#v", schemas["RuntimeStorage"])
+	}
+	runtimeStorageRequired, ok := runtimeStorage["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(runtimeStorageRequired, "name") ||
+		!anySliceContainsString(runtimeStorageRequired, "mountPath") {
+		t.Fatalf("expected runtime storage required fields, got %#v", runtimeStorage["required"])
 	}
 	runtimeOrphanAudit, ok := schemas["RuntimeOrphanAudit"].(map[string]any)
 	if !ok {
@@ -419,6 +440,25 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 					ProjectID: projectID,
 					SandboxID: sandboxID,
 				},
+				Observation: &mboxruntime.ManagedResourceObservation{
+					RuntimeName:     "resolved-sandbox",
+					Selector:        "agents.x-k8s.io/sandbox=resolved-sandbox",
+					PodName:         "runtime-pod",
+					PodPhase:        "Running",
+					PodCount:        1,
+					RunningPodCount: 1,
+					ContainersReady: 1,
+					ContainersTotal: 1,
+					RestartCount:    2,
+					Requests:        map[string]string{"cpu": "250m", "memory": "512Mi"},
+					Storage: []mboxruntime.RuntimeStorage{{
+						Name:      "workspace",
+						MountPath: "/workspace",
+						ClaimName: "workspace-resolved-sandbox",
+						Phase:     "Bound",
+						Capacity:  "10Gi",
+					}},
+				},
 				Labels: map[string]string{
 					"mbox.dev/project-id": projectID,
 					"mbox.dev/sandbox-id": sandboxID,
@@ -458,6 +498,13 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 	}
 	if list.Items[0].Owner == nil || list.Items[0].Owner.Kind != "sandbox" || list.Items[0].Owner.ProjectID != projectID || list.Items[0].Owner.SandboxID != sandboxID {
 		t.Fatalf("expected sandbox owner projection, got %+v", list.Items[0].Owner)
+	}
+	if list.Items[0].Observation == nil ||
+		list.Items[0].Observation.PodPhase != "Running" ||
+		list.Items[0].Observation.Requests["cpu"] != "250m" ||
+		len(list.Items[0].Observation.Storage) != 1 ||
+		list.Items[0].Observation.Storage[0].Capacity != "10Gi" {
+		t.Fatalf("expected runtime observation projection, got %+v", list.Items[0].Observation)
 	}
 
 	res = request(api, http.MethodGet, "/v1/runtime/resources?namespace=mbox-demo", nil)

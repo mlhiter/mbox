@@ -87,8 +87,27 @@ export type ManagedResource = {
   namespace?: string
   name: string
   owner?: ManagedResourceOwner
+  observation?: ManagedResourceObservation
   labels?: Record<string, string>
   createdAt?: string
+}
+
+export type ManagedResourceObservation = {
+  runtimeName?: string
+  selector?: string
+  replicas?: number
+  podCount?: number
+  runningPodCount?: number
+  podName?: string
+  podPhase?: string
+  containersReady?: number
+  containersTotal?: number
+  restartCount?: number
+  requests?: Record<string, string>
+  limits?: Record<string, string>
+  storage?: RuntimeStorage[]
+  readyCondition?: string
+  message?: string
 }
 
 export type ManagedResourceCount = {

@@ -272,6 +272,30 @@ func TestListManagedResourcesListsLabeledClaimsAndTemplates(t *testing.T) {
 				"mbox.dev/sandbox-id":          claimSandboxID.String(),
 			},
 		},
+		"status": map[string]any{
+			"sandbox": map[string]any{"name": "resolved-sandbox"},
+			"conditions": []any{
+				map[string]any{
+					"type":    "Ready",
+					"status":  "True",
+					"message": "runtime ready",
+				},
+			},
+		},
+	}}
+	runtimeSandbox := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "agents.x-k8s.io/v1alpha1",
+		"kind":       "Sandbox",
+		"metadata": map[string]any{
+			"name":      "resolved-sandbox",
+			"namespace": "mbox-demo",
+		},
+		"spec": map[string]any{
+			"replicas": int64(1),
+		},
+		"status": map[string]any{
+			"selector": "agents.x-k8s.io/sandbox=resolved-sandbox",
+		},
 	}}
 	template := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": apiVersion,
@@ -299,8 +323,66 @@ func TestListManagedResourcesListsLabeledClaimsAndTemplates(t *testing.T) {
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
 		claimsGVR:    "SandboxClaimList",
 		templatesGVR: "SandboxTemplateList",
+		sandboxesGVR: "SandboxList",
 	}, claim, template, ignored)
-	adapter := NewWithClient(client, Config{})
+	if _, err := client.Resource(sandboxesGVR).Namespace("mbox-demo").Create(context.Background(), runtimeSandbox, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	coreClient := k8sfake.NewSimpleClientset(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "runtime-pod",
+			Namespace: "mbox-demo",
+			Labels: map[string]string{
+				"agents.x-k8s.io/sandbox": "resolved-sandbox",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Volumes: []corev1.Volume{{
+				Name: "workspace",
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: "workspace-resolved-sandbox",
+					},
+				},
+			}},
+			Containers: []corev1.Container{{
+				Name: "workspace",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("250m"),
+						corev1.ResourceMemory: resource.MustParse("512Mi"),
+					},
+					Limits: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+				VolumeMounts: []corev1.VolumeMount{{
+					Name:      "workspace",
+					MountPath: "/workspace",
+				}},
+			}},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{{
+				Name:         "workspace",
+				Ready:        true,
+				RestartCount: 2,
+			}},
+		},
+	}, &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "workspace-resolved-sandbox",
+			Namespace: "mbox-demo",
+		},
+		Status: corev1.PersistentVolumeClaimStatus{
+			Phase: corev1.ClaimBound,
+			Capacity: corev1.ResourceList{
+				corev1.ResourceStorage: resource.MustParse("10Gi"),
+			},
+		},
+	})
+	adapter := NewWithClients(client, coreClient, Config{})
 
 	list, err := adapter.ListManagedResources(context.Background())
 	if err != nil {
@@ -317,6 +399,26 @@ func TestListManagedResourcesListsLabeledClaimsAndTemplates(t *testing.T) {
 		list.Items[0].Owner.ProjectID != projectID.String() ||
 		list.Items[0].Owner.SandboxID != claimSandboxID.String() {
 		t.Fatalf("expected SandboxClaim owner projection, got %+v", list.Items[0].Owner)
+	}
+	observation := list.Items[0].Observation
+	if observation == nil ||
+		observation.RuntimeName != "resolved-sandbox" ||
+		observation.Selector != "agents.x-k8s.io/sandbox=resolved-sandbox" ||
+		observation.Replicas == nil ||
+		*observation.Replicas != 1 ||
+		observation.PodName != "runtime-pod" ||
+		observation.PodPhase != "Running" ||
+		observation.PodCount != 1 ||
+		observation.RunningPodCount != 1 ||
+		observation.ContainersReady != 1 ||
+		observation.ContainersTotal != 1 ||
+		observation.RestartCount != 2 ||
+		observation.Requests["cpu"] != "250m" ||
+		observation.Requests["memory"] != "512Mi" ||
+		observation.Limits["memory"] != "1Gi" ||
+		len(observation.Storage) != 1 ||
+		observation.Storage[0].Capacity != "10Gi" {
+		t.Fatalf("expected runtime observation projection, got %+v", observation)
 	}
 	if list.Items[1].Kind != "SandboxTemplate" || list.Items[1].Labels["mbox.dev/template-id"] != templateID.String() {
 		t.Fatalf("expected labeled SandboxTemplate second, got %+v", list.Items[1])

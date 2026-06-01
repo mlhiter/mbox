@@ -165,6 +165,8 @@ echo "Checking API info manifest with CLI"
 	(.paths["/v1/runtime/orphans"].get.parameters | map(.name) | index("kind")) and
 	(.components.schemas.RuntimeResourceSummary.required | index("byOwner")) and
 	.components.schemas.RuntimeResourceOwner and
+	.components.schemas.RuntimeResourceObservation and
+	.components.schemas.RuntimeStorage and
 	.paths["/v1/projects/{projectID}/quota-policy"] and
 	.paths["/v1/tasks/{taskID}/events"] and
 	.components.schemas.ProjectQuotaPolicy

@@ -18,7 +18,7 @@ The current console supports the first product slice:
 - template library for ready-to-run environments, with create/edit dialogs that foreground runtime type, use case, entrypoints, resource preset, and workspace storage
 - advanced template settings for image, startup command, working directory, CPU, memory, env, secret refs, network preset, and lifecycle JSON
 - sandbox list, simplified guarded launch dialog, stop/start actions, and delete confirmation dialog
-- read-only Runtime inventory view backed by `/v1/runtime/resources`, with live kind, namespace, owner, label, and checked-at visibility for mbox-managed Kubernetes resources
+- read-only Runtime inventory view backed by `/v1/runtime/resources`, with live kind, namespace, owner, Pod phase/readiness, resource request, storage, label, and checked-at visibility for mbox-managed Kubernetes resources
 - selected resource inspection panel for resource identity and metadata
 - dedicated sandbox detail page with a main workspace runtime panel and local inspector
 - browser terminal for ready sandboxes, with a starting state while new runtimes are pending
@@ -30,7 +30,7 @@ The current console supports the first product slice:
 - toast feedback for API failures and successful writes
 - runtime readiness notices when terminal access is blocked by missing runtime projection or non-running sandbox status
 
-The console does not yet provide artifact upload, object-store retention, credential injection, live runtime metrics, runtime cleanup, or a full policy editor. Project launch policy, quota policy, and credential-reference visibility exists, while broader policy and credential management remain roadmap items. Pipeline and deployment screens should be treated as upper-layer integrations, not as the base console model.
+The console does not yet provide artifact upload, credential injection, metrics-server CPU/memory utilization charts, runtime cleanup, or a full policy editor. Project launch policy, quota policy, credential-reference visibility, object-store retained artifact download support, and read-only runtime workload observation exist, while broader policy and credential management remain roadmap items. Pipeline and deployment screens should be treated as upper-layer integrations, not as the base console model.
 
 ## Local Development
 
@@ -153,7 +153,7 @@ The Tasks tab creates controlled command tasks through `POST /v1/sandboxes/{sand
 
 The Artifacts tab registers output references through `POST /v1/sandboxes/{sandboxID}/artifacts` and lists the sandbox's artifact history. It can link an artifact to an existing task. `workspace://` file artifacts can be downloaded while the sandbox is running and runtime access can read the resolved workspace mount. The tab also exposes a capture action for supported workspace files; captured content is retained server-side with size, sha256, and storage-provider metadata so it can still be downloaded after runtime cleanup. API, CLI, and SDK clients can upload retained bytes directly; the current web tab does not expose a client-file upload control yet. External HTTPS URLs, object-store URIs, and directories remain reference-only.
 
-The Runtime view opens at `#runtime` and lists the current mbox-managed runtime resources reported by the runtime auditor. It is intentionally cross-project and read-only: the summary shows total resources, adapter, namespace counts, and checked-at time, while the table shows resource kind/name, namespace, label-derived owner, selected mbox labels, and creation time. If the server process has no runtime auditor configured, the view shows a local unavailable state instead of failing the rest of the console. Cleanup remains in the explicit orphan-cleanup API/CLI flow and is not exposed as a Runtime table action.
+The Runtime view opens at `#runtime` and lists the current mbox-managed runtime resources reported by the runtime auditor. It is intentionally cross-project and read-only: the summary shows total resources, adapter, observed Pod counts, and checked-at time, while the table shows resource kind/name, namespace, label-derived owner, best-effort runtime observation, summed Pod requests/limits, PVC state, selected mbox labels, and creation time. This observation comes from the current Kubernetes Pod/PVC shape; it is not metrics-server CPU/memory utilization, quota, billing, or capacity reservation. If the server process has no runtime auditor configured, the view shows a local unavailable state instead of failing the rest of the console. Cleanup remains in the explicit orphan-cleanup API/CLI flow and is not exposed as a Runtime table action.
 
 ## Design System
 
@@ -212,7 +212,7 @@ Useful manual checks:
 - Invalid entrypoint text such as `web:abc` shows an error and does not save a template with missing ports.
 - Template create/edit can still save advanced image, command, resources, ports, env, secret refs, network policy, and lifecycle JSON.
 - Left rail buttons switch between Projects, Templates, and Sandboxes instead of scrolling a combined page.
-- The Runtime rail item opens `#runtime` and shows read-only managed runtime resources when the runtime auditor is configured.
+- The Runtime rail item opens `#runtime` and shows read-only managed runtime resources, Pod readiness, summed resource requests, and PVC state when the runtime auditor is configured.
 - Switching away from Sandboxes clears sandbox selection and leaves any sandbox detail hash.
 - Opening a sandbox workspace updates the URL to `#sandboxes/{sandboxID}`; refreshing that URL reopens the detail page after data loads.
 - Sandbox detail shows workspace readiness checks for runtime record projection, preview surface, workspace persistence, and run intent above the Runtime Workspace.

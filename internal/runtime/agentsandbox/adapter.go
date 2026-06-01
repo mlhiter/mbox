@@ -15,6 +15,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
@@ -229,7 +230,9 @@ func (a *Adapter) ListManagedResources(ctx context.Context) (mboxruntime.Managed
 		return mboxruntime.ManagedResourceList{}, err
 	}
 	for _, item := range claims.Items {
-		resources = append(resources, managedResourceFromUnstructured("SandboxClaim", item))
+		resource := managedResourceFromUnstructured("SandboxClaim", item)
+		resource.Observation = a.observeSandboxClaim(ctx, item)
+		resources = append(resources, resource)
 	}
 
 	templates, err := a.client.Resource(templatesGVR).Namespace(metav1.NamespaceAll).List(ctx, metav1.ListOptions{
@@ -755,6 +758,74 @@ func managedResourceFromUnstructured(kind string, item unstructured.Unstructured
 	}
 }
 
+func (a *Adapter) observeSandboxClaim(ctx context.Context, claim unstructured.Unstructured) *mboxruntime.ManagedResourceObservation {
+	ready, message := readyCondition(&claim)
+	observation := &mboxruntime.ManagedResourceObservation{
+		ReadyCondition: string(ready),
+		Message:        message,
+	}
+	sandboxName, _, _ := unstructured.NestedString(claim.Object, "status", "sandbox", "name")
+	if sandboxName == "" {
+		observation.Message = defaultString(message, "SandboxClaim has no resolved runtime sandbox")
+		return observation
+	}
+	observation.RuntimeName = sandboxName
+
+	runtimeSandbox, err := a.client.Resource(sandboxesGVR).Namespace(claim.GetNamespace()).Get(ctx, sandboxName, metav1.GetOptions{})
+	if err != nil {
+		observation.Message = err.Error()
+		return observation
+	}
+	if replicas, ok, _ := unstructured.NestedInt64(runtimeSandbox.Object, "spec", "replicas"); ok {
+		observation.Replicas = &replicas
+	}
+	selector, _, _ := unstructured.NestedString(runtimeSandbox.Object, "status", "selector")
+	observation.Selector = selector
+	if selector == "" {
+		observation.Message = defaultString(message, "Runtime sandbox has no pod selector")
+		return observation
+	}
+	if a.coreClient == nil {
+		observation.Message = defaultString(message, "Kubernetes core client is not configured for Pod observation")
+		return observation
+	}
+
+	pods, err := a.coreClient.CoreV1().Pods(claim.GetNamespace()).List(ctx, metav1.ListOptions{
+		LabelSelector: selector,
+	})
+	if err != nil {
+		observation.Message = err.Error()
+		return observation
+	}
+	observation.PodCount = len(pods.Items)
+	if len(pods.Items) == 0 {
+		observation.Message = defaultString(message, "No runtime Pods matched the resolved selector")
+		return observation
+	}
+	for _, pod := range pods.Items {
+		if pod.Status.Phase == corev1.PodRunning {
+			observation.RunningPodCount++
+		}
+	}
+	pod := pickRuntimePod(pods.Items)
+	observation.PodName = pod.Name
+	observation.PodPhase = string(pod.Status.Phase)
+	observation.ContainersReady, observation.ContainersTotal, observation.RestartCount = podContainerReadiness(pod)
+	observation.Requests, observation.Limits = podResourceSummary(pod)
+	container := containerName
+	if len(pod.Spec.Containers) > 0 {
+		container = pod.Spec.Containers[0].Name
+		for _, item := range pod.Spec.Containers {
+			if item.Name == containerName {
+				container = item.Name
+				break
+			}
+		}
+	}
+	observation.Storage = a.runtimeStorage(ctx, pod, container)
+	return observation
+}
+
 func managedResourceOwner(kind string, labels map[string]string) *mboxruntime.ManagedResourceOwner {
 	switch kind {
 	case "SandboxClaim":
@@ -836,6 +907,59 @@ func pickRuntimePod(pods []corev1.Pod) corev1.Pod {
 		}
 	}
 	return pods[0]
+}
+
+func podContainerReadiness(pod corev1.Pod) (ready int, total int, restarts int32) {
+	statuses := append([]corev1.ContainerStatus{}, pod.Status.InitContainerStatuses...)
+	statuses = append(statuses, pod.Status.ContainerStatuses...)
+	for _, status := range statuses {
+		total++
+		if status.Ready {
+			ready++
+		}
+		restarts += status.RestartCount
+	}
+	if total == 0 {
+		total = len(pod.Spec.InitContainers) + len(pod.Spec.Containers)
+	}
+	return ready, total, restarts
+}
+
+func podResourceSummary(pod corev1.Pod) (map[string]string, map[string]string) {
+	requests := corev1.ResourceList{}
+	limits := corev1.ResourceList{}
+	for _, container := range append(pod.Spec.InitContainers, pod.Spec.Containers...) {
+		for name, quantity := range container.Resources.Requests {
+			addResourceQuantity(requests, name, quantity)
+		}
+		for name, quantity := range container.Resources.Limits {
+			addResourceQuantity(limits, name, quantity)
+		}
+	}
+	return resourceListStrings(requests), resourceListStrings(limits)
+}
+
+func addResourceQuantity(values corev1.ResourceList, name corev1.ResourceName, quantity resource.Quantity) {
+	current := values[name]
+	current.Add(quantity)
+	values[name] = current
+}
+
+func resourceListStrings(values corev1.ResourceList) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, string(name))
+	}
+	sort.Strings(names)
+	out := make(map[string]string, len(names))
+	for _, name := range names {
+		quantity := values[corev1.ResourceName(name)]
+		out[name] = quantity.String()
+	}
+	return out
 }
 
 func (a *Adapter) runtimeStorage(ctx context.Context, pod corev1.Pod, containerName string) []mboxruntime.RuntimeStorage {

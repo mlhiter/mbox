@@ -599,7 +599,7 @@
 }
 
 .records-table .runtime-inventory-table {
-  min-width: 980px;
+  min-width: 1160px;
 }
 
 .records-table th,
@@ -756,26 +756,31 @@
 
 .records-table .runtime-inventory-table th:nth-child(1),
 .records-table .runtime-inventory-table td:nth-child(1) {
-  width: 24%;
+  width: 19%;
 }
 
 .records-table .runtime-inventory-table th:nth-child(2),
 .records-table .runtime-inventory-table td:nth-child(2) {
-  width: 18%;
+  width: 14%;
 }
 
 .records-table .runtime-inventory-table th:nth-child(3),
 .records-table .runtime-inventory-table td:nth-child(3) {
-  width: 20%;
+  width: 17%;
 }
 
 .records-table .runtime-inventory-table th:nth-child(4),
 .records-table .runtime-inventory-table td:nth-child(4) {
-  width: 26%;
+  width: 20%;
 }
 
 .records-table .runtime-inventory-table th:nth-child(5),
 .records-table .runtime-inventory-table td:nth-child(5) {
+  width: 18%;
+}
+
+.records-table .runtime-inventory-table th:nth-child(6),
+.records-table .runtime-inventory-table td:nth-child(6) {
   width: 12%;
 }
 
@@ -1005,14 +1010,16 @@
 }
 
 .runtime-inventory-resource,
-.runtime-inventory-owner {
+.runtime-inventory-owner,
+.runtime-inventory-observation {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
 .runtime-inventory-resource strong,
-.runtime-inventory-owner strong {
+.runtime-inventory-owner strong,
+.runtime-inventory-observation strong {
   color: var(--ink);
   font-size: 13px;
   font-weight: 650;
@@ -1020,10 +1027,20 @@
 
 .runtime-inventory-resource code,
 .runtime-inventory-owner code,
+.runtime-inventory-observation code,
 .runtime-inventory-labels code {
   color: var(--muted-copy);
   font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
     monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.runtime-inventory-resource small,
+.runtime-inventory-observation small,
+.runtime-inventory-observation span {
+  color: var(--muted-copy);
   font-size: 12px;
   line-height: 1.35;
   overflow-wrap: anywhere;

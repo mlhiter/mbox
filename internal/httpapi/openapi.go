@@ -541,6 +541,8 @@ func openAPIComponents() map[string]any {
 			"RuntimeResourceCount":          objectSchema(requiredProps("name", "count"), prop("name", stringSchema()), prop("count", integerSchema())),
 			"RuntimeResource":               runtimeResourceSchema(),
 			"RuntimeResourceOwner":          runtimeResourceOwnerSchema(),
+			"RuntimeResourceObservation":    runtimeResourceObservationSchema(),
+			"RuntimeStorage":                runtimeStorageSchema(),
 			"RuntimeOrphanAudit":            runtimeOrphanAuditSchema(),
 			"RuntimeOrphan":                 runtimeOrphanSchema(),
 			"RuntimeOrphanReason":           enumSchema("missing-sandbox-record", "cleanup-pending", "runtime-ref-mismatch", "missing-template-record", "unlabeled-owner"),
@@ -855,6 +857,7 @@ func runtimeResourceSchema() map[string]any {
 		prop("namespace", stringSchema()),
 		prop("name", stringSchema()),
 		prop("owner", schemaRef("RuntimeResourceOwner")),
+		prop("observation", schemaRef("RuntimeResourceObservation")),
 		prop("labels", objectAnySchema()),
 		prop("createdAt", dateTimeSchema()),
 	)
@@ -866,6 +869,40 @@ func runtimeResourceOwnerSchema() map[string]any {
 		prop("projectId", stringSchema()),
 		prop("sandboxId", stringSchema()),
 		prop("templateId", stringSchema()),
+	)
+}
+
+func runtimeResourceObservationSchema() map[string]any {
+	schema := objectSchema(nil,
+		prop("runtimeName", stringSchema()),
+		prop("selector", stringSchema()),
+		prop("replicas", integerSchema()),
+		prop("podCount", integerSchema()),
+		prop("runningPodCount", integerSchema()),
+		prop("podName", stringSchema()),
+		prop("podPhase", stringSchema()),
+		prop("containersReady", integerSchema()),
+		prop("containersTotal", integerSchema()),
+		prop("restartCount", integerSchema()),
+		prop("requests", objectAnySchema()),
+		prop("limits", objectAnySchema()),
+		prop("storage", arraySchema(schemaRef("RuntimeStorage"))),
+		prop("readyCondition", stringSchema()),
+		prop("message", stringSchema()),
+	)
+	schema["description"] = "Best-effort read-only runtime observation from current Kubernetes Pod and PVC state. It is not metrics-server CPU or memory usage, quota, billing, or capacity reservation."
+	return schema
+}
+
+func runtimeStorageSchema() map[string]any {
+	return objectSchema(requiredProps("name", "mountPath"),
+		prop("name", stringSchema()),
+		prop("mountPath", stringSchema()),
+		prop("claimName", stringSchema()),
+		prop("phase", stringSchema()),
+		prop("capacity", stringSchema()),
+		prop("storageClassName", stringSchema()),
+		prop("message", stringSchema()),
 	)
 }
 

@@ -300,6 +300,8 @@ cli_json openapi | jq -e '
 	.openapi == "3.1.0" and
 	.paths["/v1/sandboxes/{sandboxID}/runtime"] and
 	.paths["/v1/artifacts/{artifactID}/content"] and
+	.components.schemas.RuntimeResourceObservation and
+	.components.schemas.RuntimeStorage and
 	.components.schemas.ExecutionTask
 ' >/dev/null
 
@@ -416,6 +418,20 @@ pod_name="$(wait_pod_name "$pod_selector")"
 
 echo "Waiting for Pod $pod_name"
 "${kubectl_cmd[@]}" wait -n "$NAMESPACE" "pod/$pod_name" --for=condition=Ready --timeout="${TIMEOUT_SECONDS}s"
+
+echo "Checking runtime resource observation"
+api_json GET "/v1/runtime/resources?namespace=$NAMESPACE&kind=SandboxClaim" | jq -e \
+	--arg claim "$claim_name" \
+	--arg pod "$pod_name" \
+	'.items[] |
+	select(.name == $claim) |
+	.observation.podName == $pod and
+	.observation.podPhase == "Running" and
+	.observation.podCount >= 1 and
+	.observation.runningPodCount >= 1 and
+	.observation.containersReady >= 1 and
+	.observation.requests.cpu == "50m" and
+	.observation.requests.memory == "64Mi"' >/dev/null
 
 service_account_name="$("${kubectl_cmd[@]}" get pod "$pod_name" -n "$NAMESPACE" -o jsonpath='{.spec.serviceAccountName}')"
 token_automount="$("${kubectl_cmd[@]}" get pod "$pod_name" -n "$NAMESPACE" -o jsonpath='{.spec.automountServiceAccountToken}')"
