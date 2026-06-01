@@ -36,7 +36,7 @@ export function RuntimeInventory({
 }) {
   const items = inventory?.items || []
   const summary = inventory?.summary
-  const observedPods = observedPodSummary(items)
+  const workload = summary?.workload
   const checkedAt = inventory?.checkedAt ? formatTimestamp(inventory.checkedAt) : "Not checked"
   const adapter = inventory?.adapter || "runtime auditor"
   return (
@@ -55,7 +55,8 @@ export function RuntimeInventory({
       <div className="runtime-inventory-summary" aria-label="Runtime inventory summary">
         <SummaryCell label="Managed" value={String(summary?.total ?? 0)} detail="runtime resources" />
         <SummaryCell label="Adapter" value={adapter} detail="auditor source" mono />
-        <SummaryCell label="Pods" value={observedPods.value} detail={observedPods.detail} />
+        <SummaryCell label="Pods" value={podSummaryValue(workload)} detail={podSummaryDetail(workload)} />
+        <SummaryCell label="Requests" value={requestSummaryValue(workload)} detail={storageSummaryDetail(workload)} mono />
         <SummaryCell label="Checked" value={checkedAt} detail="latest inventory" mono />
       </div>
       <Table className="resource-table runtime-inventory-table">
@@ -233,22 +234,6 @@ function shortID(value: string) {
   return `${value.slice(0, 8)}...${value.slice(-4)}`
 }
 
-function observedPodSummary(items: ManagedResource[]) {
-  const podCount = items.reduce((total, item) => total + (item.observation?.podCount ?? 0), 0)
-  const runningPodCount = items.reduce((total, item) => total + (item.observation?.runningPodCount ?? 0), 0)
-  const observedResources = items.filter((item) => item.observation).length
-  if (podCount === 0) {
-    return {
-      value: "0",
-      detail: observedResources ? `${observedResources} resources observed` : "no live pod observations",
-    }
-  }
-  return {
-    value: `${runningPodCount}/${podCount}`,
-    detail: "running / observed pods",
-  }
-}
-
 function resourcePairs(prefix: string, values?: Record<string, string>) {
   if (!values) {
     return []
@@ -266,6 +251,39 @@ function storagePairs(storage?: Array<{ phase?: string; capacity?: string; claim
     const state = [item.phase, item.capacity].filter(Boolean).join(" ")
     return `pvc ${state || shortID(item.claimName || "workspace")}`
   })
+}
+
+function podSummaryValue(workload?: { observedPods?: number; runningPods?: number }) {
+  const observedPods = workload?.observedPods ?? 0
+  if (observedPods === 0) {
+    return "0"
+  }
+  return `${workload?.runningPods ?? 0}/${observedPods}`
+}
+
+function podSummaryDetail(workload?: { observedPods?: number; observedResources?: number }) {
+  if (!workload || workload.observedPods === 0) {
+    return workload?.observedResources ? `${workload.observedResources} resources observed` : "no live pod observations"
+  }
+  return "running / observed pods"
+}
+
+function requestSummaryValue(workload?: { requests?: Record<string, string> }) {
+  const requests = workload?.requests
+  if (!requests) {
+    return "none"
+  }
+  return [requests.cpu ? `cpu ${requests.cpu}` : "", requests.memory ? `mem ${requests.memory}` : ""]
+    .filter(Boolean)
+    .join(" · ") || "custom"
+}
+
+function storageSummaryDetail(workload?: { storageCapacity?: string; restartCount?: number }) {
+  const bits = [
+    workload?.storageCapacity ? `storage ${workload.storageCapacity}` : "",
+    workload?.restartCount ? `${workload.restartCount} restarts` : "",
+  ].filter(Boolean)
+  return bits.length > 0 ? bits.join(" · ") : "observed workload shape"
 }
 
 function formatTimestamp(value?: string) {

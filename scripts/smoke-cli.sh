@@ -164,6 +164,10 @@ echo "Checking API info manifest with CLI"
 	(.paths["/v1/runtime/resources"].get.parameters | map(.name) | index("kind")) and
 	(.paths["/v1/runtime/orphans"].get.parameters | map(.name) | index("kind")) and
 	(.components.schemas.RuntimeResourceSummary.required | index("byOwner")) and
+	(.components.schemas.RuntimeResourceSummary.required | index("workload")) and
+	.components.schemas.RuntimeWorkloadSummary and
+	.components.schemas.RuntimeQuantityIssue and
+	.components.schemas.RuntimeStorageSummary and
 	.components.schemas.RuntimeResourceOwner and
 	.components.schemas.RuntimeResourceObservation and
 	.components.schemas.RuntimeStorage and

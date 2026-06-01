@@ -301,6 +301,7 @@ cli_json openapi | jq -e '
 	.paths["/v1/sandboxes/{sandboxID}/runtime"] and
 	.paths["/v1/artifacts/{artifactID}/content"] and
 	.components.schemas.RuntimeResourceObservation and
+	.components.schemas.RuntimeWorkloadSummary and
 	.components.schemas.RuntimeStorage and
 	.components.schemas.ExecutionTask
 ' >/dev/null
@@ -423,15 +424,20 @@ echo "Checking runtime resource observation"
 api_json GET "/v1/runtime/resources?namespace=$NAMESPACE&kind=SandboxClaim" | jq -e \
 	--arg claim "$claim_name" \
 	--arg pod "$pod_name" \
-	'.items[] |
-	select(.name == $claim) |
-	.observation.podName == $pod and
-	.observation.podPhase == "Running" and
-	.observation.podCount >= 1 and
-	.observation.runningPodCount >= 1 and
-	.observation.containersReady >= 1 and
-	.observation.requests.cpu == "50m" and
-	.observation.requests.memory == "64Mi"' >/dev/null
+	'. as $inventory |
+	($inventory.items[] | select(.name == $claim)) as $claimResource |
+	$claimResource.observation.podName == $pod and
+	$claimResource.observation.podPhase == "Running" and
+	$claimResource.observation.podCount >= 1 and
+	$claimResource.observation.runningPodCount >= 1 and
+	$claimResource.observation.containersReady >= 1 and
+	$claimResource.observation.requests.cpu == "50m" and
+	$claimResource.observation.requests.memory == "64Mi" and
+	$inventory.summary.workload.observedResources >= 1 and
+	$inventory.summary.workload.observedPods >= 1 and
+	$inventory.summary.workload.runningPods >= 1 and
+	$inventory.summary.workload.requests.cpu == "50m" and
+	$inventory.summary.workload.requests.memory == "64Mi"' >/dev/null
 
 service_account_name="$("${kubectl_cmd[@]}" get pod "$pod_name" -n "$NAMESPACE" -o jsonpath='{.spec.serviceAccountName}')"
 token_automount="$("${kubectl_cmd[@]}" get pod "$pod_name" -n "$NAMESPACE" -o jsonpath='{.spec.automountServiceAccountToken}')"

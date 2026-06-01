@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/mlhiter/mbox/internal/domain"
 	mboxruntime "github.com/mlhiter/mbox/internal/runtime"
@@ -251,7 +252,149 @@ func summarizeManagedResources(resources []mboxruntime.ManagedResource) mboxrunt
 		ByKind:      managedResourceCounts(byKind),
 		ByNamespace: managedResourceCounts(byNamespace),
 		ByOwner:     managedResourceCounts(byOwner),
+		Workload:    summarizeManagedWorkload(resources),
 	}
+}
+
+func summarizeManagedWorkload(resources []mboxruntime.ManagedResource) mboxruntime.ManagedWorkloadSummary {
+	requests := map[string]resource.Quantity{}
+	limits := map[string]resource.Quantity{}
+	storageCapacity := resource.Quantity{}
+	storageCapacitySet := false
+	storageByPhase := map[string]managedStorageAccumulator{}
+	var issues []mboxruntime.ManagedQuantityIssue
+	summary := mboxruntime.ManagedWorkloadSummary{}
+
+	for _, item := range resources {
+		observation := item.Observation
+		if observation == nil {
+			continue
+		}
+		summary.ObservedResources++
+		if observation.Replicas != nil {
+			summary.DesiredPods += *observation.Replicas
+		}
+		summary.ObservedPods += observation.PodCount
+		summary.RunningPods += observation.RunningPodCount
+		summary.ContainersReady += observation.ContainersReady
+		summary.ContainersTotal += observation.ContainersTotal
+		summary.RestartCount += observation.RestartCount
+		addObservedQuantities(requests, observation.Requests, "requests", item, &issues)
+		addObservedQuantities(limits, observation.Limits, "limits", item, &issues)
+		for _, storage := range observation.Storage {
+			phase := strings.TrimSpace(storage.Phase)
+			if phase == "" {
+				phase = "Unknown"
+			}
+			acc := storageByPhase[phase]
+			acc.Count++
+			if strings.TrimSpace(storage.Capacity) != "" {
+				quantity, err := resource.ParseQuantity(storage.Capacity)
+				if err != nil {
+					issues = append(issues, quantityIssue(item, "storage.capacity", storage.Capacity, err.Error()))
+				} else {
+					acc.Capacity.Add(quantity)
+					acc.CapacitySet = true
+					storageCapacity.Add(quantity)
+					storageCapacitySet = true
+				}
+			}
+			storageByPhase[phase] = acc
+		}
+	}
+	summary.Requests = resourceQuantityMap(requests)
+	summary.Limits = resourceQuantityMap(limits)
+	if storageCapacitySet {
+		summary.StorageCapacity = storageCapacity.String()
+	}
+	summary.QuantityIssues = issues
+	summary.Storage = managedStorageSummaries(storageByPhase)
+	return summary
+}
+
+type managedStorageAccumulator struct {
+	Count       int
+	Capacity    resource.Quantity
+	CapacitySet bool
+}
+
+func addObservedQuantities(
+	out map[string]resource.Quantity,
+	values map[string]string,
+	field string,
+	item mboxruntime.ManagedResource,
+	issues *[]mboxruntime.ManagedQuantityIssue,
+) {
+	for name, raw := range values {
+		name = strings.TrimSpace(name)
+		raw = strings.TrimSpace(raw)
+		if name == "" || raw == "" {
+			*issues = append(*issues, quantityIssue(item, field, raw, "missing resource name or quantity"))
+			continue
+		}
+		quantity, err := resource.ParseQuantity(raw)
+		if err != nil {
+			*issues = append(*issues, quantityIssue(item, field+"."+name, raw, err.Error()))
+			continue
+		}
+		current := out[name]
+		current.Add(quantity)
+		out[name] = current
+	}
+}
+
+func quantityIssue(item mboxruntime.ManagedResource, field string, value string, reason string) mboxruntime.ManagedQuantityIssue {
+	ref := item.Kind + "/" + item.Name
+	if item.Namespace != "" {
+		ref = item.Namespace + "/" + ref
+	}
+	return mboxruntime.ManagedQuantityIssue{
+		Resource: ref,
+		Field:    field,
+		Value:    value,
+		Reason:   reason,
+	}
+}
+
+func resourceQuantityMap(values map[string]resource.Quantity) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make(map[string]string, len(names))
+	for _, name := range names {
+		quantity := values[name]
+		out[name] = quantity.String()
+	}
+	return out
+}
+
+func managedStorageSummaries(values map[string]managedStorageAccumulator) []mboxruntime.ManagedStorageSummary {
+	if len(values) == 0 {
+		return nil
+	}
+	phases := make([]string, 0, len(values))
+	for phase := range values {
+		phases = append(phases, phase)
+	}
+	sort.Strings(phases)
+	items := make([]mboxruntime.ManagedStorageSummary, 0, len(phases))
+	for _, phase := range phases {
+		acc := values[phase]
+		item := mboxruntime.ManagedStorageSummary{
+			Phase: phase,
+			Count: acc.Count,
+		}
+		if acc.CapacitySet {
+			item.Capacity = acc.Capacity.String()
+		}
+		items = append(items, item)
+	}
+	return items
 }
 
 func managedResourceOwnerKey(owner *mboxruntime.ManagedResourceOwner) string {

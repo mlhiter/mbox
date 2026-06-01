@@ -268,8 +268,34 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(runtimeResourceSummaryRequired, "total") ||
 		!anySliceContainsString(runtimeResourceSummaryRequired, "byKind") ||
 		!anySliceContainsString(runtimeResourceSummaryRequired, "byNamespace") ||
-		!anySliceContainsString(runtimeResourceSummaryRequired, "byOwner") {
+		!anySliceContainsString(runtimeResourceSummaryRequired, "byOwner") ||
+		!anySliceContainsString(runtimeResourceSummaryRequired, "workload") {
 		t.Fatalf("expected runtime resource summary required fields, got %#v", runtimeResourceSummary["required"])
+	}
+	runtimeWorkloadSummary, ok := schemas["RuntimeWorkloadSummary"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected RuntimeWorkloadSummary schema in %#v", schemas["RuntimeWorkloadSummary"])
+	}
+	runtimeWorkloadRequired, ok := runtimeWorkloadSummary["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(runtimeWorkloadRequired, "observedPods") ||
+		!anySliceContainsString(runtimeWorkloadRequired, "runningPods") ||
+		!anySliceContainsString(runtimeWorkloadRequired, "containersReady") {
+		t.Fatalf("expected runtime workload required fields, got %#v", runtimeWorkloadSummary["required"])
+	}
+	runtimeWorkloadProperties, ok := runtimeWorkloadSummary["properties"].(map[string]any)
+	if !ok ||
+		runtimeWorkloadProperties["requests"] == nil ||
+		runtimeWorkloadProperties["limits"] == nil ||
+		runtimeWorkloadProperties["storage"] == nil ||
+		runtimeWorkloadProperties["quantityIssues"] == nil {
+		t.Fatalf("expected runtime workload summary properties, got %#v", runtimeWorkloadSummary["properties"])
+	}
+	if _, ok := schemas["RuntimeQuantityIssue"].(map[string]any); !ok {
+		t.Fatalf("expected RuntimeQuantityIssue schema in %#v", schemas["RuntimeQuantityIssue"])
+	}
+	if _, ok := schemas["RuntimeStorageSummary"].(map[string]any); !ok {
+		t.Fatalf("expected RuntimeStorageSummary schema in %#v", schemas["RuntimeStorageSummary"])
 	}
 	runtimeResource, ok := schemas["RuntimeResource"].(map[string]any)
 	if !ok {
@@ -451,6 +477,7 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 					ContainersTotal: 1,
 					RestartCount:    2,
 					Requests:        map[string]string{"cpu": "250m", "memory": "512Mi"},
+					Limits:          map[string]string{"memory": "1Gi"},
 					Storage: []mboxruntime.RuntimeStorage{{
 						Name:      "workspace",
 						MountPath: "/workspace",
@@ -496,6 +523,22 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 		!managedResourceCountsContain(list.Summary.ByOwner, "template/"+templateID, 1) {
 		t.Fatalf("unexpected runtime resource summary: %+v", list.Summary)
 	}
+	if list.Summary.Workload.ObservedResources != 1 ||
+		list.Summary.Workload.ObservedPods != 1 ||
+		list.Summary.Workload.RunningPods != 1 ||
+		list.Summary.Workload.ContainersReady != 1 ||
+		list.Summary.Workload.ContainersTotal != 1 ||
+		list.Summary.Workload.RestartCount != 2 ||
+		list.Summary.Workload.Requests["cpu"] != "250m" ||
+		list.Summary.Workload.Requests["memory"] != "512Mi" ||
+		list.Summary.Workload.Limits["memory"] != "1Gi" ||
+		list.Summary.Workload.StorageCapacity != "10Gi" ||
+		len(list.Summary.Workload.Storage) != 1 ||
+		list.Summary.Workload.Storage[0].Phase != "Bound" ||
+		list.Summary.Workload.Storage[0].Count != 1 ||
+		list.Summary.Workload.Storage[0].Capacity != "10Gi" {
+		t.Fatalf("unexpected runtime workload summary: %+v", list.Summary.Workload)
+	}
 	if list.Items[0].Owner == nil || list.Items[0].Owner.Kind != "sandbox" || list.Items[0].Owner.ProjectID != projectID || list.Items[0].Owner.SandboxID != sandboxID {
 		t.Fatalf("expected sandbox owner projection, got %+v", list.Items[0].Owner)
 	}
@@ -511,6 +554,7 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected filtered status %d, got %d: %s", http.StatusOK, res.Code, res.Body.String())
 	}
+	list = mboxruntime.ManagedResourceList{}
 	decodeResponse(t, res, &list)
 	if len(list.Items) != 1 || list.Items[0].Namespace != "mbox-demo" || list.Items[0].Kind != "SandboxClaim" {
 		t.Fatalf("unexpected namespace-filtered runtime resources: %+v", list)
@@ -521,11 +565,15 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 		!managedResourceCountsContain(list.Summary.ByOwner, "project/"+projectID+"/sandbox/"+sandboxID, 1) {
 		t.Fatalf("unexpected namespace-filtered runtime resource summary: %+v", list.Summary)
 	}
+	if list.Summary.Workload.ObservedResources != 1 || list.Summary.Workload.Requests["cpu"] != "250m" {
+		t.Fatalf("unexpected namespace-filtered runtime workload summary: %+v", list.Summary.Workload)
+	}
 
 	res = request(api, http.MethodGet, "/v1/runtime/resources?kind=SandboxTemplate", nil)
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected kind-filtered status %d, got %d: %s", http.StatusOK, res.Code, res.Body.String())
 	}
+	list = mboxruntime.ManagedResourceList{}
 	decodeResponse(t, res, &list)
 	if len(list.Items) != 1 || list.Items[0].Kind != "SandboxTemplate" || list.Items[0].Namespace != "other" {
 		t.Fatalf("unexpected kind-filtered runtime resources: %+v", list)
@@ -538,6 +586,9 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 	}
 	if list.Items[0].Owner == nil || list.Items[0].Owner.Kind != "template" || list.Items[0].Owner.TemplateID != templateID {
 		t.Fatalf("expected template owner projection, got %+v", list.Items[0].Owner)
+	}
+	if list.Summary.Workload.ObservedResources != 0 || len(list.Summary.Workload.Requests) != 0 {
+		t.Fatalf("unexpected template-only runtime workload summary: %+v", list.Summary.Workload)
 	}
 }
 

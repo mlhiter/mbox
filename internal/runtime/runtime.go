@@ -150,11 +150,40 @@ type ManagedResourceSummary struct {
 	ByKind      []ManagedResourceCount `json:"byKind"`
 	ByNamespace []ManagedResourceCount `json:"byNamespace"`
 	ByOwner     []ManagedResourceCount `json:"byOwner"`
+	Workload    ManagedWorkloadSummary `json:"workload"`
 }
 
 type ManagedResourceCount struct {
 	Name  string `json:"name"`
 	Count int    `json:"count"`
+}
+
+type ManagedWorkloadSummary struct {
+	ObservedResources int                     `json:"observedResources"`
+	DesiredPods       int64                   `json:"desiredPods"`
+	ObservedPods      int                     `json:"observedPods"`
+	RunningPods       int                     `json:"runningPods"`
+	ContainersReady   int                     `json:"containersReady"`
+	ContainersTotal   int                     `json:"containersTotal"`
+	RestartCount      int32                   `json:"restartCount"`
+	Requests          map[string]string       `json:"requests,omitempty"`
+	Limits            map[string]string       `json:"limits,omitempty"`
+	StorageCapacity   string                  `json:"storageCapacity,omitempty"`
+	QuantityIssues    []ManagedQuantityIssue  `json:"quantityIssues,omitempty"`
+	Storage           []ManagedStorageSummary `json:"storage,omitempty"`
+}
+
+type ManagedQuantityIssue struct {
+	Resource string `json:"resource"`
+	Field    string `json:"field"`
+	Value    string `json:"value,omitempty"`
+	Reason   string `json:"reason"`
+}
+
+type ManagedStorageSummary struct {
+	Phase    string `json:"phase"`
+	Count    int    `json:"count"`
+	Capacity string `json:"capacity,omitempty"`
 }
 
 type ManagedResourceOwner struct {

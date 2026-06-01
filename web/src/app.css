@@ -974,7 +974,7 @@
 
 .runtime-inventory-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   border-top: 1px solid var(--line);
   background: linear-gradient(180deg, oklch(0.999 0.003 82), var(--paper));
 }

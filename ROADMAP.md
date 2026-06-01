@@ -225,6 +225,7 @@ Current status:
 - Done: Web Runtime inventory view at `#runtime` for read-only operator triage over `/v1/runtime/resources`, including summary, owner, label, and disabled-auditor handling without adding runtime write actions.
 - Done: Web project inspector audit-feed ergonomics for request ID, operation, and RFC3339 time-window filters, with trace metadata display when present.
 - Done: Runtime inventory workload observation for resolved SandboxClaim Pod phase, readiness, restart count, summed requests/limits, and PVC state across API, OpenAPI, SDK, Web, and runtime smoke coverage without adding metrics-server utilization or quota semantics.
+- Done: Runtime inventory workload rollups for filtered observed resources, desired/observed/running Pods, container readiness, restarts, summed requests/limits, and PVC capacity across API, OpenAPI, SDK, Web, docs, and smoke coverage.
 - Remaining: user/project RBAC beyond the shared automation token, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
 
 ## Phase 4: Upper-layer Workflow Integrations
@@ -341,6 +342,7 @@ First slice status:
 44. Done: Web Runtime inventory route for read-only live runtime triage over the existing runtime auditor.
 45. Done: Web project inspector filters for request-correlated and operation-scoped audit feed slices.
 46. Done: read-only runtime inventory workload observation for Pod phase/readiness, restart count, resource requests/limits, and PVC state.
-47. Next: operational hardening around remaining live runtime usage rollups, audit-feed ergonomics, or user/project RBAC starter.
+47. Done: read-only runtime inventory workload rollups for filtered Pod, readiness, request/limit, restart, and PVC capacity totals.
+48. Next: operational hardening around user/project RBAC starter, remaining audit ergonomics, or deeper per-project runtime usage attribution.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

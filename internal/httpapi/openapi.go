@@ -539,6 +539,9 @@ func openAPIComponents() map[string]any {
 			"RuntimeResourceList":           runtimeResourceListSchema(),
 			"RuntimeResourceSummary":        runtimeResourceSummarySchema(),
 			"RuntimeResourceCount":          objectSchema(requiredProps("name", "count"), prop("name", stringSchema()), prop("count", integerSchema())),
+			"RuntimeWorkloadSummary":        runtimeWorkloadSummarySchema(),
+			"RuntimeQuantityIssue":          runtimeQuantityIssueSchema(),
+			"RuntimeStorageSummary":         runtimeStorageSummarySchema(),
 			"RuntimeResource":               runtimeResourceSchema(),
 			"RuntimeResourceOwner":          runtimeResourceOwnerSchema(),
 			"RuntimeResourceObservation":    runtimeResourceObservationSchema(),
@@ -842,11 +845,48 @@ func runtimeResourceListSchema() map[string]any {
 }
 
 func runtimeResourceSummarySchema() map[string]any {
-	return objectSchema(requiredProps("total", "byKind", "byNamespace", "byOwner"),
+	return objectSchema(requiredProps("total", "byKind", "byNamespace", "byOwner", "workload"),
 		prop("total", integerSchema()),
 		prop("byKind", arraySchema(schemaRef("RuntimeResourceCount"))),
 		prop("byNamespace", arraySchema(schemaRef("RuntimeResourceCount"))),
 		prop("byOwner", arraySchema(schemaRef("RuntimeResourceCount"))),
+		prop("workload", schemaRef("RuntimeWorkloadSummary")),
+	)
+}
+
+func runtimeWorkloadSummarySchema() map[string]any {
+	schema := objectSchema(requiredProps("observedResources", "desiredPods", "observedPods", "runningPods", "containersReady", "containersTotal", "restartCount"),
+		prop("observedResources", integerSchema()),
+		prop("desiredPods", integerSchema()),
+		prop("observedPods", integerSchema()),
+		prop("runningPods", integerSchema()),
+		prop("containersReady", integerSchema()),
+		prop("containersTotal", integerSchema()),
+		prop("restartCount", integerSchema()),
+		prop("requests", objectAnySchema()),
+		prop("limits", objectAnySchema()),
+		prop("storageCapacity", stringSchema()),
+		prop("quantityIssues", arraySchema(schemaRef("RuntimeQuantityIssue"))),
+		prop("storage", arraySchema(schemaRef("RuntimeStorageSummary"))),
+	)
+	schema["description"] = "Read-only rollup of observed runtime workload shape from filtered runtime inventory items. It is not metrics-server utilization, quota, billing, or reservation."
+	return schema
+}
+
+func runtimeQuantityIssueSchema() map[string]any {
+	return objectSchema(requiredProps("resource", "field", "reason"),
+		prop("resource", stringSchema()),
+		prop("field", stringSchema()),
+		prop("value", stringSchema()),
+		prop("reason", stringSchema()),
+	)
+}
+
+func runtimeStorageSummarySchema() map[string]any {
+	return objectSchema(requiredProps("phase", "count"),
+		prop("phase", stringSchema()),
+		prop("count", integerSchema()),
+		prop("capacity", stringSchema()),
 	)
 }
 

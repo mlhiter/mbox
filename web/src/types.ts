@@ -89,6 +89,35 @@ export type ManagedResourceSummary = {
   byKind: ManagedResourceCount[]
   byNamespace: ManagedResourceCount[]
   byOwner: ManagedResourceCount[]
+  workload: ManagedWorkloadSummary
+}
+
+export type ManagedWorkloadSummary = {
+  observedResources: number
+  desiredPods: number
+  observedPods: number
+  runningPods: number
+  containersReady: number
+  containersTotal: number
+  restartCount: number
+  requests?: Record<string, string>
+  limits?: Record<string, string>
+  storageCapacity?: string
+  quantityIssues?: ManagedQuantityIssue[]
+  storage?: ManagedStorageSummary[]
+}
+
+export type ManagedQuantityIssue = {
+  resource: string
+  field: string
+  value?: string
+  reason: string
+}
+
+export type ManagedStorageSummary = {
+  phase: string
+  count: number
+  capacity?: string
 }
 
 export type ManagedResourceRef = {

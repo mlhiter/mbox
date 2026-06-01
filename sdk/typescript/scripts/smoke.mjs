@@ -489,8 +489,25 @@ function schemaComponents() {
   }
   Object.assign(schemas, {
     RuntimeResourceList: objectSchema(["adapter", "checkedAt", "summary", "items"]),
-    RuntimeResourceSummary: objectSchema(["total", "byKind", "byNamespace", "byOwner"]),
+    RuntimeResourceSummary: objectSchema(["total", "byKind", "byNamespace", "byOwner", "workload"]),
     RuntimeResourceCount: objectSchema(["name", "count"]),
+    RuntimeWorkloadSummary: objectSchema([
+      "observedResources",
+      "desiredPods",
+      "observedPods",
+      "runningPods",
+      "containersReady",
+      "containersTotal",
+      "restartCount",
+    ], [
+      "requests",
+      "limits",
+      "storageCapacity",
+      "quantityIssues",
+      "storage",
+    ]),
+    RuntimeQuantityIssue: objectSchema(["resource", "field", "reason"], ["value"]),
+    RuntimeStorageSummary: objectSchema(["phase", "count"], ["capacity"]),
     RuntimeResource: objectSchema(["adapter", "kind", "name"], ["namespace", "owner", "observation", "labels", "createdAt"]),
     RuntimeResourceOwner: objectSchema(["kind"], ["projectId", "sandboxId", "templateId"]),
     RuntimeResourceObservation: objectSchema([], [
