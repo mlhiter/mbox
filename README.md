@@ -446,7 +446,7 @@ export MBOX_KUBE_CONTEXT=kind-agent-sandbox
 ./scripts/smoke-agent-sandbox.sh
 ```
 
-The smoke test creates a project, a BusyBox terminal template, and a sandbox through the mbox API. It then verifies the generated `SandboxClaim`, resolved `Sandbox`, ready Pod, disabled ServiceAccount token automount, pod logs, workspace exec, API status mapping, task output capture, retained artifact content, delete cleanup path, and a clean runtime orphan audit after cleanup.
+The smoke test creates a project, a BusyBox terminal template, and a sandbox through the mbox API. It then verifies the generated `SandboxClaim`, resolved `Sandbox`, ready Pod, disabled ServiceAccount token automount, pod logs, workspace exec, API status mapping, task output capture, CLI `tasks run --require-success`, retained artifact content, delete cleanup path, and a clean runtime orphan audit after cleanup.
 
 ## Node Preview Smoke
 

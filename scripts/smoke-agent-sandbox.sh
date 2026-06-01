@@ -607,6 +607,19 @@ cli_artifact="$(api_json POST "/v1/sandboxes/$sandbox_id/artifacts" "$cli_artifa
 cli_artifact_id="$(jq -r '.id' <<<"$cli_artifact")"
 cli_json artifacts capture "$cli_artifact_id" | jq -e --arg backend "$EXPECTED_ARTIFACT_CONTENT_BACKEND" '.retainedContent.sizeBytes > 0 and (.retainedContent.sha256 | length == 64) and .retainedContent.storageProvider == $backend' >/dev/null
 cli_json artifacts content "$cli_artifact_id" | grep -F "cli-task-ok" >/dev/null
+cli_run_task="$(cli_json tasks run "$sandbox_id" --require-success --timeout 30 --wait-timeout 2m -- sh -lc 'printf cli-run-ok | tee /workspace/cli-run.txt')"
+cli_run_task_id="$(jq -r '.id' <<<"$cli_run_task")"
+jq -e '.status == "succeeded" and (.stdout | contains("cli-run-ok"))' <<<"$cli_run_task" >/dev/null
+cli_run_artifact="$(cli_json artifacts create "$sandbox_id" \
+	--task-id "$cli_run_task_id" \
+	--kind report \
+	--name "cli-run.txt" \
+	--uri "workspace:///workspace/cli-run.txt" \
+	--content-type "text/plain")"
+cli_run_artifact_id="$(jq -r '.id' <<<"$cli_run_artifact")"
+cli_json tasks artifacts "$cli_run_task_id" | jq -e --arg id "$cli_run_artifact_id" --arg taskId "$cli_run_task_id" '.items[] | select(.id == $id and .taskId == $taskId and .name == "cli-run.txt")' >/dev/null
+cli_json artifacts capture "$cli_run_artifact_id" | jq -e --arg backend "$EXPECTED_ARTIFACT_CONTENT_BACKEND" '.retainedContent.sizeBytes > 0 and (.retainedContent.sha256 | length == 64) and .retainedContent.storageProvider == $backend' >/dev/null
+cli_json artifacts content "$cli_run_artifact_id" | grep -F "cli-run-ok" >/dev/null
 
 echo "Checking mbox client artifact upload path"
 upload_artifact_json="$(jq -n \
@@ -620,8 +633,8 @@ upload_artifact="$(api_json POST "/v1/sandboxes/$sandbox_id/artifacts" "$upload_
 upload_artifact_id="$(jq -r '.id' <<<"$upload_artifact")"
 printf 'client-upload-ok' | cli_json artifacts upload "$upload_artifact_id" --stdin --content-type text/plain | jq -e --arg backend "$EXPECTED_ARTIFACT_CONTENT_BACKEND" '.retainedContent.sizeBytes == 16 and (.retainedContent.sha256 | length == 64) and .retainedContent.storageProvider == $backend' >/dev/null
 cli_json artifacts content "$upload_artifact_id" | grep -F "client-upload-ok" >/dev/null
-api_json GET "/v1/projects/$project_id/usage" | jq -e '.sandboxes.active >= 1 and .runtimeSessions.total >= 2 and .executionTasks.total >= 2 and .artifacts.total >= 3 and .artifacts.retainedContent >= 3 and .artifacts.retainedBytes > 0' >/dev/null
-cli_json projects usage "$project_id" | jq -e '.sandboxes.active >= 1 and .executionTasks.succeeded >= 2 and .artifacts.retainedBytes > 0' >/dev/null
+api_json GET "/v1/projects/$project_id/usage" | jq -e '.sandboxes.active >= 1 and .runtimeSessions.total >= 2 and .executionTasks.total >= 3 and .artifacts.total >= 4 and .artifacts.retainedContent >= 4 and .artifacts.retainedBytes > 0' >/dev/null
+cli_json projects usage "$project_id" | jq -e '.sandboxes.active >= 1 and .executionTasks.succeeded >= 3 and .artifacts.retainedBytes > 0' >/dev/null
 cli_json projects audit-events "$project_id" --limit 20 | jq -e '
 	(.items[] | select(.action == "runtime.session.created")) and
 	(.items[] | select(.action == "execution.task.created")) and
