@@ -642,7 +642,7 @@ Current command groups:
 - `templates`: list, create, get, boundary, validate, decide-validation, delete.
 - `sandboxes`: list, create, get, start, stop, delete.
 - `sessions`: list, create, get, end.
-- `tasks`: list, create, get, wait, cancel, watch, artifacts. `tasks wait --require-success` keeps stdout as final task JSON and returns a nonzero exit when the terminal status is not `succeeded`. `tasks artifacts <task-id>` lists artifact references linked to one task.
+- `tasks`: list, create, run, get, wait, cancel, watch, artifacts. `tasks run <sandbox-id> -- ...` creates an execution task and waits for its terminal task JSON; `--timeout` is the task execution timeout, while `--wait-timeout` is the client-side polling limit. `tasks wait --require-success` and `tasks run --require-success` keep stdout as final task JSON and return a nonzero exit when the terminal status is not `succeeded`. `tasks artifacts <task-id>` lists artifact references linked to one task.
 - `artifacts`: list, create, get, capture, upload, content.
 - `logs`, `ports`, and `terminal` for sandbox runtime access.
 

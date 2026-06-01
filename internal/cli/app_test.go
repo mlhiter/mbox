@@ -828,6 +828,122 @@ func TestTasksArtifactsUsesTaskArtifactsRoute(t *testing.T) {
 	}
 }
 
+func TestTasksRunCreatesAndWaitsForTask(t *testing.T) {
+	var requests []string
+	var payload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/sandboxes/sandbox-1/tasks":
+			if r.Method != http.MethodPost {
+				t.Fatalf("unexpected create method %s", r.Method)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"task-1","status":"queued"}`))
+		case "/v1/tasks/task-1":
+			if r.Method != http.MethodGet {
+				t.Fatalf("unexpected get method %s", r.Method)
+			}
+			_, _ = w.Write([]byte(`{"id":"task-1","status":"succeeded","exitCode":0}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"tasks", "run", "sandbox-1",
+		"--timeout", "45",
+		"--interval", "1ms",
+		"--wait-timeout", "1s",
+		"--metadata", `{"source":"cli-test"}`,
+		"--",
+		"sh", "-lc", "echo ok",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(requests, ",") != "POST /v1/sandboxes/sandbox-1/tasks,GET /v1/tasks/task-1" {
+		t.Fatalf("unexpected requests: %#v", requests)
+	}
+	command, ok := payload["command"].([]any)
+	if !ok || len(command) != 3 || command[0] != "sh" || command[1] != "-lc" || command[2] != "echo ok" {
+		t.Fatalf("unexpected command: %#v", payload["command"])
+	}
+	if payload["timeoutSeconds"] != float64(45) {
+		t.Fatalf("unexpected task timeout: %#v", payload["timeoutSeconds"])
+	}
+	metadata, ok := payload["metadata"].(map[string]any)
+	if !ok || metadata["source"] != "cli-test" {
+		t.Fatalf("unexpected metadata: %#v", payload["metadata"])
+	}
+	if !strings.Contains(stdout.String(), `"status": "succeeded"`) || strings.Contains(stdout.String(), `"status": "queued"`) {
+		t.Fatalf("expected only final task JSON, got %q", stdout.String())
+	}
+}
+
+func TestTasksRunRequireSuccessReturnsErrorForFailedTask(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/sandboxes/sandbox-1/tasks":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"task-1","status":"queued"}`))
+		case "/v1/tasks/task-1":
+			_, _ = w.Write([]byte(`{"id":"task-1","status":"failed","exitCode":7}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"tasks", "run", "sandbox-1",
+		"--interval", "1ms",
+		"--wait-timeout", "1s",
+		"--require-success",
+		"--arg", "sh",
+		"--arg", "-lc",
+		"--arg", "exit 7",
+	})
+	if err == nil {
+		t.Fatal("expected failed task to return an error")
+	}
+	if !strings.Contains(err.Error(), "task task-1 finished with status failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"status": "failed"`) {
+		t.Fatalf("expected final task JSON before error, got %q", stdout.String())
+	}
+}
+
+func TestTasksRunRejectsMixedCommandInputs(t *testing.T) {
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", "http://127.0.0.1:18080",
+		"tasks", "run", "sandbox-1",
+		"--arg", "sh",
+		"--",
+		"echo", "ok",
+	})
+	if err == nil {
+		t.Fatal("expected mixed command inputs to return an error")
+	}
+	if !strings.Contains(err.Error(), "use only one of --arg, --command, --command-json, or positional command after --") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestTasksWaitPollsUntilTerminalStatus(t *testing.T) {
 	var requests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

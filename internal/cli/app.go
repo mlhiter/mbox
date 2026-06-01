@@ -184,6 +184,7 @@ Commands:
   sessions get|end <session-id>
   tasks list <sandbox-id>
   tasks create <sandbox-id> --arg sh --arg -lc --arg 'echo ok' [--timeout 60]
+  tasks run <sandbox-id> [--timeout 60] [--interval 1500ms] [--wait-timeout 5m] [--require-success] -- sh -lc 'echo ok'
   tasks get|cancel|watch <task-id>
   tasks artifacts <task-id>
   tasks wait <task-id> [--interval 1500ms] [--timeout 5m] [--require-success]
@@ -1046,39 +1047,53 @@ func (a *App) runTask(ctx context.Context, client *Client, args []string) error 
 		return a.get(ctx, client, "/v1/tasks/"+url.PathEscape(args[1])+"/artifacts")
 	case "wait":
 		return a.runTaskWait(ctx, client, args[1:])
+	case "run":
+		return a.runTaskRun(ctx, client, args[1:])
 	case "create":
-		if len(args) < 2 {
-			return usageError("usage: mbox tasks create <sandbox-id> --command 'sh -lc echo-ok'")
-		}
-		sandboxID := args[1]
-		fs := flag.NewFlagSet("tasks create", flag.ContinueOnError)
-		fs.SetOutput(a.streams.Stderr)
-		command := fs.String("command", "", "")
-		commandJSON := fs.String("command-json", "", "")
-		var commandArgs stringListFlag
-		fs.Var(&commandArgs, "arg", "")
-		timeoutSeconds := fs.Int("timeout", 60, "")
-		metadata := fs.String("metadata", "", "")
-		if err := fs.Parse(args[2:]); err != nil {
-			return err
-		}
-		rawMetadata, err := parseMetadataFlag(fs, *metadata)
+		sandboxID, payload, err := a.parseTaskCreatePayload(args[1:], "tasks create")
 		if err != nil {
 			return err
 		}
-		parsedCommand, err := parseCommandFlags(commandArgs, *command, *commandJSON)
-		if err != nil {
-			return err
-		}
-		payload := map[string]any{
-			"command":        parsedCommand,
-			"timeoutSeconds": *timeoutSeconds,
-		}
-		SetRaw(payload, "metadata", rawMetadata)
 		return a.post(ctx, client, "/v1/sandboxes/"+url.PathEscape(sandboxID)+"/tasks", payload)
 	default:
 		return usageError("usage: mbox tasks list|create|get|cancel|watch|wait|artifacts")
 	}
+}
+
+func (a *App) parseTaskCreatePayload(args []string, commandName string) (string, map[string]any, error) {
+	if len(args) < 1 {
+		return "", nil, usageError("usage: mbox " + commandName + " <sandbox-id> --command 'sh -lc echo-ok'")
+	}
+	sandboxID := args[0]
+	fs := flag.NewFlagSet(commandName, flag.ContinueOnError)
+	fs.SetOutput(a.streams.Stderr)
+	command := fs.String("command", "", "")
+	commandJSON := fs.String("command-json", "", "")
+	var commandArgs stringListFlag
+	fs.Var(&commandArgs, "arg", "")
+	timeoutSeconds := fs.Int("timeout", 60, "")
+	metadata := fs.String("metadata", "", "")
+	if err := fs.Parse(args[1:]); err != nil {
+		return "", nil, err
+	}
+	positionalCommand := fs.Args()
+	rawMetadata, err := parseMetadataFlag(fs, *metadata)
+	if err != nil {
+		return "", nil, err
+	}
+	if len(positionalCommand) != 0 {
+		return "", nil, usageError("usage: mbox " + commandName + " <sandbox-id> --command 'sh -lc echo-ok'")
+	}
+	parsedCommand, err := parseCommandFlags(commandArgs, *command, *commandJSON)
+	if err != nil {
+		return "", nil, err
+	}
+	payload := map[string]any{
+		"command":        parsedCommand,
+		"timeoutSeconds": *timeoutSeconds,
+	}
+	SetRaw(payload, "metadata", rawMetadata)
+	return sandboxID, payload, nil
 }
 
 func (a *App) runTaskWait(ctx context.Context, client *Client, args []string) error {
@@ -1115,10 +1130,22 @@ func (a *App) runTaskWait(ctx context.Context, client *Client, args []string) er
 			return err
 		}
 	}
-	if timeout > 0 {
+	return a.waitForTask(ctx, client, taskID, taskWaitOptions{
+		Interval:       interval,
+		Timeout:        timeout,
+		RequireSuccess: *requireSuccess,
+	})
+}
+
+func (a *App) waitForTask(ctx context.Context, client *Client, taskID string, options taskWaitOptions) error {
+	if options.Timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
+		ctx, cancel = context.WithTimeout(ctx, options.Timeout)
 		defer cancel()
+	}
+	interval := options.Interval
+	if interval <= 0 {
+		interval = 1500 * time.Millisecond
 	}
 	for {
 		var task map[string]any
@@ -1130,7 +1157,7 @@ func (a *App) runTaskWait(ctx context.Context, client *Client, args []string) er
 				return err
 			}
 			status, _ := task["status"].(string)
-			if *requireSuccess && status != "succeeded" {
+			if options.RequireSuccess && status != "succeeded" {
 				return fmt.Errorf("task %s finished with status %s", taskID, status)
 			}
 			return nil
@@ -1139,6 +1166,86 @@ func (a *App) runTaskWait(ctx context.Context, client *Client, args []string) er
 			return fmt.Errorf("timed out waiting for task %s", taskID)
 		}
 	}
+}
+
+func (a *App) runTaskRun(ctx context.Context, client *Client, args []string) error {
+	sandboxID, payload, waitOptions, err := a.parseTaskRunPayload(args)
+	if err != nil {
+		return err
+	}
+	var task map[string]any
+	if err := client.JSON(ctx, http.MethodPost, "/v1/sandboxes/"+url.PathEscape(sandboxID)+"/tasks", payload, &task); err != nil {
+		return err
+	}
+	taskID, ok := task["id"].(string)
+	if !ok || strings.TrimSpace(taskID) == "" {
+		return fmt.Errorf("task create response missing id")
+	}
+	return a.waitForTask(ctx, client, strings.TrimSpace(taskID), waitOptions)
+}
+
+type taskWaitOptions struct {
+	Interval       time.Duration
+	Timeout        time.Duration
+	RequireSuccess bool
+}
+
+func (a *App) parseTaskRunPayload(args []string) (string, map[string]any, taskWaitOptions, error) {
+	if len(args) < 1 {
+		return "", nil, taskWaitOptions{}, usageError("usage: mbox tasks run <sandbox-id> [--timeout 60] [--interval 1500ms] [--wait-timeout 5m] [--require-success] -- sh -lc 'echo ok'")
+	}
+	sandboxID := args[0]
+	fs := flag.NewFlagSet("tasks run", flag.ContinueOnError)
+	fs.SetOutput(a.streams.Stderr)
+	command := fs.String("command", "", "")
+	commandJSON := fs.String("command-json", "", "")
+	var commandArgs stringListFlag
+	fs.Var(&commandArgs, "arg", "")
+	taskTimeoutSeconds := fs.Int("timeout", 60, "")
+	metadata := fs.String("metadata", "", "")
+	intervalRaw := fs.String("interval", "1500ms", "")
+	waitTimeoutRaw := fs.String("wait-timeout", "", "")
+	requireSuccess := fs.Bool("require-success", false, "")
+	if err := fs.Parse(args[1:]); err != nil {
+		return "", nil, taskWaitOptions{}, err
+	}
+	positionalCommand := fs.Args()
+	rawMetadata, err := parseMetadataFlag(fs, *metadata)
+	if err != nil {
+		return "", nil, taskWaitOptions{}, err
+	}
+	if len(positionalCommand) > 0 && (len(commandArgs) > 0 || strings.TrimSpace(*command) != "" || strings.TrimSpace(*commandJSON) != "") {
+		return "", nil, taskWaitOptions{}, usageError("use only one of --arg, --command, --command-json, or positional command after --")
+	}
+	parsedCommand, err := parseCommandFlags(commandArgs, *command, *commandJSON)
+	if err != nil {
+		return "", nil, taskWaitOptions{}, err
+	}
+	if len(positionalCommand) > 0 {
+		parsedCommand = positionalCommand
+	}
+	payload := map[string]any{
+		"command":        parsedCommand,
+		"timeoutSeconds": *taskTimeoutSeconds,
+	}
+	SetRaw(payload, "metadata", rawMetadata)
+
+	interval, err := parsePositiveDuration(*intervalRaw, "interval")
+	if err != nil {
+		return "", nil, taskWaitOptions{}, err
+	}
+	var waitTimeout time.Duration
+	if strings.TrimSpace(*waitTimeoutRaw) != "" {
+		waitTimeout, err = parsePositiveDuration(*waitTimeoutRaw, "wait-timeout")
+		if err != nil {
+			return "", nil, taskWaitOptions{}, err
+		}
+	}
+	return sandboxID, payload, taskWaitOptions{
+		Interval:       interval,
+		Timeout:        waitTimeout,
+		RequireSuccess: *requireSuccess,
+	}, nil
 }
 
 func (a *App) runArtifact(ctx context.Context, client *Client, args []string) error {

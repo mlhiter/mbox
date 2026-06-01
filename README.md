@@ -284,6 +284,7 @@ go run ./cmd/mbox projects list
 go run ./cmd/mbox projects usage <project-id>
 go run ./cmd/mbox sandboxes create --project-id <project-id> --template-id <template-id> --name "Demo Sandbox"
 go run ./cmd/mbox tasks create <sandbox-id> --arg sh --arg -lc --arg 'pwd && echo ok'
+go run ./cmd/mbox tasks run <sandbox-id> --require-success -- sh -lc 'pwd && echo ok'
 go run ./cmd/mbox tasks wait <task-id> --timeout 2m
 go run ./cmd/mbox tasks wait <task-id> --timeout 2m --require-success
 go run ./cmd/mbox tasks watch <task-id>

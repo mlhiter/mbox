@@ -342,6 +342,15 @@ go run ./cmd/mbox tasks wait "$TASK_ID" --interval 500ms --timeout 2m --require-
 
 It prints the final task JSON when status reaches `succeeded`, `failed`, `canceled`, or `timed_out`. Add `--require-success` when the surrounding script should fail after printing the final JSON unless the terminal status is `succeeded`.
 
+For one-shot scripts, the CLI can create the task and wait for the terminal task JSON in one command:
+
+```sh
+go run ./cmd/mbox tasks run "$SANDBOX_ID" --require-success -- sh -lc 'pwd && echo task-ok'
+go run ./cmd/mbox tasks run "$SANDBOX_ID" --timeout 60 --wait-timeout 2m --interval 500ms -- sh -lc 'pwd && echo task-ok'
+```
+
+For `tasks run`, `--timeout` is still the server-side task execution timeout in seconds, matching `tasks create`. `--wait-timeout` is only the CLI polling limit, matching the role of `tasks wait --timeout`.
+
 3. Verify the task history:
 
 ```sh
