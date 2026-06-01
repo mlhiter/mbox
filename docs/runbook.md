@@ -231,11 +231,12 @@ go run ./cmd/mbox context set local \
 
 MBOX_TOKEN=local-token go run ./cmd/mbox --context local projects list
 MBOX_TOKEN=local-token go run ./cmd/mbox --context local context current
+MBOX_TOKEN=local-token go run ./cmd/mbox --context local context check --require-capability execution-tasks
 go run ./cmd/mbox context list
 go run ./cmd/mbox context use local
 ```
 
-Use `--config <path>` or `MBOX_CONFIG` for a repo-local or CI-provided config file. `context set` creates parent directories and writes `0600` JSON. Prefer `--token-env` for reusable configs so token values stay outside the file; `context current` and `context list` only print `hasToken`. Explicit flags override selected context values.
+Use `--config <path>` or `MBOX_CONFIG` for a repo-local or CI-provided config file. `context set` creates parent directories and writes `0600` JSON. Prefer `--token-env` for reusable configs so token values stay outside the file; `context current`, `context list`, and `context check` only print `hasToken`. Explicit flags override selected context values. `context check` is a discovery and compatibility preflight over `/healthz` and `/v1/info`; it is not a login, whoami, RBAC, or token-validity check.
 
 Use `--audit-actor` and `--audit-source`, or `MBOX_AUDIT_ACTOR` and `MBOX_AUDIT_SOURCE`, when a script wants successful write events and selected `policy.denied` events to carry client-supplied attribution:
 

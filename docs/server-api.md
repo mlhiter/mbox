@@ -608,7 +608,7 @@ SDK methods map directly to public API resources. Upper-layer agent, CI, deploy,
 
 ## CLI Client
 
-The Go CLI in `cmd/mbox` is the first scriptable command surface for the implemented API. It uses `MBOX_API_URL` or `--api-url` to select the API server and accepts `MBOX_TOKEN` or `--token` for the `Authorization: Bearer` header when the server is started with `MBOX_API_TOKEN`. `MBOX_REQUEST_ID` or `--request-id` sends `X-Mbox-Request-ID` so scripts can correlate command output with server logs and audit metadata. It also supports client-side contexts with `--context`, `MBOX_CONTEXT`, `--config`, `MBOX_CONFIG`, and a default `~/.mbox/config.json` file when present. `context set`, `context use`, and `context remove` manage that local JSON file; `context current` and `context list` inspect it without printing token values. Contexts are a local CLI convenience; they do not create server-side projects, identities, or permissions.
+The Go CLI in `cmd/mbox` is the first scriptable command surface for the implemented API. It uses `MBOX_API_URL` or `--api-url` to select the API server and accepts `MBOX_TOKEN` or `--token` for the `Authorization: Bearer` header when the server is started with `MBOX_API_TOKEN`. `MBOX_REQUEST_ID` or `--request-id` sends `X-Mbox-Request-ID` so scripts can correlate command output with server logs and audit metadata. It also supports client-side contexts with `--context`, `MBOX_CONTEXT`, `--config`, `MBOX_CONFIG`, and a default `~/.mbox/config.json` file when present. `context set`, `context use`, and `context remove` manage that local JSON file; `context current`, `context list`, and `context check` inspect it without printing token values. `context check` calls `/healthz` and `/v1/info`, reuses CLI/server compatibility checks, and can require capabilities before a longer run. Contexts are a local CLI convenience; they do not create server-side projects, identities, permissions, or token-validation claims.
 
 Example CLI config:
 
@@ -632,7 +632,7 @@ Current command groups:
 
 - `info` for API version, enabled runtime/artifact capabilities, and CLI/SDK compatibility hints.
 - `compat` for an explicit CLI/server API compatibility and capability preflight using `/v1/info`. Use repeated `--require-capability` flags for features a script depends on before it starts creating sandboxes, sessions, tasks, or artifacts.
-- `context set|use|remove|current|list` for local CLI context management and inspection. Token values are never printed; outputs only include `hasToken`.
+- `context set|use|remove|current|list|check` for local CLI context management, inspection, and health/info/compatibility preflight. Token values are never printed; outputs only include `hasToken`.
 - `openapi` for the machine-readable OpenAPI contract.
 - `audit-events` for recent product audit events.
 - `runtime resources` for the read-only managed runtime resource inventory. Add `--summary` to print only the filtered `summary` object; use `--project-id` to filter by runtime owner project label.

@@ -10,14 +10,28 @@ import (
 const currentClientAPIVersion = "v1alpha1"
 
 type apiInfo struct {
-	Name          string   `json:"name"`
-	APIVersion    string   `json:"apiVersion"`
-	ServerVersion string   `json:"serverVersion"`
+	Name              string `json:"name"`
+	APIVersion        string `json:"apiVersion"`
+	ServerVersion     string `json:"serverVersion"`
+	RuntimeController struct {
+		Enabled bool   `json:"enabled"`
+		Adapter string `json:"adapter,omitempty"`
+	} `json:"runtimeController"`
+	RuntimeAccess struct {
+		Enabled bool   `json:"enabled"`
+		Adapter string `json:"adapter,omitempty"`
+	} `json:"runtimeAccess"`
+	ArtifactContent struct {
+		RetainedContentEnabled bool   `json:"retainedContentEnabled"`
+		StorageProvider        string `json:"storageProvider"`
+		MaxBytes               int64  `json:"maxBytes"`
+	} `json:"artifactContent"`
 	Capabilities  []string `json:"capabilities"`
 	Compatibility struct {
 		MinimumCLIAPIVersion string `json:"minimumCliApiVersion"`
 		MinimumSDKAPIVersion string `json:"minimumSdkApiVersion"`
 	} `json:"compatibility"`
+	AuthenticationRequired bool `json:"authenticationRequired"`
 }
 
 type CompatibilityCheckResult struct {

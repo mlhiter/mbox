@@ -6,6 +6,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,6 +36,11 @@ type contextSelection struct {
 	AuditSource string `json:"auditSource,omitempty"`
 }
 
+type resolvedContext struct {
+	Selection contextSelection
+	Config    globalConfig
+}
+
 type contextListItem struct {
 	Name        string `json:"name"`
 	Current     bool   `json:"current"`
@@ -48,6 +55,45 @@ type contextMutationResult struct {
 	ConfigPath     string `json:"configPath"`
 	CurrentContext string `json:"currentContext,omitempty"`
 	Removed        bool   `json:"removed,omitempty"`
+}
+
+type contextHealthCheck struct {
+	OK      bool   `json:"ok"`
+	HTTP    int    `json:"http,omitempty"`
+	Status  string `json:"status,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+type contextRuntimeInfo struct {
+	Enabled bool   `json:"enabled"`
+	Adapter string `json:"adapter,omitempty"`
+}
+
+type contextArtifactInfo struct {
+	RetainedContentEnabled bool   `json:"retainedContentEnabled"`
+	StorageProvider        string `json:"storageProvider"`
+	MaxBytes               int64  `json:"maxBytes"`
+}
+
+type contextInfoCheck struct {
+	OK                     bool                 `json:"ok"`
+	Name                   string               `json:"name,omitempty"`
+	Version                string               `json:"apiVersion,omitempty"`
+	ServerVersion          string               `json:"serverVersion,omitempty"`
+	RuntimeController      *contextRuntimeInfo  `json:"runtimeController,omitempty"`
+	RuntimeAccess          *contextRuntimeInfo  `json:"runtimeAccess,omitempty"`
+	ArtifactContent        *contextArtifactInfo `json:"artifactContent,omitempty"`
+	AuthenticationRequired *bool                `json:"authenticationRequired,omitempty"`
+	Message                string               `json:"message,omitempty"`
+	Capabilities           []string             `json:"capabilities,omitempty"`
+}
+
+type contextCheckResult struct {
+	OK            bool                     `json:"ok"`
+	Context       contextSelection         `json:"context"`
+	Health        contextHealthCheck       `json:"health"`
+	Info          contextInfoCheck         `json:"info"`
+	Compatibility CompatibilityCheckResult `json:"compatibility"`
 }
 
 func (a *App) applyContext(config *globalConfig) error {
@@ -90,26 +136,18 @@ func (a *App) applyContext(config *globalConfig) error {
 
 func (a *App) runContext(ctx context.Context, config globalConfig, args []string) error {
 	if len(args) < 1 {
-		return usageError("usage: mbox context current|list|set|use|remove")
+		return usageError("usage: mbox context current|list|check|set|use|remove")
 	}
 	switch args[0] {
 	case "current":
 		if len(args) != 1 {
 			return usageError("usage: mbox context current")
 		}
-		configPath, file, err := a.loadContextForRead(strings.TrimSpace(config.ConfigPath))
+		resolved, err := a.resolveCurrentContext(config)
 		if err != nil {
 			return err
 		}
-		selectedName := strings.TrimSpace(config.Context)
-		if selectedName == "" {
-			selectedName = strings.TrimSpace(file.CurrentContext)
-		}
-		selection, err := a.currentContextSelection(config, configPath, file, selectedName)
-		if err != nil {
-			return err
-		}
-		return WriteJSON(a.streams.Stdout, selection)
+		return WriteJSON(a.streams.Stdout, resolved.Selection)
 	case "list":
 		if len(args) != 1 {
 			return usageError("usage: mbox context list")
@@ -123,6 +161,8 @@ func (a *App) runContext(ctx context.Context, config globalConfig, args []string
 			selectedName = strings.TrimSpace(file.CurrentContext)
 		}
 		return WriteJSON(a.streams.Stdout, a.contextList(configPath, file, selectedName))
+	case "check":
+		return a.checkContext(ctx, config, args[1:])
 	case "set":
 		return a.setContext(ctx, config, args[1:])
 	case "use":
@@ -130,8 +170,158 @@ func (a *App) runContext(ctx context.Context, config globalConfig, args []string
 	case "remove", "delete":
 		return a.removeContext(ctx, config, args[1:])
 	default:
-		return usageError("usage: mbox context current|list|set|use|remove")
+		return usageError("usage: mbox context current|list|check|set|use|remove")
 	}
+}
+
+func (a *App) resolveCurrentContext(config globalConfig) (resolvedContext, error) {
+	configPath, file, err := a.loadContextForRead(strings.TrimSpace(config.ConfigPath))
+	if err != nil {
+		return resolvedContext{}, err
+	}
+	selectedName := strings.TrimSpace(config.Context)
+	if selectedName == "" {
+		selectedName = strings.TrimSpace(file.CurrentContext)
+	}
+	selection, err := a.currentContextSelection(config, configPath, file, selectedName)
+	if err != nil {
+		return resolvedContext{}, err
+	}
+	resolvedConfig := config
+	resolvedConfig.APIURL = selection.APIURL
+	if !config.tokenSet && strings.TrimSpace(resolvedConfig.Token) == "" && selectedName != "" {
+		if entry, ok := file.Contexts[selectedName]; ok {
+			resolvedConfig.Token = entry.resolveToken(a.getenv)
+		}
+	}
+	resolvedConfig.AuditActor = selection.AuditActor
+	resolvedConfig.AuditSource = selection.AuditSource
+	return resolvedContext{Selection: selection, Config: resolvedConfig}, nil
+}
+
+func (a *App) checkContext(ctx context.Context, config globalConfig, args []string) error {
+	fs := flag.NewFlagSet("context check", flag.ContinueOnError)
+	fs.SetOutput(a.streams.Stderr)
+	clientAPIVersion := fs.String("client-api-version", currentClientAPIVersion, "")
+	var requiredCapabilities stringListFlag
+	fs.Var(&requiredCapabilities, "require-capability", "")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return usageError("usage: mbox context check [--client-api-version VERSION] [--require-capability CAPABILITY]")
+	}
+	resolved, err := a.resolveCurrentContext(config)
+	if err != nil {
+		return err
+	}
+	client, err := NewClient(resolved.Config.APIURL, resolved.Config.Token)
+	if err != nil {
+		return err
+	}
+	client.RequestID = strings.TrimSpace(resolved.Config.RequestID)
+	client.AuditActor = strings.TrimSpace(resolved.Config.AuditActor)
+	client.AuditSource = strings.TrimSpace(resolved.Config.AuditSource)
+
+	result := contextCheckResult{
+		Context: resolved.Selection,
+	}
+	result.Health = checkContextHealth(ctx, client)
+	var info apiInfo
+	infoErr := client.JSON(ctx, http.MethodGet, "/v1/info", nil, &info)
+	if infoErr != nil {
+		result.Info = contextInfoCheck{OK: false, Message: infoErr.Error()}
+		result.Compatibility = skippedCompatibility(strings.TrimSpace(*clientAPIVersion), []string(requiredCapabilities), "skipped because /v1/info failed")
+	} else {
+		result.Info = contextInfoFromAPIInfo(info)
+		result.Compatibility = CheckCLICompatibility(info, strings.TrimSpace(*clientAPIVersion), []string(requiredCapabilities))
+	}
+	result.OK = result.Health.OK && result.Info.OK && result.Compatibility.OK
+	if err := WriteJSON(a.streams.Stdout, result); err != nil {
+		return err
+	}
+	if !result.OK {
+		return usageError(contextCheckFailureMessage(result))
+	}
+	return nil
+}
+
+func checkContextHealth(ctx context.Context, client *Client) contextHealthCheck {
+	response, err := client.Raw(ctx, http.MethodGet, "/healthz", nil)
+	if err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) {
+			return contextHealthCheck{OK: false, HTTP: apiErr.StatusCode, Message: apiErr.Error()}
+		}
+		return contextHealthCheck{OK: false, Message: err.Error()}
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(response.Body, 4*1024))
+	if err != nil {
+		return contextHealthCheck{OK: false, HTTP: response.StatusCode, Message: err.Error()}
+	}
+	var body struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
+		return contextHealthCheck{OK: false, HTTP: response.StatusCode, Message: fmt.Sprintf("health response was not JSON: %v", err)}
+	}
+	cleanStatus := strings.TrimSpace(body.Status)
+	if cleanStatus != "ok" {
+		return contextHealthCheck{OK: false, HTTP: response.StatusCode, Status: cleanStatus, Message: "health status is not ok"}
+	}
+	return contextHealthCheck{OK: true, HTTP: response.StatusCode, Status: cleanStatus, Message: response.Status}
+}
+
+func contextInfoFromAPIInfo(info apiInfo) contextInfoCheck {
+	authenticationRequired := info.AuthenticationRequired
+	return contextInfoCheck{
+		OK:            true,
+		Name:          info.Name,
+		Version:       info.APIVersion,
+		ServerVersion: info.ServerVersion,
+		RuntimeController: &contextRuntimeInfo{
+			Enabled: info.RuntimeController.Enabled,
+			Adapter: info.RuntimeController.Adapter,
+		},
+		RuntimeAccess: &contextRuntimeInfo{
+			Enabled: info.RuntimeAccess.Enabled,
+			Adapter: info.RuntimeAccess.Adapter,
+		},
+		ArtifactContent: &contextArtifactInfo{
+			RetainedContentEnabled: info.ArtifactContent.RetainedContentEnabled,
+			StorageProvider:        info.ArtifactContent.StorageProvider,
+			MaxBytes:               info.ArtifactContent.MaxBytes,
+		},
+		AuthenticationRequired: &authenticationRequired,
+		Capabilities:           info.Capabilities,
+	}
+}
+
+func skippedCompatibility(clientAPIVersion string, requiredCapabilities []string, message string) CompatibilityCheckResult {
+	if strings.TrimSpace(clientAPIVersion) == "" {
+		clientAPIVersion = currentClientAPIVersion
+	}
+	return CompatibilityCheckResult{
+		OK:                   false,
+		Client:               "cli",
+		ClientAPIVersion:     clientAPIVersion,
+		RequiredCapabilities: normalizeCapabilities(requiredCapabilities),
+		Message:              message,
+	}
+}
+
+func contextCheckFailureMessage(result contextCheckResult) string {
+	if !result.Health.OK {
+		return "mbox context check failed: health check failed"
+	}
+	if !result.Info.OK {
+		return "mbox context check failed: info check failed"
+	}
+	if !result.Compatibility.OK {
+		return "mbox context check failed: " + result.Compatibility.Message
+	}
+	return "mbox context check failed"
 }
 
 func (a *App) loadContextForRead(rawPath string) (string, contextConfigFile, error) {

@@ -336,10 +336,11 @@ go run ./cmd/mbox context set local \
 
 go run ./cmd/mbox --context local projects list
 go run ./cmd/mbox --context local context current
+go run ./cmd/mbox --context local context check --require-capability execution-tasks
 go run ./cmd/mbox context list
 ```
 
-Use `context use <name>` to switch the default context and `context remove <name>` to delete a local context entry. Prefer `--token-env` for reusable configs so token values stay outside the JSON file.
+Use `context check` as a script preflight for health, `/v1/info`, and CLI/server compatibility before a longer run. It prints redacted diagnostic JSON and can require capabilities such as `execution-tasks`; it is not a login, whoami, RBAC, or token-validity proof. Use `context use <name>` to switch the default context and `context remove <name>` to delete a local context entry. Prefer `--token-env` for reusable configs so token values stay outside the JSON file.
 
 Use `--request-id <id>` when a script needs to line up a command with API logs and `audit_events.metadata.requestId`. Use `--filter-request-id <id>` on `audit-events` reads to retrieve the matching product audit events, `--operation <operation>` to narrow typed metadata such as `policy.denied` operation values, and RFC3339 `--since` / `--until` windows to inspect a known run interval. Request IDs are correlation labels, not auth claims or idempotency keys.
 

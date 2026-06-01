@@ -103,6 +103,14 @@ if [[ "$started_api" == "true" ]]; then
 	MBOX_CONTEXT_TOKEN="cli-smoke-token" go run ./cmd/mbox --config "$context_config" projects list | jq -e '.items | type == "array"' >/dev/null
 	MBOX_CONTEXT_TOKEN="cli-smoke-token" go run ./cmd/mbox --config "$context_config" context current | jq -e '.name == "auth-smoke" and .hasToken == true and .apiUrl == "'"$auth_url"'"' >/dev/null
 	MBOX_CONTEXT_TOKEN="cli-smoke-token" go run ./cmd/mbox --config "$context_config" context list | jq -e '.items[] | select(.name == "auth-smoke" and .current == true and .hasToken == true)' >/dev/null
+	MBOX_CONTEXT_TOKEN="cli-smoke-token" go run ./cmd/mbox --config "$context_config" context check --require-capability sandboxes --require-capability execution-tasks |
+		jq -e '.ok == true and .context.name == "auth-smoke" and .context.hasToken == true and .health.ok == true and .health.status == "ok" and .info.authenticationRequired == true and .compatibility.ok == true' >/dev/null
+	if MBOX_CONTEXT_TOKEN="cli-smoke-token" go run ./cmd/mbox --config "$context_config" context check --require-capability missing-capability >/tmp/mbox-cli-context-check-missing.json 2>/tmp/mbox-cli-context-check-missing.err; then
+		echo "expected context check to fail for missing capability" >&2
+		exit 1
+	fi
+	jq -e '.ok == false and .compatibility.ok == false and (.compatibility.missingCapabilities | index("missing-capability"))' /tmp/mbox-cli-context-check-missing.json >/dev/null
+	grep -F "missing required capabilities" /tmp/mbox-cli-context-check-missing.err >/dev/null
 	context_manage_config="$(mktemp)"
 	MBOX_CONTEXT_TOKEN="cli-smoke-token" go run ./cmd/mbox --config "$context_manage_config" context set managed --api-url "$auth_url" --token-env MBOX_CONTEXT_TOKEN --audit-actor cli-managed --audit-source mbox-context --current |
 		jq -e '.name == "managed" and .hasToken == true and .auditActor == "cli-managed"' >/dev/null

@@ -219,6 +219,7 @@ Current status:
 - Done: OpenAPI auth contract hardening for the starter token model: `bearerAuth` security scheme, explicit public health/info operations, private bearer operations, `401` error responses, and SDK alignment checks for route auth metadata.
 - Done: starter CLI context selection through `--context`, `MBOX_CONTEXT`, `--config`, `MBOX_CONFIG`, and `~/.mbox/config.json`, with API URL/token/audit-label loading, explicit flag overrides, and local `context current/list` inspection that redacts token values.
 - Done: CLI local context management with `context set`, `context use`, and `context remove`, including parent-directory creation, token-env support for reusable configs, redacted JSON output, and CLI smoke coverage against an authenticated API.
+- Done: CLI context preflight through `context check`, combining redacted context selection, `/healthz`, `/v1/info`, and capability-aware CLI compatibility checks without implying login, whoami, RBAC, or token validity.
 - Done: TypeScript SDK environment factory `createMboxClientFromEnv()` for automation scripts that share the CLI `MBOX_API_URL`, `MBOX_TOKEN`/`MBOX_API_TOKEN`, and audit-label conventions without reading local context files.
 - Done: CLI `tasks wait --require-success` and SDK `waitForTask({ requireSuccess: true })` terminal success gates for automation scripts that need SDK-style task terminal-state waiting without parsing the NDJSON watch stream.
 - Done: CLI task-scoped artifact listing through `tasks artifacts <task-id>`, matching the existing task artifact API and SDK helper.

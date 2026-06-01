@@ -146,7 +146,7 @@ Commands:
   health
   info
   compat [--client-api-version VERSION] [--require-capability CAPABILITY]
-  context current|list
+  context current|list|check
   context set NAME --api-url URL [--token TOKEN|--token-env ENV] [--audit-actor ACTOR] [--audit-source SOURCE] [--current]
   context use NAME
   context remove NAME

@@ -1666,6 +1666,205 @@ func TestContextListMarksCurrent(t *testing.T) {
 	}
 }
 
+func TestContextCheckReportsHealthInfoAndCompatibility(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if got := r.Header.Get("Authorization"); got != "Bearer secret" {
+			t.Fatalf("unexpected authorization header %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/healthz":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/v1/info":
+			_, _ = w.Write([]byte(`{
+				"name":"mbox",
+				"apiVersion":"v1alpha1",
+				"serverVersion":"test",
+				"runtimeController":{"enabled":false},
+				"runtimeAccess":{"enabled":true,"adapter":"agent-sandbox"},
+				"artifactContent":{"retainedContentEnabled":true,"storageProvider":"postgres","maxBytes":8388608},
+				"capabilities":["sandboxes","execution-tasks"],
+				"compatibility":{"minimumCliApiVersion":"v1alpha1","minimumSdkApiVersion":"v1alpha1"},
+				"authenticationRequired":true
+			}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	configPath := writeCLIConfig(t, map[string]any{
+		"currentContext": "local",
+		"contexts": map[string]any{
+			"local": map[string]any{
+				"apiUrl":   server.URL,
+				"tokenEnv": "MBOX_TEST_TOKEN",
+			},
+		},
+	})
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	app.getenv = func(key string) string {
+		if key == "MBOX_TEST_TOKEN" {
+			return "secret"
+		}
+		return ""
+	}
+	err := app.Run(context.Background(), []string{
+		"--config", configPath,
+		"context", "check",
+		"--require-capability", "execution-tasks",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(paths, ",") != "/healthz,/v1/info" {
+		t.Fatalf("unexpected paths: %#v", paths)
+	}
+	if strings.Contains(stdout.String(), "secret") {
+		t.Fatalf("expected token to be redacted, got %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), `"ok": true`) ||
+		!strings.Contains(stdout.String(), `"hasToken": true`) ||
+		!strings.Contains(stdout.String(), `"apiVersion": "v1alpha1"`) ||
+		!strings.Contains(stdout.String(), `"serverVersion": "test"`) ||
+		!strings.Contains(stdout.String(), `"authenticationRequired": true`) ||
+		!strings.Contains(stdout.String(), `"runtimeAccess": {`) ||
+		!strings.Contains(stdout.String(), `"artifactContent": {`) ||
+		!strings.Contains(stdout.String(), `"execution-tasks"`) {
+		t.Fatalf("unexpected context check output: %s", stdout.String())
+	}
+}
+
+func TestContextCheckReturnsJSONAndErrorForMissingCapability(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/healthz":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/v1/info":
+			_, _ = w.Write([]byte(`{
+				"name":"mbox",
+				"apiVersion":"v1alpha1",
+				"capabilities":["sandboxes"],
+				"compatibility":{"minimumCliApiVersion":"v1alpha1","minimumSdkApiVersion":"v1alpha1"}
+			}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"context", "check",
+		"--require-capability", "task-events",
+	})
+	if err == nil {
+		t.Fatal("expected missing capability to return an error")
+	}
+	if !strings.Contains(err.Error(), "missing required capabilities") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"ok": false`) ||
+		!strings.Contains(stdout.String(), `"missingCapabilities": [`) ||
+		!strings.Contains(stdout.String(), `"task-events"`) {
+		t.Fatalf("expected diagnostic JSON before error, got %s", stdout.String())
+	}
+}
+
+func TestContextCheckReturnsJSONAndErrorForUnreachableHealth(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", "http://127.0.0.1:1",
+		"context", "check",
+	})
+	if err == nil {
+		t.Fatal("expected unreachable API to return an error")
+	}
+	if !strings.Contains(err.Error(), "health check failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"ok": false`) ||
+		!strings.Contains(stdout.String(), `"health": {`) ||
+		!strings.Contains(stdout.String(), `"info": {`) {
+		t.Fatalf("expected diagnostic JSON before error, got %s", stdout.String())
+	}
+}
+
+func TestContextCheckReturnsJSONAndErrorForBadHealthStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/healthz":
+			_, _ = w.Write([]byte(`{"status":"degraded"}`))
+		case "/v1/info":
+			_, _ = w.Write([]byte(`{
+				"name":"mbox",
+				"apiVersion":"v1alpha1",
+				"capabilities":["sandboxes"],
+				"compatibility":{"minimumCliApiVersion":"v1alpha1","minimumSdkApiVersion":"v1alpha1"}
+			}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{"--api-url", server.URL, "context", "check"})
+	if err == nil {
+		t.Fatal("expected bad health status to return an error")
+	}
+	if !strings.Contains(err.Error(), "health check failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"status": "degraded"`) ||
+		!strings.Contains(stdout.String(), `"message": "health status is not ok"`) {
+		t.Fatalf("expected degraded health diagnostic JSON, got %s", stdout.String())
+	}
+}
+
+func TestContextCheckSkipsCompatibilityWhenInfoFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/healthz":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/v1/info":
+			http.Error(w, `{"error":"info unavailable"}`, http.StatusServiceUnavailable)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"context", "check",
+		"--require-capability", "execution-tasks",
+	})
+	if err == nil {
+		t.Fatal("expected info failure to return an error")
+	}
+	if !strings.Contains(err.Error(), "info check failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"message": "skipped because /v1/info failed"`) ||
+		!strings.Contains(stdout.String(), `"requiredCapabilities": [`) ||
+		!strings.Contains(stdout.String(), `"execution-tasks"`) {
+		t.Fatalf("expected skipped compatibility diagnostic JSON, got %s", stdout.String())
+	}
+}
+
 func TestContextSetWritesConfigAndRedactsToken(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "nested", "config.json")
 	stdout := &bytes.Buffer{}
