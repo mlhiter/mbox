@@ -291,10 +291,10 @@ func TestRuntimeOrphansUsesRuntimeOrphansRoute(t *testing.T) {
 
 	stdout := &bytes.Buffer{}
 	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
-	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "runtime", "orphans", "--namespace", "mbox-smoke", "--kind", "SandboxTemplate"}); err != nil {
+	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "runtime", "orphans", "--namespace", "mbox-smoke", "--project-id", "project-1", "--kind", "SandboxTemplate"}); err != nil {
 		t.Fatal(err)
 	}
-	if method != http.MethodGet || uri != "/v1/runtime/orphans?kind=SandboxTemplate&namespace=mbox-smoke" {
+	if method != http.MethodGet || uri != "/v1/runtime/orphans?kind=SandboxTemplate&namespace=mbox-smoke&projectId=project-1" {
 		t.Fatalf("unexpected request %s %s", method, uri)
 	}
 	if !strings.Contains(stdout.String(), `"expectedClean": true`) {
@@ -315,10 +315,10 @@ func TestRuntimeResourcesUsesRuntimeResourcesRoute(t *testing.T) {
 
 	stdout := &bytes.Buffer{}
 	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
-	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "runtime", "resources", "--namespace", "mbox-smoke", "--kind", "SandboxClaim"}); err != nil {
+	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "runtime", "resources", "--namespace", "mbox-smoke", "--project-id", "project-1", "--kind", "SandboxClaim"}); err != nil {
 		t.Fatal(err)
 	}
-	if method != http.MethodGet || uri != "/v1/runtime/resources?kind=SandboxClaim&namespace=mbox-smoke" {
+	if method != http.MethodGet || uri != "/v1/runtime/resources?kind=SandboxClaim&namespace=mbox-smoke&projectId=project-1" {
 		t.Fatalf("unexpected request %s %s", method, uri)
 	}
 	if !strings.Contains(stdout.String(), `"SandboxClaim"`) {
@@ -350,10 +350,10 @@ func TestRuntimeResourcesSummaryPrintsSummaryOnly(t *testing.T) {
 
 	stdout := &bytes.Buffer{}
 	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
-	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "runtime", "resources", "--summary", "--namespace", "mbox-smoke", "--kind", "SandboxClaim"}); err != nil {
+	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "runtime", "resources", "--summary", "--namespace", "mbox-smoke", "--project-id", "project-1", "--kind", "SandboxClaim"}); err != nil {
 		t.Fatal(err)
 	}
-	if method != http.MethodGet || uri != "/v1/runtime/resources?kind=SandboxClaim&namespace=mbox-smoke" {
+	if method != http.MethodGet || uri != "/v1/runtime/resources?kind=SandboxClaim&namespace=mbox-smoke&projectId=project-1" {
 		t.Fatalf("unexpected request %s %s", method, uri)
 	}
 	output := stdout.String()

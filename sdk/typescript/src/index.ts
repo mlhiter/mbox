@@ -167,6 +167,7 @@ export type ManagedResourceRef = {
 
 export type RuntimeResourceListOptions = RequestOptions & {
   namespace?: string
+  projectId?: string
   kind?: string
 }
 
@@ -1497,6 +1498,7 @@ function runtimeResourceListFilters(namespaceOrOptions?: string | RuntimeResourc
   }
   return {
     namespace: namespaceOrOptions?.namespace,
+    projectId: namespaceOrOptions?.projectId,
     kind: namespaceOrOptions?.kind,
   }
 }

@@ -91,12 +91,14 @@ func openAPIPaths() map[string]any {
 		"/v1/runtime/resources": map[string]any{
 			"get": operation("runtime", "List managed runtime resources", []map[string]any{
 				queryParam("namespace", "string"),
+				queryParam("projectId", "string"),
 				queryParam("kind", "string"),
 			}, nil, schemaRef("RuntimeResourceList"), false),
 		},
 		"/v1/runtime/orphans": map[string]any{
 			"get": operation("runtime", "List runtime orphan audit", []map[string]any{
 				queryParam("namespace", "string"),
+				queryParam("projectId", "string"),
 				queryParam("kind", "string"),
 			}, nil, schemaRef("RuntimeOrphanAudit"), false),
 		},

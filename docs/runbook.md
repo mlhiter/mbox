@@ -164,14 +164,16 @@ Use the orphan audit when runtime labels and product records may have drifted:
 go run ./cmd/mbox runtime resources
 go run ./cmd/mbox runtime resources --summary
 go run ./cmd/mbox runtime resources --namespace mbox-smoke-20260529
+go run ./cmd/mbox runtime resources --project-id <project-id> --kind SandboxClaim
 go run ./cmd/mbox runtime resources --namespace mbox-smoke-20260529 --kind SandboxClaim
 go run ./cmd/mbox runtime orphans
 go run ./cmd/mbox runtime orphans --namespace mbox-smoke-20260529
+go run ./cmd/mbox runtime orphans --project-id <project-id>
 go run ./cmd/mbox runtime orphans --kind SandboxTemplate
 curl -fsS http://127.0.0.1:18080/v1/runtime/orphans | jq
 ```
 
-The runtime inventory reports the current auditor view plus `summary.total`, `summary.byKind`, `summary.byNamespace`, `summary.byOwner`, and `summary.workload` for quick operator triage. Use `runtime resources --summary` when a script or operator only needs the filtered summary object instead of every managed resource row. Owner entries are derived from existing `mbox.dev/project-id`, `mbox.dev/sandbox-id`, and `mbox.dev/template-id` labels; they are not live metrics or capacity accounting. The orphan audit reports `missing-sandbox-record`, `cleanup-pending`, `runtime-ref-mismatch`, `missing-template-record`, and `unlabeled-owner`. Use `--namespace` / `?namespace=` and `--kind` / `?kind=` when a shared test cluster has older mbox-managed resources from prior runs.
+The runtime inventory reports the current auditor view plus `summary.total`, `summary.byKind`, `summary.byNamespace`, `summary.byOwner`, and `summary.workload` for quick operator triage. Use `runtime resources --summary` when a script or operator only needs the filtered summary object instead of every managed resource row. Owner entries are derived from existing `mbox.dev/project-id`, `mbox.dev/sandbox-id`, and `mbox.dev/template-id` labels; they are not live metrics or capacity accounting. The orphan audit reports `missing-sandbox-record`, `cleanup-pending`, `runtime-ref-mismatch`, `missing-template-record`, and `unlabeled-owner`. Use `--namespace` / `?namespace=`, `--project-id` / `?projectId=`, and `--kind` / `?kind=` when a shared test cluster has older mbox-managed resources from prior runs. Project filtering only matches resources with a runtime owner project label, normally `SandboxClaim` rows, and is not an RBAC or quota decision.
 
 If an operator decides to remove a reported orphan, use the explicitly gated cleanup command. It deletes only one currently reported orphan runtime resource and requires the current reason plus the confirmation string:
 

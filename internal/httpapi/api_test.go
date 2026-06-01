@@ -502,6 +502,17 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 				},
 				Labels: map[string]string{"mbox.dev/template-id": templateID},
 			},
+			{
+				Adapter:   "agent-sandbox",
+				Kind:      "SandboxClaim",
+				Namespace: "other",
+				Name:      "other-project-claim",
+				Owner: &mboxruntime.ManagedResourceOwner{
+					Kind:      "sandbox",
+					ProjectID: uuid.NewString(),
+					SandboxID: uuid.NewString(),
+				},
+			},
 		}},
 	})
 
@@ -511,14 +522,14 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 	}
 	var list mboxruntime.ManagedResourceList
 	decodeResponse(t, res, &list)
-	if list.Adapter != "agent-sandbox" || len(list.Items) != 2 {
+	if list.Adapter != "agent-sandbox" || len(list.Items) != 3 {
 		t.Fatalf("unexpected runtime resources list: %+v", list)
 	}
-	if list.Summary.Total != 2 ||
-		!managedResourceCountsContain(list.Summary.ByKind, "SandboxClaim", 1) ||
+	if list.Summary.Total != 3 ||
+		!managedResourceCountsContain(list.Summary.ByKind, "SandboxClaim", 2) ||
 		!managedResourceCountsContain(list.Summary.ByKind, "SandboxTemplate", 1) ||
 		!managedResourceCountsContain(list.Summary.ByNamespace, "mbox-demo", 1) ||
-		!managedResourceCountsContain(list.Summary.ByNamespace, "other", 1) ||
+		!managedResourceCountsContain(list.Summary.ByNamespace, "other", 2) ||
 		!managedResourceCountsContain(list.Summary.ByOwner, "project/"+projectID+"/sandbox/"+sandboxID, 1) ||
 		!managedResourceCountsContain(list.Summary.ByOwner, "template/"+templateID, 1) {
 		t.Fatalf("unexpected runtime resource summary: %+v", list.Summary)
@@ -567,6 +578,21 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 	}
 	if list.Summary.Workload.ObservedResources != 1 || list.Summary.Workload.Requests["cpu"] != "250m" {
 		t.Fatalf("unexpected namespace-filtered runtime workload summary: %+v", list.Summary.Workload)
+	}
+
+	res = request(api, http.MethodGet, "/v1/runtime/resources?projectId="+projectID, nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected project-filtered status %d, got %d: %s", http.StatusOK, res.Code, res.Body.String())
+	}
+	list = mboxruntime.ManagedResourceList{}
+	decodeResponse(t, res, &list)
+	if len(list.Items) != 1 ||
+		list.Items[0].Owner == nil ||
+		list.Items[0].Owner.ProjectID != projectID ||
+		list.Summary.Total != 1 ||
+		!managedResourceCountsContain(list.Summary.ByOwner, "project/"+projectID+"/sandbox/"+sandboxID, 1) ||
+		list.Summary.Workload.ObservedResources != 1 {
+		t.Fatalf("unexpected project-filtered runtime resources: %+v", list)
 	}
 
 	res = request(api, http.MethodGet, "/v1/runtime/resources?kind=SandboxTemplate", nil)
@@ -675,28 +701,40 @@ func TestRuntimeOrphansClassifiesManagedResources(t *testing.T) {
 				Kind:      "SandboxClaim",
 				Namespace: "mbox-demo",
 				Name:      "running",
-				Labels:    map[string]string{"mbox.dev/sandbox-id": running.ID.String()},
+				Labels: map[string]string{
+					"mbox.dev/project-id": project.ID.String(),
+					"mbox.dev/sandbox-id": running.ID.String(),
+				},
 			},
 			{
 				Adapter:   "agent-sandbox",
 				Kind:      "SandboxClaim",
 				Namespace: "mbox-demo",
 				Name:      "deleted",
-				Labels:    map[string]string{"mbox.dev/sandbox-id": cleanupPending.ID.String()},
+				Labels: map[string]string{
+					"mbox.dev/project-id": project.ID.String(),
+					"mbox.dev/sandbox-id": cleanupPending.ID.String(),
+				},
 			},
 			{
 				Adapter:   "agent-sandbox",
 				Kind:      "SandboxClaim",
 				Namespace: "mbox-demo",
 				Name:      "missing",
-				Labels:    map[string]string{"mbox.dev/sandbox-id": missingSandboxID.String()},
+				Labels: map[string]string{
+					"mbox.dev/project-id": project.ID.String(),
+					"mbox.dev/sandbox-id": missingSandboxID.String(),
+				},
 			},
 			{
 				Adapter:   "agent-sandbox",
 				Kind:      "SandboxClaim",
 				Namespace: "mbox-demo",
 				Name:      "mismatch",
-				Labels:    map[string]string{"mbox.dev/sandbox-id": mismatch.ID.String()},
+				Labels: map[string]string{
+					"mbox.dev/project-id": project.ID.String(),
+					"mbox.dev/sandbox-id": mismatch.ID.String(),
+				},
 			},
 			{
 				Adapter:   "agent-sandbox",
@@ -750,6 +788,24 @@ func TestRuntimeOrphansClassifiesManagedResources(t *testing.T) {
 	decodeResponse(t, res, &audit)
 	if audit.Namespace != "other" || audit.ResourceCount != 0 || audit.OrphanCount != 0 || !audit.ExpectedClean {
 		t.Fatalf("unexpected namespace-filtered audit: %+v", audit)
+	}
+
+	res = request(api, http.MethodGet, "/v1/runtime/orphans?projectId="+project.ID.String(), nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, res.Code, res.Body.String())
+	}
+	decodeResponse(t, res, &audit)
+	if audit.ResourceCount != 4 || audit.OrphanCount != 3 || audit.ExpectedClean {
+		t.Fatalf("unexpected project-filtered audit: %+v", audit)
+	}
+	reasons = map[RuntimeOrphanReason]int{}
+	for _, item := range audit.Items {
+		reasons[item.Reason]++
+	}
+	if reasons[RuntimeOrphanCleanupPending] != 1 ||
+		reasons[RuntimeOrphanMissingSandboxRecord] != 1 ||
+		reasons[RuntimeOrphanRuntimeRefMismatch] != 1 {
+		t.Fatalf("unexpected project-filtered orphan reasons: %+v", reasons)
 	}
 
 	res = request(api, http.MethodGet, "/v1/runtime/orphans?kind=SandboxTemplate", nil)

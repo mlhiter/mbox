@@ -69,8 +69,8 @@ All responses include `X-Mbox-Request-ID`. If the client sends `X-Mbox-Request-I
 | `GET` | `/healthz` | Returns `{"status":"ok"}`. |
 | `GET` | `/v1/info` | Returns API version, server version, enabled runtime/artifact capabilities, and compatibility hints for CLI/SDK clients. |
 | `GET` | `/v1/openapi.json` | Returns the current OpenAPI 3.1 contract starter for implemented routes, schemas, and bearer-auth security metadata. |
-| `GET` | `/v1/runtime/resources` | Lists the current mbox-managed runtime resources reported by the runtime auditor. Optional `namespace` and `kind` queries scope the inventory. Requires a configured runtime auditor. |
-| `GET` | `/v1/runtime/orphans` | Read-only operational audit for mbox-managed runtime resources whose Kubernetes labels no longer line up cleanly with product records. Optional `namespace` and `kind` queries scope the report. Requires a configured runtime auditor. |
+| `GET` | `/v1/runtime/resources` | Lists the current mbox-managed runtime resources reported by the runtime auditor. Optional `namespace`, `projectId`, and `kind` queries scope the inventory. Requires a configured runtime auditor. |
+| `GET` | `/v1/runtime/orphans` | Read-only operational audit for mbox-managed runtime resources whose Kubernetes labels no longer line up cleanly with product records. Optional `namespace`, `projectId`, and `kind` queries scope the report. Requires a configured runtime auditor. |
 | `GET` | `/v1/audit-events` | Lists recent product audit events. Optional `projectId`, `action`, `resourceType`, `resourceId`, `actor`, `source`, `requestId`, `operation`, `since`, `until`, and `limit` query filters. |
 | `GET` | `/v1/projects` | Lists projects. |
 | `POST` | `/v1/projects` | Creates a project. |
@@ -184,7 +184,7 @@ Capabilities are separate feature gates. A client that needs task streaming shou
 
 This is live runtime inventory and workload-shape visibility. It is not metrics-server CPU or memory utilization, product-record usage, quota, billing, or live cluster capacity reservation. It does not compare against Postgres product records and does not delete or patch Kubernetes resources.
 
-Use `?namespace=<name>` to scope the response to one namespace, and `?kind=SandboxClaim` or `?kind=SandboxTemplate` to inspect one managed resource kind. Filters can be combined, which is useful for per-smoke or per-project checks on clusters that may already contain older mbox-managed resources.
+Use `?namespace=<name>` to scope the response to one namespace, `?projectId=<id>` to match resources carrying a runtime owner project label, and `?kind=SandboxClaim` or `?kind=SandboxTemplate` to inspect one managed resource kind. Filters can be combined, which is useful for per-smoke or per-project checks on clusters that may already contain older mbox-managed resources. The project filter is a label-derived runtime attribution aid, mainly for project-owned `SandboxClaim` rows; it is not an RBAC, quota, billing, or capacity boundary.
 
 `GET /v1/runtime/orphans` uses the same runtime inventory, then compares labels with the Postgres product records to find drift. It also stays read-only. The OpenAPI contract publishes structured schemas for the inventory, orphan audit, orphan entries, and the gated cleanup request/result so CLI and SDK clients can validate the fields they render.
 
@@ -633,8 +633,8 @@ Current command groups:
 - `context set|use|remove|current|list` for local CLI context management and inspection. Token values are never printed; outputs only include `hasToken`.
 - `openapi` for the machine-readable OpenAPI contract.
 - `audit-events` for recent product audit events.
-- `runtime resources` for the read-only managed runtime resource inventory. Add `--summary` to print only the filtered `summary` object.
-- `runtime orphans` for the read-only runtime orphan audit.
+- `runtime resources` for the read-only managed runtime resource inventory. Add `--summary` to print only the filtered `summary` object; use `--project-id` to filter by runtime owner project label.
+- `runtime orphans` for the read-only runtime orphan audit. Use `--project-id` to inspect drift for one runtime owner project label.
 - `projects`: list, create, get, usage, audit-events, policy, set-policy, quota-policy, set-quota-policy, credentials, add-credential, delete.
 - `credentials`: get, delete.
 - `templates`: list, get.

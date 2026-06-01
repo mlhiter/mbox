@@ -151,8 +151,8 @@ Commands:
   context use NAME
   context remove NAME
   openapi
-  runtime resources [--namespace NAMESPACE] [--kind KIND] [--summary]
-  runtime orphans [--namespace NAMESPACE] [--kind KIND]
+  runtime resources [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary]
+  runtime orphans [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND]
   runtime cleanup-orphan --adapter ADAPTER --kind KIND --namespace NAMESPACE --name NAME --reason REASON --confirm delete-orphan-runtime-resource
   audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--since RFC3339] [--until RFC3339] [--limit N]
   projects list
@@ -236,18 +236,22 @@ func (a *App) runRuntime(ctx context.Context, client *Client, args []string) err
 		fs := flag.NewFlagSet("runtime resources", flag.ContinueOnError)
 		fs.SetOutput(a.streams.Stderr)
 		namespace := fs.String("namespace", "", "")
+		projectID := fs.String("project-id", "", "")
 		kind := fs.String("kind", "", "")
 		summaryOnly := fs.Bool("summary", false, "")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 0 {
-			return usageError("usage: mbox runtime resources [--namespace NAMESPACE] [--kind KIND] [--summary]")
+			return usageError("usage: mbox runtime resources [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary]")
 		}
 		path := "/v1/runtime/resources"
 		values := url.Values{}
 		if strings.TrimSpace(*namespace) != "" {
 			values.Set("namespace", strings.TrimSpace(*namespace))
+		}
+		if strings.TrimSpace(*projectID) != "" {
+			values.Set("projectId", strings.TrimSpace(*projectID))
 		}
 		if strings.TrimSpace(*kind) != "" {
 			values.Set("kind", strings.TrimSpace(*kind))
@@ -271,17 +275,21 @@ func (a *App) runRuntime(ctx context.Context, client *Client, args []string) err
 		fs := flag.NewFlagSet("runtime orphans", flag.ContinueOnError)
 		fs.SetOutput(a.streams.Stderr)
 		namespace := fs.String("namespace", "", "")
+		projectID := fs.String("project-id", "", "")
 		kind := fs.String("kind", "", "")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 0 {
-			return usageError("usage: mbox runtime orphans [--namespace NAMESPACE] [--kind KIND]")
+			return usageError("usage: mbox runtime orphans [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND]")
 		}
 		path := "/v1/runtime/orphans"
 		values := url.Values{}
 		if strings.TrimSpace(*namespace) != "" {
 			values.Set("namespace", strings.TrimSpace(*namespace))
+		}
+		if strings.TrimSpace(*projectID) != "" {
+			values.Set("projectId", strings.TrimSpace(*projectID))
 		}
 		if strings.TrimSpace(*kind) != "" {
 			values.Set("kind", strings.TrimSpace(*kind))

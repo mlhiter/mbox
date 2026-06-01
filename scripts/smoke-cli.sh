@@ -161,7 +161,9 @@ echo "Checking API info manifest with CLI"
 	(.paths["/v1/audit-events"].get.parameters | map(.name) | index("since")) and
 	(.paths["/v1/audit-events"].get.parameters | map(.name) | index("until")) and
 	.paths["/v1/runtime/resources"] and
+	(.paths["/v1/runtime/resources"].get.parameters | map(.name) | index("projectId")) and
 	(.paths["/v1/runtime/resources"].get.parameters | map(.name) | index("kind")) and
+	(.paths["/v1/runtime/orphans"].get.parameters | map(.name) | index("projectId")) and
 	(.paths["/v1/runtime/orphans"].get.parameters | map(.name) | index("kind")) and
 	(.components.schemas.RuntimeResourceSummary.required | index("byOwner")) and
 	(.components.schemas.RuntimeResourceSummary.required | index("workload")) and

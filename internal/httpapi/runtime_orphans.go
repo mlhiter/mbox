@@ -75,6 +75,10 @@ func (api *API) listRuntimeResources(w http.ResponseWriter, r *http.Request) {
 	if namespace != "" {
 		managed.Items = filterManagedResourcesByNamespace(managed.Items, namespace)
 	}
+	projectID := strings.TrimSpace(r.URL.Query().Get("projectId"))
+	if projectID != "" {
+		managed.Items = filterManagedResourcesByProject(managed.Items, projectID)
+	}
 	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
 	if kind != "" {
 		managed.Items = filterManagedResourcesByKind(managed.Items, kind)
@@ -187,6 +191,10 @@ func (api *API) runtimeOrphanAudit(r *http.Request) (RuntimeOrphanAudit, error) 
 	if namespace != "" {
 		managed.Items = filterManagedResourcesByNamespace(managed.Items, namespace)
 	}
+	projectID := strings.TrimSpace(r.URL.Query().Get("projectId"))
+	if projectID != "" {
+		managed.Items = filterManagedResourcesByProject(managed.Items, projectID)
+	}
 	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
 	if kind != "" {
 		managed.Items = filterManagedResourcesByKind(managed.Items, kind)
@@ -232,6 +240,23 @@ func filterManagedResourcesByKind(resources []mboxruntime.ManagedResource, kind 
 		}
 	}
 	return filtered
+}
+
+func filterManagedResourcesByProject(resources []mboxruntime.ManagedResource, projectID string) []mboxruntime.ManagedResource {
+	filtered := make([]mboxruntime.ManagedResource, 0, len(resources))
+	for _, resource := range resources {
+		if managedResourceProjectID(resource) == projectID {
+			filtered = append(filtered, resource)
+		}
+	}
+	return filtered
+}
+
+func managedResourceProjectID(resource mboxruntime.ManagedResource) string {
+	if resource.Owner != nil && resource.Owner.ProjectID != "" {
+		return resource.Owner.ProjectID
+	}
+	return strings.TrimSpace(resource.Labels["mbox.dev/project-id"])
 }
 
 func summarizeManagedResources(resources []mboxruntime.ManagedResource) mboxruntime.ManagedResourceSummary {

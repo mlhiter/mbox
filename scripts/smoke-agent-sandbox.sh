@@ -438,6 +438,12 @@ api_json GET "/v1/runtime/resources?namespace=$NAMESPACE&kind=SandboxClaim" | jq
 	$inventory.summary.workload.runningPods >= 1 and
 	$inventory.summary.workload.requests.cpu == "50m" and
 	$inventory.summary.workload.requests.memory == "64Mi"' >/dev/null
+api_json GET "/v1/runtime/resources?namespace=$NAMESPACE&projectId=$project_id&kind=SandboxClaim" | jq -e \
+	--arg claim "$claim_name" \
+	--arg project "$project_id" \
+	'.items | any(.name == $claim and .owner.projectId == $project)' >/dev/null
+api_json GET "/v1/runtime/resources?namespace=$NAMESPACE&projectId=00000000-0000-4000-8000-000000000099&kind=SandboxClaim" | jq -e \
+	'.items | length == 0' >/dev/null
 cli_json runtime resources --summary --namespace "$NAMESPACE" --kind SandboxClaim | jq -e '
 	.total >= 1 and
 	.workload.observedResources >= 1 and
@@ -630,7 +636,7 @@ wait_api_sandbox_runtime_ref_cleared "$sandbox_id"
 api_json GET "/v1/projects/$project_id/usage" | jq -e '.sandboxes.deleted >= 1 and .sandboxes.cleanupPending == 0' >/dev/null
 echo "Checking runtime orphan audit after cleanup"
 api_json GET "/v1/runtime/orphans?namespace=$NAMESPACE" | jq -e --arg namespace "$NAMESPACE" '.adapter == "agent-sandbox" and .namespace == $namespace and .orphanCount == 0 and .expectedClean == true' >/dev/null
-cli_json runtime orphans --namespace "$NAMESPACE" | jq -e --arg namespace "$NAMESPACE" '.adapter == "agent-sandbox" and .namespace == $namespace and .orphanCount == 0 and .expectedClean == true' >/dev/null
+cli_json runtime orphans --namespace "$NAMESPACE" --project-id "$project_id" | jq -e --arg namespace "$NAMESPACE" '.adapter == "agent-sandbox" and .namespace == $namespace and .orphanCount == 0 and .expectedClean == true' >/dev/null
 
 echo "Checking gated runtime orphan cleanup"
 orphan_claim_name="manual-orphan-$RUN_ID"
@@ -652,6 +658,11 @@ EOF
 api_json GET "/v1/runtime/orphans?namespace=$NAMESPACE" | jq -e \
 	--arg name "$orphan_claim_name" \
 	'.items[] | select(.reason == "missing-sandbox-record" and .resource.kind == "SandboxClaim" and .resource.name == $name)' >/dev/null
+api_json GET "/v1/runtime/orphans?namespace=$NAMESPACE&projectId=00000000-0000-4000-8000-000000000002" | jq -e \
+	--arg name "$orphan_claim_name" \
+	'.items | length == 1 and .[0].reason == "missing-sandbox-record" and .[0].resource.name == $name' >/dev/null
+api_json GET "/v1/runtime/orphans?namespace=$NAMESPACE&projectId=00000000-0000-4000-8000-000000000099" | jq -e \
+	'.resourceCount == 0 and .orphanCount == 0 and .expectedClean == true and (.items | length == 0)' >/dev/null
 cleanup_payload="$(jq -n \
 	--arg namespace "$NAMESPACE" \
 	--arg name "$orphan_claim_name" \

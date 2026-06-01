@@ -128,14 +128,14 @@ export const SDK_ROUTE_CONTRACT = [
     sdk: "listRuntimeResources",
     method: "GET",
     path: "/v1/runtime/resources",
-    query: ["namespace", "kind"],
+    query: ["namespace", "projectId", "kind"],
     response: jsonResponse("RuntimeResourceList"),
   },
   {
     sdk: "listRuntimeOrphans",
     method: "GET",
     path: "/v1/runtime/orphans",
-    query: ["namespace", "kind"],
+    query: ["namespace", "projectId", "kind"],
     response: jsonResponse("RuntimeOrphanAudit"),
   },
   {

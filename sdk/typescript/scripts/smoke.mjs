@@ -192,6 +192,48 @@ const overrideEnvClient = createMboxClientFromEnv(
 )
 assert.equal((await overrideEnvClient.info()).apiVersion, "v1alpha1")
 
+const runtimeFilterCalls = []
+const runtimeFilterClient = new MboxClient({
+  baseUrl: "http://runtime.example.test",
+  fetch: async (url) => {
+    runtimeFilterCalls.push(new URL(url))
+    if (runtimeFilterCalls.at(-1)?.pathname === "/v1/runtime/resources") {
+      return jsonResponse({
+        adapter: "agent-sandbox",
+        checkedAt: "2026-01-01T00:00:00Z",
+        summary: { total: 0, byKind: [], byNamespace: [], byOwner: [], workload: emptyWorkloadSummary() },
+        items: [],
+      })
+    }
+    return jsonResponse({
+      adapter: "agent-sandbox",
+      checkedAt: "2026-01-01T00:00:00Z",
+      resourceCount: 0,
+      orphanCount: 0,
+      expectedClean: true,
+      items: [],
+    })
+  },
+})
+await runtimeFilterClient.listRuntimeResources({
+  namespace: "mbox-smoke",
+  projectId: "project-1",
+  kind: "SandboxClaim",
+})
+await runtimeFilterClient.listRuntimeOrphans({
+  namespace: "mbox-smoke",
+  projectId: "project-1",
+  kind: "SandboxClaim",
+})
+assert.equal(runtimeFilterCalls[0].pathname, "/v1/runtime/resources")
+assert.equal(runtimeFilterCalls[0].searchParams.get("namespace"), "mbox-smoke")
+assert.equal(runtimeFilterCalls[0].searchParams.get("projectId"), "project-1")
+assert.equal(runtimeFilterCalls[0].searchParams.get("kind"), "SandboxClaim")
+assert.equal(runtimeFilterCalls[1].pathname, "/v1/runtime/orphans")
+assert.equal(runtimeFilterCalls[1].searchParams.get("namespace"), "mbox-smoke")
+assert.equal(runtimeFilterCalls[1].searchParams.get("projectId"), "project-1")
+assert.equal(runtimeFilterCalls[1].searchParams.get("kind"), "SandboxClaim")
+
 assert.equal(assertOpenAPIAlignment(buildOpenAPI()).ok, true)
 assert.throws(
   () => {
@@ -209,10 +251,26 @@ console.log("SDK smoke passed")
 function jsonFetch(payload) {
   return async (url) => {
     assert.equal(new URL(url).pathname, "/v1/info")
-    return new Response(JSON.stringify(payload), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    })
+    return jsonResponse(payload)
+  }
+}
+
+function jsonResponse(payload) {
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  })
+}
+
+function emptyWorkloadSummary() {
+  return {
+    observedResources: 0,
+    desiredPods: 0,
+    observedPods: 0,
+    runningPods: 0,
+    containersReady: 0,
+    containersTotal: 0,
+    restartCount: 0,
   }
 }
 
@@ -222,10 +280,10 @@ function buildOpenAPI() {
     "/v1/info": { get: op(jsonRef("APIInfo"), { auth: "none" }) },
     "/v1/openapi.json": { get: op({ type: "object" }) },
     "/v1/runtime/resources": {
-      get: op(jsonRef("RuntimeResourceList"), { parameters: [queryParam("namespace"), queryParam("kind")] }),
+      get: op(jsonRef("RuntimeResourceList"), { parameters: [queryParam("namespace"), queryParam("projectId"), queryParam("kind")] }),
     },
     "/v1/runtime/orphans": {
-      get: op(jsonRef("RuntimeOrphanAudit"), { parameters: [queryParam("namespace"), queryParam("kind")] }),
+      get: op(jsonRef("RuntimeOrphanAudit"), { parameters: [queryParam("namespace"), queryParam("projectId"), queryParam("kind")] }),
     },
     "/v1/runtime/orphans/cleanup": {
       post: op(jsonRef("RuntimeOrphanCleanupResult"), {
