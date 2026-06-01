@@ -462,7 +462,7 @@ const boundary = await mbox.getSandboxBoundary("<sandbox-id>")
 const task = await mbox.createExecutionTask("<sandbox-id>", {
   command: ["sh", "-lc", "pwd && echo task-ok"],
 })
-const finished = await mbox.waitForTask(task.id)
+const finished = await mbox.waitForTask(task.id, { requireSuccess: true })
 ```
 
 ## Sandbox Stop/Start Check

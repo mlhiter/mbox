@@ -843,6 +843,7 @@ export type RawBody = BodyInit
 export type WaitForTaskOptions = {
   intervalMs?: number
   timeoutMs?: number
+  requireSuccess?: boolean
   signal?: AbortSignal
 }
 
@@ -871,6 +872,16 @@ export class MboxCompatibilityError extends Error {
     super(result.message)
     this.name = "MboxCompatibilityError"
     this.result = result
+  }
+}
+
+export class MboxTaskStatusError extends Error {
+  readonly task: ExecutionTask
+
+  constructor(task: ExecutionTask) {
+    super(`task ${task.id} finished with status ${task.status}`)
+    this.name = "MboxTaskStatusError"
+    this.task = task
   }
 }
 
@@ -1264,6 +1275,9 @@ export class MboxClient {
     for (;;) {
       const task = await this.getExecutionTask(taskId, { signal: options.signal })
       if (TERMINAL_TASK_STATUSES.has(task.status)) {
+        if (options.requireSuccess && task.status !== "succeeded") {
+          throw new MboxTaskStatusError(task)
+        }
         return task
       }
       if (options.timeoutMs && Date.now() - started >= options.timeoutMs) {

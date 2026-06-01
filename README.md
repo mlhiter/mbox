@@ -400,7 +400,7 @@ const task = await mbox.createExecutionTask("<sandbox-id>", {
   metadata: { caller: "external-agent" },
 })
 
-const finished = await mbox.waitForTask(task.id)
+const finished = await mbox.waitForTask(task.id, { requireSuccess: true })
 
 await mbox.createArtifact("<sandbox-id>", {
   taskId: finished.id,

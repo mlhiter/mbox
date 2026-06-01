@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import {
   MboxClient,
   MboxCompatibilityError,
+  MboxTaskStatusError,
   OpenAPIAlignmentError,
   assertOpenAPIAlignment,
   checkClientCompatibility,
@@ -233,6 +234,67 @@ assert.equal(runtimeFilterCalls[1].pathname, "/v1/runtime/orphans")
 assert.equal(runtimeFilterCalls[1].searchParams.get("namespace"), "mbox-smoke")
 assert.equal(runtimeFilterCalls[1].searchParams.get("projectId"), "project-1")
 assert.equal(runtimeFilterCalls[1].searchParams.get("kind"), "SandboxClaim")
+
+const failedTask = {
+  id: "task-failed",
+  projectId: "project-1",
+  sandboxId: "sandbox-1",
+  status: "failed",
+  command: ["sh", "-lc", "exit 2"],
+  timeoutSeconds: 60,
+  stdout: "",
+  stderr: "failed",
+  outputTruncated: false,
+  exitCode: 2,
+}
+const failedTaskClient = new MboxClient({
+  baseUrl: "http://tasks.example.test",
+  fetch: async (url) => {
+    assert.equal(new URL(url).pathname, "/v1/tasks/task-failed")
+    return jsonResponse(failedTask)
+  },
+})
+assert.equal((await failedTaskClient.waitForTask("task-failed")).status, "failed")
+await assert.rejects(
+  () => failedTaskClient.waitForTask("task-failed", { requireSuccess: true }),
+  (error) =>
+    error instanceof MboxTaskStatusError &&
+    error.task.id === "task-failed" &&
+    error.task.status === "failed" &&
+    error.message === "task task-failed finished with status failed",
+)
+
+for (const status of ["canceled", "timed_out"]) {
+  const terminalTaskClient = new MboxClient({
+    baseUrl: "http://tasks.example.test",
+    fetch: async () =>
+      jsonResponse({
+        ...failedTask,
+        id: `task-${status}`,
+        status,
+      }),
+  })
+  await assert.rejects(
+    () => terminalTaskClient.waitForTask(`task-${status}`, { requireSuccess: true }),
+    (error) => error instanceof MboxTaskStatusError && error.task.status === status,
+  )
+}
+
+const succeededTaskClient = new MboxClient({
+  baseUrl: "http://tasks.example.test",
+  fetch: async () =>
+    jsonResponse({
+      ...failedTask,
+      id: "task-succeeded",
+      status: "succeeded",
+      stderr: "",
+      exitCode: 0,
+    }),
+})
+assert.equal(
+  (await succeededTaskClient.waitForTask("task-succeeded", { requireSuccess: true })).status,
+  "succeeded",
+)
 
 assert.equal(assertOpenAPIAlignment(buildOpenAPI()).ok, true)
 assert.throws(

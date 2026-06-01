@@ -585,10 +585,10 @@ const task = await mbox.createExecutionTask("<sandbox-id>", {
   timeoutSeconds: 60,
 })
 
-const finished = await mbox.waitForTask(task.id)
+const finished = await mbox.waitForTask(task.id, { requireSuccess: true })
 ```
 
-Use `watchExecutionTask(task.id, { onEvent })` when a client needs live stdout/stderr chunks instead of polling final task output.
+By default, `waitForTask()` returns any terminal task status. Pass `{ requireSuccess: true }` when automation should throw `MboxTaskStatusError` for `failed`, `canceled`, or `timed_out`; the error keeps the final task record on `error.task`. Use `watchExecutionTask(task.id, { onEvent })` when a client needs live stdout/stderr chunks instead of polling final task output.
 
 The SDK exports `SDK_ROUTE_CONTRACT`, `SDK_SCHEMA_CONTRACT`, `checkOpenAPIAlignment`, `assertOpenAPIAlignment`, and `fetchAndAssertOpenAPIAlignment` as a starter route-alignment guard. The guard verifies SDK route-backed helpers against the published OpenAPI path, method, SDK-used query parameter set, route auth metadata, focused request bodies, and focused response shapes. Auth checks cover the bearer security scheme, explicit public operations, private bearer operations, and `401` responses. Request checks cover JSON schema refs and binary upload media types. Response checks cover direct schema refs, list item refs, NDJSON task-event streams, binary responses, and no-content delete routes. It then checks a focused set of SDK-consumed schema required fields and properties. It is not yet a generated client or full request/response schema validator. Usage and audit contracts are no longer entirely loose objects: the SDK and OpenAPI both expose project usage request-total types, known audit action string types, the current `PolicyDeniedAuditMetadata` shape, and `isPolicyDeniedAuditEvent()` so clients can safely render selected denial events without treating all audit metadata as stable. `createMboxClientFromEnv()` mirrors the CLI environment convention for `MBOX_API_URL`, `MBOX_TOKEN`/`MBOX_API_TOKEN`, `MBOX_REQUEST_ID`, and audit labels, but it does not read CLI context files.
 
