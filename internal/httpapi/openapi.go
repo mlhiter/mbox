@@ -11,6 +11,8 @@ var knownAuditActions = []string{
 	"project.deleted",
 	"project.policy.updated",
 	"project.quota_policy.updated",
+	"project.member.created",
+	"project.member.deleted",
 	"project.credential.created",
 	"project.credential.deleted",
 	"template.created",
@@ -37,8 +39,25 @@ var knownAuditActions = []string{
 var knownPolicyDeniedOperations = []string{
 	"sandbox.launch",
 	"template.validation",
+	"project.policy.update",
+	"project.quota_policy.update",
+	"runtime.resolve",
+	"runtime.logs",
+	"runtime.events",
+	"runtime.ports",
+	"runtime.preview.proxy",
+	"runtime.terminal",
+	"runtime.session.create",
+	"runtime.session.end",
+	"execution.task.create",
+	"execution.task.cancel",
+	"execution.task.events",
+	"artifact.write",
+	"artifact.content.workspace.read",
 	"artifact.content.capture",
 	"artifact.content.upload",
+	"project.credential.create",
+	"project.credential.delete",
 }
 
 type openAPIDocument map[string]any
@@ -60,6 +79,7 @@ func buildOpenAPI(info APIInfo) openAPIDocument {
 		},
 		"tags": []map[string]any{
 			{"name": "system"},
+			{"name": "auth"},
 			{"name": "runtime"},
 			{"name": "audit"},
 			{"name": "projects"},
@@ -68,6 +88,7 @@ func buildOpenAPI(info APIInfo) openAPIDocument {
 			{"name": "sessions"},
 			{"name": "tasks"},
 			{"name": "artifacts"},
+			{"name": "members"},
 			{"name": "credentials"},
 		},
 		"paths":      openAPIPaths(),
@@ -84,6 +105,9 @@ func openAPIPaths() map[string]any {
 		},
 		"/v1/info": map[string]any{
 			"get": operation("system", "Get API capability manifest", nil, nil, schemaRef("APIInfo"), false, publicOperation()),
+		},
+		"/v1/auth/caller": map[string]any{
+			"get": operation("auth", "Get current caller authentication boundary", nil, nil, schemaRef("CallerInfo"), false),
 		},
 		"/v1/openapi.json": map[string]any{
 			"get": operation("system", "Get OpenAPI contract", nil, nil, map[string]any{"type": "object"}, false),
@@ -125,6 +149,13 @@ func openAPIPaths() map[string]any {
 			"get": operation("projects", "Get project quota policy", pathParams("projectID"), nil, schemaRef("ProjectQuotaPolicy"), false),
 			"put": operation("projects", "Upsert project quota policy", pathParams("projectID"), schemaRef("ProjectQuotaPolicyUpsert"), schemaRef("ProjectQuotaPolicy"), false),
 		},
+		"/v1/projects/{projectID}/authorization": map[string]any{
+			"get": operation("projects", "Get project authorization preflight", append(pathParams("projectID"), queryParam("action", "string")), nil, schemaRef("ProjectAuthorizationDecision"), false),
+		},
+		"/v1/projects/{projectID}/members": map[string]any{
+			"get":  operation("projects", "List project members", pathParams("projectID"), nil, listSchema("ProjectMember"), false),
+			"post": operation("projects", "Create project member", pathParams("projectID"), schemaRef("ProjectMemberCreate"), schemaRef("ProjectMember"), true),
+		},
 		"/v1/projects/{projectID}/credentials": map[string]any{
 			"get":  operation("projects", "List project credential references", pathParams("projectID"), nil, listSchema("ProjectCredential"), false),
 			"post": operation("projects", "Create project credential reference", pathParams("projectID"), schemaRef("ProjectCredentialCreate"), schemaRef("ProjectCredential"), true),
@@ -134,6 +165,10 @@ func openAPIPaths() map[string]any {
 		},
 		"/v1/projects/{projectID}/audit-events": map[string]any{
 			"get": operation("projects", "List project audit events", append(pathParams("projectID"), auditQueryParams(false)...), nil, listSchema("AuditEvent"), false),
+		},
+		"/v1/members/{memberID}": map[string]any{
+			"get":    operation("members", "Get project member", pathParams("memberID"), nil, schemaRef("ProjectMember"), false),
+			"delete": operationNoContent("members", "Delete project member", pathParams("memberID")),
 		},
 		"/v1/credentials/{credentialID}": map[string]any{
 			"get":    operation("credentials", "Get credential reference", pathParams("credentialID"), nil, schemaRef("ProjectCredential"), false),
@@ -465,6 +500,7 @@ func auditQueryParams(includeProject bool) []map[string]any {
 		queryParam("source", "string"),
 		queryParam("requestId", "string"),
 		queryParam("operation", "string"),
+		queryParam("reason", "string"),
 		queryParam("since", "string"),
 		queryParam("until", "string"),
 		queryParam("limit", "integer"),
@@ -484,7 +520,10 @@ func openAPIComponents() map[string]any {
 		"schemas": map[string]any{
 			"Health":                        objectSchema(requiredProps("status"), prop("status", stringSchema())),
 			"Error":                         objectSchema(requiredProps("error"), prop("error", stringSchema())),
-			"APIInfo":                       objectSchema(requiredProps("name", "apiVersion", "serverVersion", "runtimeController", "runtimeAccess", "artifactContent", "capabilities", "compatibility", "authenticationRequired"), prop("name", stringSchema()), prop("apiVersion", stringSchema()), prop("serverVersion", stringSchema()), prop("runtimeController", schemaRef("RuntimeInfo")), prop("runtimeAccess", schemaRef("RuntimeInfo")), prop("artifactContent", schemaRef("ArtifactInfo")), prop("capabilities", arraySchema(stringSchema())), prop("compatibility", schemaRef("Compatibility")), prop("authenticationRequired", boolSchema())),
+			"APIInfo":                       apiInfoSchema(),
+			"TrustedPrincipalHeaderInfo":    trustedPrincipalHeaderInfoSchema(),
+			"ProjectRBACInfo":               projectRBACInfoSchema(),
+			"CallerInfo":                    callerInfoSchema(),
 			"RuntimeInfo":                   objectSchema(requiredProps("enabled"), prop("enabled", boolSchema()), prop("adapter", stringSchema())),
 			"ArtifactInfo":                  objectSchema(requiredProps("retainedContentEnabled", "storageProvider", "maxBytes"), prop("retainedContentEnabled", boolSchema()), prop("storageProvider", stringSchema()), prop("maxBytes", integerSchema())),
 			"Compatibility":                 objectSchema(requiredProps("minimumCliApiVersion", "minimumSdkApiVersion"), prop("minimumCliApiVersion", stringSchema()), prop("minimumSdkApiVersion", stringSchema())),
@@ -495,6 +534,9 @@ func openAPIComponents() map[string]any {
 			"ProjectPolicyUpsert":           projectPolicySchema(true),
 			"ProjectQuotaPolicy":            projectQuotaPolicySchema(false),
 			"ProjectQuotaPolicyUpsert":      projectQuotaPolicySchema(true),
+			"ProjectAuthorizationDecision":  projectAuthorizationDecisionSchema(),
+			"ProjectMember":                 projectMemberSchema(false),
+			"ProjectMemberCreate":           projectMemberSchema(true),
 			"ProjectCredential":             projectCredentialSchema(false),
 			"ProjectCredentialCreate":       projectCredentialSchema(true),
 			"ProjectUsage":                  projectUsageSchema(),
@@ -629,6 +671,65 @@ func dateTimeSchema() map[string]any {
 	return map[string]any{"type": "string", "format": "date-time"}
 }
 
+func apiInfoSchema() map[string]any {
+	return objectSchema(requiredProps("name", "apiVersion", "serverVersion", "runtimeController", "runtimeAccess", "artifactContent", "trustedPrincipalHeaders", "projectRbac", "capabilities", "compatibility", "authenticationRequired"),
+		prop("name", stringSchema()),
+		prop("apiVersion", stringSchema()),
+		prop("serverVersion", stringSchema()),
+		prop("runtimeController", schemaRef("RuntimeInfo")),
+		prop("runtimeAccess", schemaRef("RuntimeInfo")),
+		prop("artifactContent", schemaRef("ArtifactInfo")),
+		prop("trustedPrincipalHeaders", schemaRef("TrustedPrincipalHeaderInfo")),
+		prop("projectRbac", schemaRef("ProjectRBACInfo")),
+		prop("capabilities", arraySchema(stringSchema())),
+		prop("compatibility", schemaRef("Compatibility")),
+		prop("authenticationRequired", boolSchema()),
+	)
+}
+
+func trustedPrincipalHeaderInfoSchema() map[string]any {
+	schema := objectSchema(requiredProps("enabled"),
+		prop("enabled", boolSchema()),
+		prop("principalHeader", stringSchema()),
+		prop("principalTypeHeader", stringSchema()),
+	)
+	schema["description"] = "Disabled-by-default trusted reverse-proxy header principal provider for caller/preflight visibility. It does not enforce route authorization by itself."
+	return schema
+}
+
+func projectRBACInfoSchema() map[string]any {
+	schema := objectSchema(requiredProps("enforcementEnabled", "enforcedActions"),
+		prop("enforcementEnabled", boolSchema()),
+		prop("enforcedActions", arraySchema(enumSchema(projectAuthorizationActions...))),
+	)
+	schema["description"] = "Disabled-by-default project RBAC enforcement status. The starter enforcement gate currently covers sandbox.launch, runtime.operate, artifact.write, policy.manage, and credential.manage only when explicitly enabled with a trusted principal provider."
+	return schema
+}
+
+func callerInfoSchema() map[string]any {
+	schema := objectSchema(requiredProps(
+		"authenticated",
+		"authenticationRequired",
+		"mode",
+		"principalType",
+		"principal",
+		"rbacTrusted",
+		"projectRolesEnforced",
+		"notes",
+	),
+		prop("authenticated", boolSchema()),
+		prop("authenticationRequired", boolSchema()),
+		prop("mode", enumSchema("anonymous", "shared_token", "trusted_header")),
+		prop("principalType", enumSchema("anonymous", "shared_token", "user", "service_account", "automation")),
+		prop("principal", stringSchema()),
+		prop("rbacTrusted", boolSchema()),
+		prop("projectRolesEnforced", boolSchema()),
+		prop("notes", arraySchema(stringSchema())),
+	)
+	schema["description"] = "Read-only caller/authentication boundary. Shared tokens are not trusted user identity; trusted-header callers are usable for authorization preflight and explicitly enabled project RBAC actions."
+	return schema
+}
+
 func nullable(schema map[string]any) map[string]any {
 	out := map[string]any{}
 	for key, value := range schema {
@@ -691,6 +792,42 @@ func projectQuotaPolicySchema(upsert bool) map[string]any {
 		props = append(props, prop("createdAt", dateTimeSchema()), prop("updatedAt", dateTimeSchema()))
 	}
 	return objectSchema(requiredProps("enforcement"), props...)
+}
+
+func projectAuthorizationDecisionSchema() map[string]any {
+	schema := objectSchema(requiredProps("projectId", "action", "allowed", "enforced", "evaluation", "requiredRoles", "caller", "memberCount", "availableActions", "notes"),
+		prop("projectId", stringSchema()),
+		prop("action", enumSchema(projectAuthorizationActions...)),
+		prop("allowed", boolSchema()),
+		prop("enforced", boolSchema()),
+		prop("evaluation", enumSchema("allowed", "denied", "not_enforceable")),
+		prop("requiredRoles", arraySchema(enumSchema("owner", "operator", "viewer"))),
+		prop("caller", schemaRef("CallerInfo")),
+		prop("matchedMember", schemaRef("ProjectMember")),
+		prop("memberCount", integerSchema()),
+		prop("availableActions", arraySchema(enumSchema(projectAuthorizationActions...))),
+		prop("notes", arraySchema(stringSchema())),
+	)
+	schema["description"] = "Project authorization preflight for known project actions. It reports action-level enforcement status; the starter route-level gate can enforce sandbox.launch, runtime.operate, artifact.write, policy.manage, and credential.manage when project RBAC enforcement and trusted principal headers are explicitly enabled."
+	return schema
+}
+
+func projectMemberSchema(create bool) map[string]any {
+	required := requiredProps("principalType", "principal", "role")
+	props := []schemaProp{
+		prop("principalType", enumSchema("user", "service_account", "automation")),
+		prop("principal", stringSchema()),
+		prop("role", enumSchema("owner", "operator", "viewer")),
+		prop("metadata", objectAnySchema()),
+	}
+	if !create {
+		required = requiredProps("id", "projectId", "principalType", "principal", "role")
+		props = append([]schemaProp{prop("id", stringSchema()), prop("projectId", stringSchema())}, props...)
+		props = append(props, prop("createdAt", dateTimeSchema()), prop("updatedAt", dateTimeSchema()))
+	}
+	schema := objectSchema(required, props...)
+	schema["description"] = "Project member role record for RBAC groundwork. These records are not enforced as authorization decisions by the current shared-token API."
+	return schema
 }
 
 func projectCredentialSchema(create bool) map[string]any {
@@ -847,11 +984,12 @@ func runtimeResourceListSchema() map[string]any {
 }
 
 func runtimeResourceSummarySchema() map[string]any {
-	return objectSchema(requiredProps("total", "byKind", "byNamespace", "byOwner", "workload"),
+	return objectSchema(requiredProps("total", "byKind", "byNamespace", "byOwner", "byProject", "workload"),
 		prop("total", integerSchema()),
 		prop("byKind", arraySchema(schemaRef("RuntimeResourceCount"))),
 		prop("byNamespace", arraySchema(schemaRef("RuntimeResourceCount"))),
 		prop("byOwner", arraySchema(schemaRef("RuntimeResourceCount"))),
+		prop("byProject", arraySchema(schemaRef("RuntimeResourceCount"))),
 		prop("workload", schemaRef("RuntimeWorkloadSummary")),
 	)
 }
@@ -1087,10 +1225,21 @@ func policyDeniedAuditMetadataSchema() map[string]any {
 		prop("image", stringSchema()),
 		prop("serviceAccountName", stringSchema()),
 		prop("sandboxId", stringSchema()),
+		prop("authorizationAction", enumSchema(projectAuthorizationActions...)),
+		prop("callerMode", enumSchema("anonymous", "shared_token", "trusted_header")),
+		prop("callerPrincipalType", enumSchema("anonymous", "shared_token", "user", "service_account", "automation")),
+		prop("callerPrincipal", stringSchema()),
 		prop("artifactKind", stringSchema()),
 		prop("incomingBytes", integerSchema()),
+		prop("policyKind", stringSchema()),
+		prop("enforcement", stringSchema()),
+		prop("maxActiveSandboxes", integerSchema()),
+		prop("maxRetainedArtifactBytes", integerSchema()),
+		prop("type", stringSchema()),
+		prop("target", stringSchema()),
+		prop("secretRef", stringSchema()),
 	)
-	schema["description"] = "Metadata shape for action=policy.denied. Current coverage is intentionally narrow: sandbox launch policy/quota, template validation launch policy, and retained artifact byte quota denials."
+	schema["description"] = "Metadata shape for action=policy.denied. Current coverage is intentionally narrow: sandbox launch policy/quota/RBAC denials, template validation launch policy/RBAC denials, project policy-management RBAC denials, project credential-management RBAC denials, runtime operation RBAC denials, artifact write RBAC denials, and retained artifact byte quota denials."
 	schema["additionalProperties"] = true
 	return schema
 }

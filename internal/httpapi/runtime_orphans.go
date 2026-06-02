@@ -263,6 +263,7 @@ func summarizeManagedResources(resources []mboxruntime.ManagedResource) mboxrunt
 	byKind := make(map[string]int)
 	byNamespace := make(map[string]int)
 	byOwner := make(map[string]int)
+	byProject := make(map[string]int)
 	for _, resource := range resources {
 		byKind[resource.Kind]++
 		if resource.Namespace != "" {
@@ -271,12 +272,16 @@ func summarizeManagedResources(resources []mboxruntime.ManagedResource) mboxrunt
 		if key := managedResourceOwnerKey(resource.Owner); key != "" {
 			byOwner[key]++
 		}
+		if projectID := managedResourceProjectID(resource); projectID != "" {
+			byProject[projectID]++
+		}
 	}
 	return mboxruntime.ManagedResourceSummary{
 		Total:       len(resources),
 		ByKind:      managedResourceCounts(byKind),
 		ByNamespace: managedResourceCounts(byNamespace),
 		ByOwner:     managedResourceCounts(byOwner),
+		ByProject:   managedResourceCounts(byProject),
 		Workload:    summarizeManagedWorkload(resources),
 	}
 }

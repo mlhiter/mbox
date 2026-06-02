@@ -41,6 +41,9 @@ func (api *API) createRuntimeSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !api.enforceRuntimeOperate(w, r, sandbox, "runtime.session.create") {
+		return
+	}
 	var req createRuntimeSessionRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON request body")
@@ -96,9 +99,22 @@ func (api *API) endRuntimeSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid session id")
 		return
 	}
+	session, err := api.store.GetRuntimeSession(r.Context(), id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	sandbox, err := api.store.GetSandbox(r.Context(), session.SandboxID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if !api.enforceRuntimeOperate(w, r, sandbox, "runtime.session.end") {
+		return
+	}
 	status := domain.RuntimeSessionStatusEnded
 	endedAt := time.Now().UTC()
-	session, err := api.store.UpdateRuntimeSession(r.Context(), id, domain.RuntimeSessionUpdate{
+	session, err = api.store.UpdateRuntimeSession(r.Context(), id, domain.RuntimeSessionUpdate{
 		Status:  &status,
 		EndedAt: &endedAt,
 	})

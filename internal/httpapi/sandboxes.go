@@ -125,6 +125,21 @@ func (api *API) createSandbox(w http.ResponseWriter, r *http.Request) {
 		}
 		templateID = *project.DefaultTemplateID
 	}
+	if err := api.enforceProjectAuthorization(r, project.ID, projectAuthorizationActionSandboxLaunch); err != nil {
+		caller := api.callerInfo(r)
+		api.recordPolicyDeniedAuditEvent(r.Context(), project.ID, "sandbox.launch", "sandbox", nil, req.Name, err, map[string]any{
+			"authorizationAction": projectAuthorizationActionSandboxLaunch,
+			"templateId":          templateID.String(),
+			"callerMode":          caller.Mode,
+			"callerPrincipalType": caller.PrincipalType,
+			"callerPrincipal":     caller.Principal,
+		})
+		if writePolicyError(w, err) {
+			return
+		}
+		writeStoreError(w, err)
+		return
+	}
 	namespace := req.Namespace
 	if !validateRequired(namespace) {
 		namespace = project.DefaultNamespace

@@ -374,6 +374,22 @@ func (s *fakeStore) UpsertProjectQuotaPolicy(context.Context, uuid.UUID, domain.
 	return domain.ProjectQuotaPolicy{}, nil
 }
 
+func (s *fakeStore) ListProjectMembers(context.Context, uuid.UUID) ([]domain.ProjectMember, error) {
+	return nil, nil
+}
+
+func (s *fakeStore) CreateProjectMember(context.Context, domain.ProjectMemberCreate) (domain.ProjectMember, error) {
+	return domain.ProjectMember{}, nil
+}
+
+func (s *fakeStore) GetProjectMember(context.Context, uuid.UUID) (domain.ProjectMember, error) {
+	return domain.ProjectMember{}, domain.ErrNotFound
+}
+
+func (s *fakeStore) DeleteProjectMember(context.Context, uuid.UUID) error {
+	return nil
+}
+
 func (s *fakeStore) ListProjectCredentials(context.Context, uuid.UUID) ([]domain.ProjectCredential, error) {
 	return nil, nil
 }

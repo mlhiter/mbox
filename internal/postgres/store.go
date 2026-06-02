@@ -212,6 +212,62 @@ func (s *Store) UpsertProjectQuotaPolicy(ctx context.Context, projectID uuid.UUI
 	return policy, mapWriteError(err)
 }
 
+func (s *Store) ListProjectMembers(ctx context.Context, projectID uuid.UUID) ([]domain.ProjectMember, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, project_id, principal_type, principal, role, metadata, created_at, updated_at
+		FROM project_members
+		WHERE project_id = $1
+		ORDER BY created_at DESC
+	`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	members := []domain.ProjectMember{}
+	for rows.Next() {
+		member, err := scanProjectMember(rows)
+		if err != nil {
+			return nil, err
+		}
+		members = append(members, member)
+	}
+	return members, rows.Err()
+}
+
+func (s *Store) CreateProjectMember(ctx context.Context, input domain.ProjectMemberCreate) (domain.ProjectMember, error) {
+	row := s.pool.QueryRow(ctx, `
+		INSERT INTO project_members (
+			project_id, principal_type, principal, role, metadata
+		)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, project_id, principal_type, principal, role, metadata, created_at, updated_at
+	`, input.ProjectID, input.PrincipalType, input.Principal, input.Role, jsonDefaultObject(input.Metadata))
+	member, err := scanProjectMember(row)
+	return member, mapWriteError(err)
+}
+
+func (s *Store) GetProjectMember(ctx context.Context, id uuid.UUID) (domain.ProjectMember, error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT id, project_id, principal_type, principal, role, metadata, created_at, updated_at
+		FROM project_members
+		WHERE id = $1
+	`, id)
+	member, err := scanProjectMember(row)
+	return member, mapReadError(err)
+}
+
+func (s *Store) DeleteProjectMember(ctx context.Context, id uuid.UUID) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM project_members WHERE id = $1`, id)
+	if err != nil {
+		return mapWriteError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) ListProjectCredentials(ctx context.Context, projectID uuid.UUID) ([]domain.ProjectCredential, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, project_id, name, slug, type, target, secret_ref, usage, metadata, created_at, updated_at
@@ -357,6 +413,10 @@ func (s *Store) ListAuditEvents(ctx context.Context, filter domain.AuditEventFil
 	if filter.Operation != "" {
 		args = append(args, filter.Operation)
 		where = append(where, fmt.Sprintf("metadata ->> 'operation' = $%d", len(args)))
+	}
+	if filter.Reason != "" {
+		args = append(args, filter.Reason)
+		where = append(where, fmt.Sprintf("metadata ->> 'reason' = $%d", len(args)))
 	}
 	if filter.Since != nil {
 		args = append(args, *filter.Since)

@@ -63,6 +63,12 @@ func (api *API) putProjectPolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "enforcement must be disabled or enforced")
 		return
 	}
+	if !api.enforcePolicyManage(w, r, projectID, "project.policy.update", "project-policy", projectID.String(), map[string]any{
+		"policyKind":  "launch",
+		"enforcement": req.Enforcement,
+	}) {
+		return
+	}
 	allowedImagePrefixes := normalizeStringList(req.AllowedImagePrefixes)
 	allowedServiceAccounts := normalizeStringList(req.AllowedServiceAccounts)
 	allowedSecretRefs := normalizeStringList(req.AllowedSecretRefs)
@@ -137,6 +143,14 @@ func (api *API) putProjectQuotaPolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "maxRetainedArtifactBytes cannot be negative")
 		return
 	}
+	if !api.enforcePolicyManage(w, r, projectID, "project.quota_policy.update", "project-quota-policy", projectID.String(), map[string]any{
+		"policyKind":               "quota",
+		"enforcement":              req.Enforcement,
+		"maxActiveSandboxes":       req.MaxActiveSandboxes,
+		"maxRetainedArtifactBytes": req.MaxRetainedArtifactBytes,
+	}) {
+		return
+	}
 	policy, err := api.store.UpsertProjectQuotaPolicy(r.Context(), projectID, domain.ProjectQuotaPolicyUpsert{
 		Enforcement:              req.Enforcement,
 		MaxActiveSandboxes:       req.MaxActiveSandboxes,
@@ -159,6 +173,28 @@ func (api *API) putProjectQuotaPolicy(w http.ResponseWriter, r *http.Request) {
 		}),
 	})
 	writeJSON(w, http.StatusOK, policy)
+}
+
+func (api *API) enforcePolicyManage(w http.ResponseWriter, r *http.Request, projectID uuid.UUID, operation string, resourceType string, resourceName string, metadata map[string]any) bool {
+	if err := api.enforceProjectAuthorization(r, projectID, projectAuthorizationActionPolicyManage); err != nil {
+		caller := api.callerInfo(r)
+		denialMetadata := map[string]any{
+			"authorizationAction": projectAuthorizationActionPolicyManage,
+			"callerMode":          caller.Mode,
+			"callerPrincipalType": caller.PrincipalType,
+			"callerPrincipal":     caller.Principal,
+		}
+		for key, value := range metadata {
+			denialMetadata[key] = value
+		}
+		api.recordPolicyDeniedAuditEvent(r.Context(), projectID, operation, resourceType, &projectID, resourceName, err, denialMetadata)
+		if writePolicyError(w, err) {
+			return false
+		}
+		writeStoreError(w, err)
+		return false
+	}
+	return true
 }
 
 func (api *API) effectiveProjectPolicy(ctx context.Context, projectID uuid.UUID) (domain.ProjectPolicy, error) {

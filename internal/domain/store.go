@@ -36,6 +36,14 @@ type ProjectQuotaPolicyUpsert struct {
 	MaxRetainedArtifactBytes *int64
 }
 
+type ProjectMemberCreate struct {
+	ProjectID     uuid.UUID
+	PrincipalType ProjectMemberPrincipalType
+	Principal     string
+	Role          ProjectMemberRole
+	Metadata      []byte
+}
+
 type ProjectCredentialCreate struct {
 	ProjectID uuid.UUID
 	Name      string
@@ -181,6 +189,7 @@ type AuditEventFilter struct {
 	Source       string
 	RequestID    string
 	Operation    string
+	Reason       string
 	Since        *time.Time
 	Until        *time.Time
 	Limit        int
@@ -196,6 +205,10 @@ type Store interface {
 	UpsertProjectPolicy(ctx context.Context, projectID uuid.UUID, input ProjectPolicyUpsert) (ProjectPolicy, error)
 	GetProjectQuotaPolicy(ctx context.Context, projectID uuid.UUID) (ProjectQuotaPolicy, error)
 	UpsertProjectQuotaPolicy(ctx context.Context, projectID uuid.UUID, input ProjectQuotaPolicyUpsert) (ProjectQuotaPolicy, error)
+	ListProjectMembers(ctx context.Context, projectID uuid.UUID) ([]ProjectMember, error)
+	CreateProjectMember(ctx context.Context, input ProjectMemberCreate) (ProjectMember, error)
+	GetProjectMember(ctx context.Context, id uuid.UUID) (ProjectMember, error)
+	DeleteProjectMember(ctx context.Context, id uuid.UUID) error
 	ListProjectCredentials(ctx context.Context, projectID uuid.UUID) ([]ProjectCredential, error)
 	CreateProjectCredential(ctx context.Context, input ProjectCredentialCreate) (ProjectCredential, error)
 	GetProjectCredential(ctx context.Context, id uuid.UUID) (ProjectCredential, error)

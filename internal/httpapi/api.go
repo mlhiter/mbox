@@ -28,6 +28,8 @@ type API struct {
 	artifactContents *artifactContentBackends
 	info             APIInfo
 	apiToken         string
+	principalHeaders TrustedPrincipalHeaderOptions
+	projectRBAC      ProjectRBACOptions
 	mux              *http.ServeMux
 	taskMu           sync.Mutex
 	taskCancels      map[uuid.UUID]context.CancelFunc
@@ -35,12 +37,18 @@ type API struct {
 }
 
 type Options struct {
-	RuntimeAccess          mboxruntime.Access
-	RuntimeAuditor         mboxruntime.Auditor
-	RuntimeCleaner         mboxruntime.Cleaner
-	ArtifactContentBackend ArtifactContentBackend
-	Info                   InfoOptions
-	APIToken               string
+	RuntimeAccess           mboxruntime.Access
+	RuntimeAuditor          mboxruntime.Auditor
+	RuntimeCleaner          mboxruntime.Cleaner
+	ArtifactContentBackend  ArtifactContentBackend
+	Info                    InfoOptions
+	APIToken                string
+	TrustedPrincipalHeaders TrustedPrincipalHeaderOptions
+	ProjectRBAC             ProjectRBACOptions
+}
+
+type ProjectRBACOptions struct {
+	EnforcementEnabled bool
 }
 
 func New(store domain.Store) *API {
@@ -62,6 +70,16 @@ func NewWithOptions(store domain.Store, options Options) *API {
 	}
 	apiToken := strings.TrimSpace(options.APIToken)
 	infoOptions.AuthenticationRequired = apiToken != ""
+	principalHeaders := normalizeTrustedPrincipalHeaderOptions(options.TrustedPrincipalHeaders)
+	infoOptions.TrustedPrincipalHeaders = TrustedPrincipalHeaderInfo{
+		Enabled:             principalHeaders.Enabled,
+		PrincipalHeader:     principalHeaders.PrincipalHeader,
+		PrincipalTypeHeader: principalHeaders.PrincipalTypeHeader,
+	}
+	infoOptions.ProjectRBAC = ProjectRBACInfo{
+		EnforcementEnabled: options.ProjectRBAC.EnforcementEnabled,
+		EnforcedActions:    enforcedProjectAuthorizationActions(options.ProjectRBAC.EnforcementEnabled),
+	}
 	api := &API{
 		store:            store,
 		access:           options.RuntimeAccess,
@@ -70,6 +88,8 @@ func NewWithOptions(store domain.Store, options Options) *API {
 		artifactContents: artifactContents,
 		info:             buildAPIInfo(infoOptions),
 		apiToken:         apiToken,
+		principalHeaders: principalHeaders,
+		projectRBAC:      options.ProjectRBAC,
 		mux:              http.NewServeMux(),
 		taskCancels:      map[uuid.UUID]context.CancelFunc{},
 		taskEvents:       map[uuid.UUID]*taskEventHub{},
@@ -109,6 +129,7 @@ func isPublicRoute(r *http.Request) bool {
 func (api *API) routes() {
 	api.mux.HandleFunc("GET /healthz", api.healthz)
 	api.mux.HandleFunc("GET /v1/info", api.getInfo)
+	api.mux.HandleFunc("GET /v1/auth/caller", api.getCaller)
 	api.mux.HandleFunc("GET /v1/openapi.json", api.getOpenAPI)
 	api.mux.HandleFunc("GET /v1/runtime/resources", api.listRuntimeResources)
 	api.mux.HandleFunc("GET /v1/runtime/orphans", api.listRuntimeOrphans)
@@ -123,10 +144,15 @@ func (api *API) routes() {
 	api.mux.HandleFunc("PUT /v1/projects/{projectID}/policy", api.putProjectPolicy)
 	api.mux.HandleFunc("GET /v1/projects/{projectID}/quota-policy", api.getProjectQuotaPolicy)
 	api.mux.HandleFunc("PUT /v1/projects/{projectID}/quota-policy", api.putProjectQuotaPolicy)
+	api.mux.HandleFunc("GET /v1/projects/{projectID}/authorization", api.getProjectAuthorization)
+	api.mux.HandleFunc("GET /v1/projects/{projectID}/members", api.listProjectMembers)
+	api.mux.HandleFunc("POST /v1/projects/{projectID}/members", api.createProjectMember)
 	api.mux.HandleFunc("GET /v1/projects/{projectID}/credentials", api.listProjectCredentials)
 	api.mux.HandleFunc("POST /v1/projects/{projectID}/credentials", api.createProjectCredential)
 	api.mux.HandleFunc("GET /v1/projects/{projectID}/usage", api.getProjectUsage)
 	api.mux.HandleFunc("GET /v1/projects/{projectID}/audit-events", api.listProjectAuditEvents)
+	api.mux.HandleFunc("GET /v1/members/{memberID}", api.getProjectMember)
+	api.mux.HandleFunc("DELETE /v1/members/{memberID}", api.deleteProjectMember)
 	api.mux.HandleFunc("GET /v1/credentials/{credentialID}", api.getProjectCredential)
 	api.mux.HandleFunc("DELETE /v1/credentials/{credentialID}", api.deleteProjectCredential)
 
@@ -305,28 +331,6 @@ func writeStoreError(w http.ResponseWriter, err error) {
 	default:
 		writeError(w, http.StatusInternalServerError, "internal server error")
 	}
-}
-
-func (api *API) sandboxRuntimeRef(w http.ResponseWriter, r *http.Request) (domain.Sandbox, domain.RuntimeRef, bool) {
-	if api.access == nil {
-		writeError(w, http.StatusServiceUnavailable, "runtime access is not configured")
-		return domain.Sandbox{}, domain.RuntimeRef{}, false
-	}
-	id, ok := parseUUIDParam(r, "sandboxID")
-	if !ok {
-		writeError(w, http.StatusBadRequest, "invalid sandbox id")
-		return domain.Sandbox{}, domain.RuntimeRef{}, false
-	}
-	sandbox, err := api.store.GetSandbox(r.Context(), id)
-	if err != nil {
-		writeStoreError(w, err)
-		return domain.Sandbox{}, domain.RuntimeRef{}, false
-	}
-	if sandbox.RuntimeRef == nil {
-		writeError(w, http.StatusConflict, "sandbox runtime is not ready")
-		return domain.Sandbox{}, domain.RuntimeRef{}, false
-	}
-	return sandbox, *sandbox.RuntimeRef, true
 }
 
 func writeRuntimeError(w http.ResponseWriter, err error) {

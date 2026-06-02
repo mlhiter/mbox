@@ -187,6 +187,9 @@ func (api *API) watchExecutionTask(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !api.enforceRuntimeOperateForTask(w, r, task, "execution.task.events") {
+		return
+	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "streaming is not supported")

@@ -150,6 +150,7 @@ type ManagedResourceSummary struct {
 	ByKind      []ManagedResourceCount `json:"byKind"`
 	ByNamespace []ManagedResourceCount `json:"byNamespace"`
 	ByOwner     []ManagedResourceCount `json:"byOwner"`
+	ByProject   []ManagedResourceCount `json:"byProject"`
 	Workload    ManagedWorkloadSummary `json:"workload"`
 }
 

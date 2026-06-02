@@ -82,6 +82,21 @@ func scanProjectQuotaPolicy(row scanner) (domain.ProjectQuotaPolicy, error) {
 	return policy, err
 }
 
+func scanProjectMember(row scanner) (domain.ProjectMember, error) {
+	var member domain.ProjectMember
+	err := row.Scan(
+		&member.ID,
+		&member.ProjectID,
+		&member.PrincipalType,
+		&member.Principal,
+		&member.Role,
+		&member.Metadata,
+		&member.CreatedAt,
+		&member.UpdatedAt,
+	)
+	return member, err
+}
+
 func scanProjectCredential(row scanner) (domain.ProjectCredential, error) {
 	var credential domain.ProjectCredential
 	var secretRef json.RawMessage

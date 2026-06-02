@@ -56,12 +56,15 @@ func (api *API) getExecutionTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) createExecutionTask(w http.ResponseWriter, r *http.Request) {
-	if api.access == nil {
-		writeError(w, http.StatusServiceUnavailable, "runtime access is not configured")
-		return
-	}
 	sandbox, ok := api.sandboxFromPath(w, r)
 	if !ok {
+		return
+	}
+	if !api.enforceRuntimeOperate(w, r, sandbox, "execution.task.create") {
+		return
+	}
+	if api.access == nil {
+		writeError(w, http.StatusServiceUnavailable, "runtime access is not configured")
 		return
 	}
 	if sandbox.Status != domain.SandboxStatusRunning {
@@ -128,6 +131,9 @@ func (api *API) cancelExecutionTask(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	if !api.enforceRuntimeOperateForTask(w, r, task, "execution.task.cancel") {
+		return
+	}
 	if isTerminalExecutionTaskStatus(task.Status) {
 		writeError(w, http.StatusConflict, "task is already finished")
 		return
@@ -158,6 +164,15 @@ func (api *API) cancelExecutionTask(w http.ResponseWriter, r *http.Request) {
 		}),
 	})
 	writeJSON(w, http.StatusOK, task)
+}
+
+func (api *API) enforceRuntimeOperateForTask(w http.ResponseWriter, r *http.Request, task domain.ExecutionTask, operation string) bool {
+	sandbox, err := api.store.GetSandbox(r.Context(), task.SandboxID)
+	if err != nil {
+		writeStoreError(w, err)
+		return false
+	}
+	return api.enforceRuntimeOperate(w, r, sandbox, operation)
 }
 
 func (api *API) startExecutionTask(task domain.ExecutionTask, ref domain.RuntimeRef) {

@@ -33,7 +33,7 @@ var terminalUpgrader = websocket.Upgrader{
 }
 
 func (api *API) getSandboxRuntime(w http.ResponseWriter, r *http.Request) {
-	_, ref, ok := api.sandboxRuntimeRef(w, r)
+	_, ref, ok := api.sandboxRuntimeRefForOperation(w, r, "runtime.resolve")
 	if !ok {
 		return
 	}
@@ -46,7 +46,7 @@ func (api *API) getSandboxRuntime(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) getSandboxLogs(w http.ResponseWriter, r *http.Request) {
-	_, ref, ok := api.sandboxRuntimeRef(w, r)
+	_, ref, ok := api.sandboxRuntimeRefForOperation(w, r, "runtime.logs")
 	if !ok {
 		return
 	}
@@ -71,7 +71,7 @@ func (api *API) getSandboxLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) getSandboxEvents(w http.ResponseWriter, r *http.Request) {
-	_, ref, ok := api.sandboxRuntimeRef(w, r)
+	_, ref, ok := api.sandboxRuntimeRefForOperation(w, r, "runtime.events")
 	if !ok {
 		return
 	}
@@ -84,7 +84,7 @@ func (api *API) getSandboxEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) getSandboxPorts(w http.ResponseWriter, r *http.Request) {
-	sandbox, ref, ok := api.sandboxRuntimeRef(w, r)
+	sandbox, ref, ok := api.sandboxRuntimeRefForOperation(w, r, "runtime.ports")
 	if !ok {
 		return
 	}
@@ -120,7 +120,7 @@ func (api *API) getSandboxPorts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) proxySandboxPort(w http.ResponseWriter, r *http.Request) {
-	sandbox, ref, ok := api.sandboxRuntimeRef(w, r)
+	sandbox, ref, ok := api.sandboxRuntimeRefForOperation(w, r, "runtime.preview.proxy")
 	if !ok {
 		return
 	}
@@ -155,7 +155,7 @@ func (api *API) proxySandboxPort(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) connectSandboxTerminal(w http.ResponseWriter, r *http.Request) {
-	sandbox, ref, ok := api.sandboxRuntimeRef(w, r)
+	sandbox, ref, ok := api.sandboxRuntimeRefForOperation(w, r, "runtime.terminal")
 	if !ok {
 		return
 	}
@@ -214,6 +214,44 @@ func (api *API) connectSandboxTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.finishRuntimeSession(session.ID, domain.RuntimeSessionStatusEnded)
+}
+
+func (api *API) sandboxRuntimeRefForOperation(w http.ResponseWriter, r *http.Request, operation string) (domain.Sandbox, domain.RuntimeRef, bool) {
+	sandbox, ok := api.sandboxFromPath(w, r)
+	if !ok {
+		return domain.Sandbox{}, domain.RuntimeRef{}, false
+	}
+	if !api.enforceRuntimeOperate(w, r, sandbox, operation) {
+		return domain.Sandbox{}, domain.RuntimeRef{}, false
+	}
+	if api.access == nil {
+		writeError(w, http.StatusServiceUnavailable, "runtime access is not configured")
+		return domain.Sandbox{}, domain.RuntimeRef{}, false
+	}
+	if sandbox.RuntimeRef == nil {
+		writeError(w, http.StatusConflict, "sandbox runtime is not ready")
+		return domain.Sandbox{}, domain.RuntimeRef{}, false
+	}
+	return sandbox, *sandbox.RuntimeRef, true
+}
+
+func (api *API) enforceRuntimeOperate(w http.ResponseWriter, r *http.Request, sandbox domain.Sandbox, operation string) bool {
+	if err := api.enforceProjectAuthorization(r, sandbox.ProjectID, projectAuthorizationActionRuntimeOperate); err != nil {
+		caller := api.callerInfo(r)
+		api.recordPolicyDeniedAuditEvent(r.Context(), sandbox.ProjectID, operation, "sandbox", &sandbox.ID, sandbox.Name, err, map[string]any{
+			"authorizationAction": projectAuthorizationActionRuntimeOperate,
+			"sandboxId":           sandbox.ID.String(),
+			"callerMode":          caller.Mode,
+			"callerPrincipalType": caller.PrincipalType,
+			"callerPrincipal":     caller.Principal,
+		})
+		if writePolicyError(w, err) {
+			return false
+		}
+		writeStoreError(w, err)
+		return false
+	}
+	return true
 }
 
 func sameOriginHost(originHost string, requestHost string) bool {

@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/mlhiter/mbox/internal/domain"
 )
 
@@ -55,6 +57,13 @@ func (api *API) createProjectCredential(w http.ResponseWriter, r *http.Request) 
 	if !validateRequired(req.Name) || !validateSlug(slug) || !validProjectCredentialType(req.Type) ||
 		!validateRequired(req.SecretRef.Name) {
 		writeError(w, http.StatusBadRequest, "name, valid slug, type, and secretRef.name are required")
+		return
+	}
+	if !api.enforceCredentialManage(w, r, projectID, "project.credential.create", nil, strings.TrimSpace(req.Name), map[string]any{
+		"type":      req.Type,
+		"target":    strings.TrimSpace(req.Target),
+		"secretRef": strings.TrimSpace(req.SecretRef.Name),
+	}) {
 		return
 	}
 	credential, err := api.store.CreateProjectCredential(r.Context(), domain.ProjectCredentialCreate{
@@ -114,6 +123,13 @@ func (api *API) deleteProjectCredential(w http.ResponseWriter, r *http.Request) 
 		writeStoreError(w, err)
 		return
 	}
+	if !api.enforceCredentialManage(w, r, credential.ProjectID, "project.credential.delete", &credential.ID, credential.Name, map[string]any{
+		"type":      credential.Type,
+		"target":    credential.Target,
+		"secretRef": credential.SecretRef.Name,
+	}) {
+		return
+	}
 	if err := api.store.DeleteProjectCredential(r.Context(), credentialID); err != nil {
 		writeStoreError(w, err)
 		return
@@ -126,6 +142,28 @@ func (api *API) deleteProjectCredential(w http.ResponseWriter, r *http.Request) 
 		ResourceName: credential.Name,
 	})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (api *API) enforceCredentialManage(w http.ResponseWriter, r *http.Request, projectID uuid.UUID, operation string, credentialID *uuid.UUID, credentialName string, metadata map[string]any) bool {
+	if err := api.enforceProjectAuthorization(r, projectID, projectAuthorizationActionCredentialManage); err != nil {
+		caller := api.callerInfo(r)
+		denialMetadata := map[string]any{
+			"authorizationAction": projectAuthorizationActionCredentialManage,
+			"callerMode":          caller.Mode,
+			"callerPrincipalType": caller.PrincipalType,
+			"callerPrincipal":     caller.Principal,
+		}
+		for key, value := range metadata {
+			denialMetadata[key] = value
+		}
+		api.recordPolicyDeniedAuditEvent(r.Context(), projectID, operation, "project-credential", credentialID, credentialName, err, denialMetadata)
+		if writePolicyError(w, err) {
+			return false
+		}
+		writeStoreError(w, err)
+		return false
+	}
+	return true
 }
 
 func validProjectCredentialType(value domain.ProjectCredentialType) bool {

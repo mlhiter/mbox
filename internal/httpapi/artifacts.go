@@ -107,13 +107,16 @@ func (api *API) getArtifactContent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "artifact content is only available for workspace:// file references")
 		return
 	}
-	if api.access == nil {
-		writeError(w, http.StatusServiceUnavailable, "runtime access is not configured")
-		return
-	}
 	sandbox, err := api.store.GetSandbox(r.Context(), artifact.SandboxID)
 	if err != nil {
 		writeStoreError(w, err)
+		return
+	}
+	if !api.enforceRuntimeOperate(w, r, sandbox, "artifact.content.workspace.read") {
+		return
+	}
+	if api.access == nil {
+		writeError(w, http.StatusServiceUnavailable, "runtime access is not configured")
 		return
 	}
 	if sandbox.Status != domain.SandboxStatusRunning {
@@ -152,10 +155,6 @@ func (api *API) getArtifactContent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) captureArtifactContent(w http.ResponseWriter, r *http.Request) {
-	if api.access == nil {
-		writeError(w, http.StatusServiceUnavailable, "runtime access is not configured")
-		return
-	}
 	id, ok := parseUUIDParam(r, "artifactID")
 	if !ok {
 		writeError(w, http.StatusBadRequest, "invalid artifact id")
@@ -168,6 +167,22 @@ func (api *API) captureArtifactContent(w http.ResponseWriter, r *http.Request) {
 	}
 	if artifact.Kind == domain.ArtifactKindDirectory {
 		writeError(w, http.StatusBadRequest, "directory artifacts cannot be captured as retained content")
+		return
+	}
+	if err := api.enforceProjectAuthorization(r, artifact.ProjectID, projectAuthorizationActionArtifactWrite); err != nil {
+		caller := api.callerInfo(r)
+		api.recordPolicyDeniedAuditEvent(r.Context(), artifact.ProjectID, "artifact.content.capture", "artifact", &artifact.ID, artifact.Name, err, map[string]any{
+			"authorizationAction": projectAuthorizationActionArtifactWrite,
+			"sandboxId":           artifact.SandboxID.String(),
+			"artifactKind":        artifact.Kind,
+			"callerMode":          caller.Mode,
+			"callerPrincipalType": caller.PrincipalType,
+			"callerPrincipal":     caller.Principal,
+		})
+		if writePolicyError(w, err) {
+			return
+		}
+		writeStoreError(w, err)
 		return
 	}
 	artifactPath, ok := workspacePathFromArtifactURI(artifact.URI)
@@ -186,6 +201,13 @@ func (api *API) captureArtifactContent(w http.ResponseWriter, r *http.Request) {
 	}
 	if sandbox.RuntimeRef == nil {
 		writeError(w, http.StatusConflict, "sandbox runtime is not ready")
+		return
+	}
+	if !api.enforceRuntimeOperate(w, r, sandbox, "artifact.content.capture") {
+		return
+	}
+	if api.access == nil {
+		writeError(w, http.StatusServiceUnavailable, "runtime access is not configured")
 		return
 	}
 	result, err := api.access.ReadFile(r.Context(), *sandbox.RuntimeRef, mboxruntime.FileReadRequest{
@@ -271,6 +293,22 @@ func (api *API) uploadArtifactContent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "directory artifacts cannot store retained content")
 		return
 	}
+	if err := api.enforceProjectAuthorization(r, artifact.ProjectID, projectAuthorizationActionArtifactWrite); err != nil {
+		caller := api.callerInfo(r)
+		api.recordPolicyDeniedAuditEvent(r.Context(), artifact.ProjectID, "artifact.content.upload", "artifact", &artifact.ID, artifact.Name, err, map[string]any{
+			"authorizationAction": projectAuthorizationActionArtifactWrite,
+			"sandboxId":           artifact.SandboxID.String(),
+			"artifactKind":        artifact.Kind,
+			"callerMode":          caller.Mode,
+			"callerPrincipalType": caller.PrincipalType,
+			"callerPrincipal":     caller.Principal,
+		})
+		if writePolicyError(w, err) {
+			return
+		}
+		writeStoreError(w, err)
+		return
+	}
 	defer r.Body.Close()
 	content, err := io.ReadAll(io.LimitReader(r.Body, maxArtifactContentBytes+1))
 	if err != nil {
@@ -342,6 +380,22 @@ func (api *API) createSandboxArtifact(w http.ResponseWriter, r *http.Request) {
 	}
 	if message := validateArtifactRequest(req); message != "" {
 		writeError(w, http.StatusBadRequest, message)
+		return
+	}
+	if err := api.enforceProjectAuthorization(r, sandbox.ProjectID, projectAuthorizationActionArtifactWrite); err != nil {
+		caller := api.callerInfo(r)
+		api.recordPolicyDeniedAuditEvent(r.Context(), sandbox.ProjectID, "artifact.write", "artifact", nil, strings.TrimSpace(req.Name), err, map[string]any{
+			"authorizationAction": projectAuthorizationActionArtifactWrite,
+			"sandboxId":           sandbox.ID.String(),
+			"artifactKind":        req.Kind,
+			"callerMode":          caller.Mode,
+			"callerPrincipalType": caller.PrincipalType,
+			"callerPrincipal":     caller.Principal,
+		})
+		if writePolicyError(w, err) {
+			return
+		}
+		writeStoreError(w, err)
 		return
 	}
 	if req.TaskID != nil {

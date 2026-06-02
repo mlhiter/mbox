@@ -57,6 +57,21 @@ func (api *API) createTemplateValidationRun(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+	if err := api.enforceProjectAuthorization(r, project.ID, projectAuthorizationActionSandboxLaunch); err != nil {
+		caller := api.callerInfo(r)
+		api.recordPolicyDeniedAuditEvent(r.Context(), project.ID, "template.validation", "template", &template.ID, template.Name, err, map[string]any{
+			"authorizationAction": projectAuthorizationActionSandboxLaunch,
+			"templateId":          template.ID.String(),
+			"callerMode":          caller.Mode,
+			"callerPrincipalType": caller.PrincipalType,
+			"callerPrincipal":     caller.Principal,
+		})
+		if writePolicyError(w, err) {
+			return
+		}
+		writeStoreError(w, err)
+		return
+	}
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	name := validationSandboxName(template.Name, req.Name)

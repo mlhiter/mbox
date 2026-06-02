@@ -8,15 +8,17 @@ const (
 )
 
 type APIInfo struct {
-	Name                   string        `json:"name"`
-	APIVersion             string        `json:"apiVersion"`
-	ServerVersion          string        `json:"serverVersion"`
-	RuntimeController      RuntimeInfo   `json:"runtimeController"`
-	RuntimeAccess          RuntimeInfo   `json:"runtimeAccess"`
-	ArtifactContent        ArtifactInfo  `json:"artifactContent"`
-	Capabilities           []string      `json:"capabilities"`
-	Compatibility          Compatibility `json:"compatibility"`
-	AuthenticationRequired bool          `json:"authenticationRequired"`
+	Name                    string                     `json:"name"`
+	APIVersion              string                     `json:"apiVersion"`
+	ServerVersion           string                     `json:"serverVersion"`
+	RuntimeController       RuntimeInfo                `json:"runtimeController"`
+	RuntimeAccess           RuntimeInfo                `json:"runtimeAccess"`
+	ArtifactContent         ArtifactInfo               `json:"artifactContent"`
+	TrustedPrincipalHeaders TrustedPrincipalHeaderInfo `json:"trustedPrincipalHeaders"`
+	ProjectRBAC             ProjectRBACInfo            `json:"projectRbac"`
+	Capabilities            []string                   `json:"capabilities"`
+	Compatibility           Compatibility              `json:"compatibility"`
+	AuthenticationRequired  bool                       `json:"authenticationRequired"`
 }
 
 type RuntimeInfo struct {
@@ -35,6 +37,17 @@ type Compatibility struct {
 	MinimumSDKAPIVersion string `json:"minimumSdkApiVersion"`
 }
 
+type TrustedPrincipalHeaderInfo struct {
+	Enabled             bool   `json:"enabled"`
+	PrincipalHeader     string `json:"principalHeader,omitempty"`
+	PrincipalTypeHeader string `json:"principalTypeHeader,omitempty"`
+}
+
+type ProjectRBACInfo struct {
+	EnforcementEnabled bool     `json:"enforcementEnabled"`
+	EnforcedActions    []string `json:"enforcedActions"`
+}
+
 type InfoOptions struct {
 	ServerVersion            string
 	RuntimeControllerEnabled bool
@@ -42,6 +55,8 @@ type InfoOptions struct {
 	RuntimeAdapter           string
 	ArtifactStorageProvider  string
 	AuthenticationRequired   bool
+	TrustedPrincipalHeaders  TrustedPrincipalHeaderInfo
+	ProjectRBAC              ProjectRBACInfo
 }
 
 func (api *API) getInfo(w http.ResponseWriter, _ *http.Request) {
@@ -78,14 +93,21 @@ func buildAPIInfo(options InfoOptions) APIInfo {
 			StorageProvider:        artifactProvider,
 			MaxBytes:               maxArtifactContentBytes,
 		},
+		TrustedPrincipalHeaders: options.TrustedPrincipalHeaders,
+		ProjectRBAC:             options.ProjectRBAC,
 		Capabilities: []string{
 			"projects",
 			"openapi",
+			"caller-info",
+			"trusted-principal-headers",
 			"project-usage",
 			"audit-events",
 			"audit-attribution",
 			"project-policies",
 			"project-quota-policies",
+			"project-authorization-preflight",
+			"project-rbac-enforcement",
+			"project-members",
 			"project-credential-references",
 			"templates",
 			"template-validation-runs",

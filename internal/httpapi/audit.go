@@ -92,6 +92,7 @@ func (api *API) auditEventFilterFromRequest(
 	filter.Source = sanitizeAuditAttribution(r.URL.Query().Get("source"))
 	filter.RequestID = sanitizeRequestID(r.URL.Query().Get("requestId"))
 	filter.Operation = strings.TrimSpace(r.URL.Query().Get("operation"))
+	filter.Reason = strings.TrimSpace(r.URL.Query().Get("reason"))
 	if value := strings.TrimSpace(r.URL.Query().Get("since")); value != "" {
 		since, err := parseAuditEventTime(value)
 		if err != nil {

@@ -52,6 +52,33 @@ type ProjectQuotaPolicy struct {
 	UpdatedAt                time.Time                     `json:"updatedAt"`
 }
 
+type ProjectMemberPrincipalType string
+
+const (
+	ProjectMemberPrincipalTypeUser           ProjectMemberPrincipalType = "user"
+	ProjectMemberPrincipalTypeServiceAccount ProjectMemberPrincipalType = "service_account"
+	ProjectMemberPrincipalTypeAutomation     ProjectMemberPrincipalType = "automation"
+)
+
+type ProjectMemberRole string
+
+const (
+	ProjectMemberRoleOwner    ProjectMemberRole = "owner"
+	ProjectMemberRoleOperator ProjectMemberRole = "operator"
+	ProjectMemberRoleViewer   ProjectMemberRole = "viewer"
+)
+
+type ProjectMember struct {
+	ID            uuid.UUID                  `json:"id"`
+	ProjectID     uuid.UUID                  `json:"projectId"`
+	PrincipalType ProjectMemberPrincipalType `json:"principalType"`
+	Principal     string                     `json:"principal"`
+	Role          ProjectMemberRole          `json:"role"`
+	Metadata      json.RawMessage            `json:"metadata,omitempty"`
+	CreatedAt     time.Time                  `json:"createdAt"`
+	UpdatedAt     time.Time                  `json:"updatedAt"`
+}
+
 type ProjectCredentialType string
 
 const (

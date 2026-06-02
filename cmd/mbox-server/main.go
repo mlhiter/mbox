@@ -121,6 +121,14 @@ func run(ctx context.Context) error {
 		RuntimeCleaner:         runtimeCleaner,
 		ArtifactContentBackend: artifactContentBackend,
 		APIToken:               cfg.APIToken,
+		TrustedPrincipalHeaders: httpapi.TrustedPrincipalHeaderOptions{
+			Enabled:             cfg.TrustedPrincipalHeaders.Enabled,
+			PrincipalHeader:     cfg.TrustedPrincipalHeaders.PrincipalHeader,
+			PrincipalTypeHeader: cfg.TrustedPrincipalHeaders.PrincipalTypeHeader,
+		},
+		ProjectRBAC: httpapi.ProjectRBACOptions{
+			EnforcementEnabled: cfg.ProjectRBAC.EnforcementEnabled,
+		},
 		Info: httpapi.InfoOptions{
 			ServerVersion:            cfg.ServerVersion,
 			RuntimeControllerEnabled: cfg.RuntimeControllerEnabled,

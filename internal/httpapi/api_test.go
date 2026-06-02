@@ -83,13 +83,26 @@ func TestInfoReportsCapabilities(t *testing.T) {
 		info.ArtifactContent.MaxBytes != maxArtifactContentBytes {
 		t.Fatalf("unexpected artifact content capability: %+v", info.ArtifactContent)
 	}
+	if info.TrustedPrincipalHeaders.Enabled ||
+		info.TrustedPrincipalHeaders.PrincipalHeader != "X-Mbox-Principal" ||
+		info.TrustedPrincipalHeaders.PrincipalTypeHeader != "X-Mbox-Principal-Type" {
+		t.Fatalf("unexpected trusted principal header info: %+v", info.TrustedPrincipalHeaders)
+	}
+	if info.ProjectRBAC.EnforcementEnabled || len(info.ProjectRBAC.EnforcedActions) != 0 {
+		t.Fatalf("unexpected project RBAC info: %+v", info.ProjectRBAC)
+	}
 	if info.AuthenticationRequired {
 		t.Fatal("expected authenticationRequired to be false by default")
 	}
 	if !stringSliceContains(info.Capabilities, "execution-tasks") ||
 		!stringSliceContains(info.Capabilities, "artifact-client-upload") ||
 		!stringSliceContains(info.Capabilities, "openapi") ||
+		!stringSliceContains(info.Capabilities, "caller-info") ||
+		!stringSliceContains(info.Capabilities, "trusted-principal-headers") ||
 		!stringSliceContains(info.Capabilities, "project-usage") ||
+		!stringSliceContains(info.Capabilities, "project-authorization-preflight") ||
+		!stringSliceContains(info.Capabilities, "project-rbac-enforcement") ||
+		!stringSliceContains(info.Capabilities, "project-members") ||
 		!stringSliceContains(info.Capabilities, "project-delete-cleanup-guard") ||
 		!stringSliceContains(info.Capabilities, "runtime-orphan-audit") ||
 		!stringSliceContains(info.Capabilities, "runtime-orphan-cleanup") {
@@ -135,6 +148,103 @@ func TestOptionalAPITokenProtectsPrivateRoutes(t *testing.T) {
 	}
 }
 
+func TestCallerInfoReportsAuthBoundary(t *testing.T) {
+	anonymousAPI := New(newFakeStore())
+
+	anonymousRes := request(anonymousAPI, http.MethodGet, "/v1/auth/caller", nil)
+	if anonymousRes.Code != http.StatusOK {
+		t.Fatalf("expected anonymous caller status %d, got %d: %s", http.StatusOK, anonymousRes.Code, anonymousRes.Body.String())
+	}
+	var anonymous CallerInfo
+	decodeResponse(t, anonymousRes, &anonymous)
+	if anonymous.Authenticated ||
+		anonymous.AuthenticationRequired ||
+		anonymous.Mode != callerModeAnonymous ||
+		anonymous.PrincipalType != callerPrincipalTypeAnon ||
+		anonymous.Principal != callerPrincipalAnonymous ||
+		anonymous.RBACTrusted ||
+		anonymous.ProjectRolesEnforced {
+		t.Fatalf("unexpected anonymous caller info: %+v", anonymous)
+	}
+
+	authAPI := NewWithOptions(newFakeStore(), Options{APIToken: "secret"})
+	unauthorized := request(authAPI, http.MethodGet, "/v1/auth/caller", nil)
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("expected caller route to require token, got %d: %s", unauthorized.Code, unauthorized.Body.String())
+	}
+	authorized := requestWithHeaders(authAPI, http.MethodGet, "/v1/auth/caller", nil, map[string]string{
+		"Authorization": "Bearer secret",
+	})
+	if authorized.Code != http.StatusOK {
+		t.Fatalf("expected caller route to accept token, got %d: %s", authorized.Code, authorized.Body.String())
+	}
+	var caller CallerInfo
+	decodeResponse(t, authorized, &caller)
+	if !caller.Authenticated ||
+		!caller.AuthenticationRequired ||
+		caller.Mode != callerModeSharedToken ||
+		caller.PrincipalType != callerPrincipalTypeShared ||
+		caller.Principal != callerPrincipalShared ||
+		caller.RBACTrusted ||
+		caller.ProjectRolesEnforced ||
+		len(caller.Notes) == 0 {
+		t.Fatalf("unexpected shared-token caller info: %+v", caller)
+	}
+
+	trustedAPI := NewWithOptions(newFakeStore(), Options{
+		TrustedPrincipalHeaders: TrustedPrincipalHeaderOptions{Enabled: true},
+	})
+	trusted := requestWithHeaders(trustedAPI, http.MethodGet, "/v1/auth/caller", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	if trusted.Code != http.StatusOK {
+		t.Fatalf("expected trusted-header caller status %d, got %d: %s", http.StatusOK, trusted.Code, trusted.Body.String())
+	}
+	var trustedCaller CallerInfo
+	decodeResponse(t, trusted, &trustedCaller)
+	if !trustedCaller.Authenticated ||
+		trustedCaller.AuthenticationRequired ||
+		trustedCaller.Mode != callerModeTrustedHeader ||
+		trustedCaller.PrincipalType != string(domain.ProjectMemberPrincipalTypeAutomation) ||
+		trustedCaller.Principal != "ci-bot" ||
+		!trustedCaller.RBACTrusted ||
+		trustedCaller.ProjectRolesEnforced ||
+		len(trustedCaller.Notes) == 0 {
+		t.Fatalf("unexpected trusted-header caller info: %+v", trustedCaller)
+	}
+
+	invalidTrusted := requestWithHeaders(trustedAPI, http.MethodGet, "/v1/auth/caller", nil, map[string]string{
+		"X-Mbox-Principal-Type": "team",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	if invalidTrusted.Code != http.StatusOK {
+		t.Fatalf("expected invalid trusted header fallback status %d, got %d: %s", http.StatusOK, invalidTrusted.Code, invalidTrusted.Body.String())
+	}
+	var invalidCaller CallerInfo
+	decodeResponse(t, invalidTrusted, &invalidCaller)
+	if invalidCaller.Mode != callerModeAnonymous || invalidCaller.RBACTrusted {
+		t.Fatalf("expected invalid trusted header to fall back to anonymous caller, got %+v", invalidCaller)
+	}
+
+	enforcingAPI := NewWithOptions(newFakeStore(), Options{
+		TrustedPrincipalHeaders: TrustedPrincipalHeaderOptions{Enabled: true},
+		ProjectRBAC:             ProjectRBACOptions{EnforcementEnabled: true},
+	})
+	enforcing := requestWithHeaders(enforcingAPI, http.MethodGet, "/v1/auth/caller", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	if enforcing.Code != http.StatusOK {
+		t.Fatalf("expected enforcing trusted caller status %d, got %d: %s", http.StatusOK, enforcing.Code, enforcing.Body.String())
+	}
+	var enforcingCaller CallerInfo
+	decodeResponse(t, enforcing, &enforcingCaller)
+	if !enforcingCaller.RBACTrusted || !enforcingCaller.ProjectRolesEnforced {
+		t.Fatalf("expected trusted caller with project roles enforced, got %+v", enforcingCaller)
+	}
+}
+
 func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	api := New(newFakeStore())
 
@@ -157,7 +267,11 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	}
 	for _, path := range []string{
 		"/v1/info",
+		"/v1/auth/caller",
 		"/v1/openapi.json",
+		"/v1/projects/{projectID}/authorization",
+		"/v1/projects/{projectID}/members",
+		"/v1/members/{memberID}",
 		"/v1/projects/{projectID}/quota-policy",
 		"/v1/sandboxes/{sandboxID}/tasks",
 		"/v1/tasks/{taskID}/events",
@@ -190,6 +304,17 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !operationHasPublicSecurity(infoGet) {
 		t.Fatalf("expected info route to publish public security, got %#v", infoGet["security"])
 	}
+	callerPath, ok := paths["/v1/auth/caller"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected caller path, got %#v", paths["/v1/auth/caller"])
+	}
+	callerGet, ok := callerPath["get"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected caller get operation, got %#v", callerPath["get"])
+	}
+	if !operationRequiresBearerSecurity(callerGet) {
+		t.Fatalf("expected caller route to require bearer security, got %#v", callerGet["security"])
+	}
 	projectPath, ok := paths["/v1/projects"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected projects path, got %#v", paths["/v1/projects"])
@@ -209,10 +334,69 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected schemas object, got %#v", components["schemas"])
 	}
-	for _, name := range []string{"Project", "ProjectQuotaPolicy", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "ExecutionTask", "Artifact", "Error"} {
+	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectMember", "ProjectMemberCreate", "ProjectQuotaPolicy", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "ExecutionTask", "Artifact", "Error"} {
 		if _, ok := schemas[name]; !ok {
 			t.Fatalf("expected schema %s in OpenAPI components", name)
 		}
+	}
+	apiInfo, ok := schemas["APIInfo"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected APIInfo schema in %#v", schemas["APIInfo"])
+	}
+	apiInfoProperties, ok := apiInfo["properties"].(map[string]any)
+	if !ok || apiInfoProperties["trustedPrincipalHeaders"] == nil || apiInfoProperties["projectRbac"] == nil {
+		t.Fatalf("expected APIInfo trusted principal/project RBAC properties, got %#v", apiInfoProperties)
+	}
+	callerInfo, ok := schemas["CallerInfo"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected CallerInfo schema in %#v", schemas["CallerInfo"])
+	}
+	callerProperties, ok := callerInfo["properties"].(map[string]any)
+	if !ok ||
+		callerProperties["authenticated"] == nil ||
+		callerProperties["mode"] == nil ||
+		callerProperties["rbacTrusted"] == nil ||
+		callerProperties["projectRolesEnforced"] == nil {
+		t.Fatalf("expected CallerInfo auth boundary properties, got %#v", callerProperties)
+	}
+	callerMode, ok := callerProperties["mode"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected CallerInfo mode schema, got %#v", callerProperties["mode"])
+	}
+	callerModeValues, ok := callerMode["enum"].([]any)
+	if !ok || !anySliceContainsString(callerModeValues, callerModeTrustedHeader) {
+		t.Fatalf("expected CallerInfo mode enum to include trusted header, got %#v", callerMode["enum"])
+	}
+	callerPrincipalType, ok := callerProperties["principalType"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected CallerInfo principalType schema, got %#v", callerProperties["principalType"])
+	}
+	callerPrincipalTypeValues, ok := callerPrincipalType["enum"].([]any)
+	if !ok ||
+		!anySliceContainsString(callerPrincipalTypeValues, string(domain.ProjectMemberPrincipalTypeUser)) ||
+		!anySliceContainsString(callerPrincipalTypeValues, string(domain.ProjectMemberPrincipalTypeAutomation)) {
+		t.Fatalf("expected CallerInfo principalType enum to include project principal types, got %#v", callerPrincipalType["enum"])
+	}
+	projectMember, ok := schemas["ProjectMember"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ProjectMember schema in %#v", schemas["ProjectMember"])
+	}
+	memberProperties, ok := projectMember["properties"].(map[string]any)
+	if !ok || memberProperties["principalType"] == nil || memberProperties["principal"] == nil || memberProperties["role"] == nil {
+		t.Fatalf("expected ProjectMember principal and role properties, got %#v", memberProperties)
+	}
+	projectAuthorization, ok := schemas["ProjectAuthorizationDecision"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ProjectAuthorizationDecision schema in %#v", schemas["ProjectAuthorizationDecision"])
+	}
+	authorizationProperties, ok := projectAuthorization["properties"].(map[string]any)
+	if !ok ||
+		authorizationProperties["action"] == nil ||
+		authorizationProperties["allowed"] == nil ||
+		authorizationProperties["evaluation"] == nil ||
+		authorizationProperties["requiredRoles"] == nil ||
+		authorizationProperties["caller"] == nil {
+		t.Fatalf("expected ProjectAuthorizationDecision properties, got %#v", authorizationProperties)
 	}
 	projectUsage, ok := schemas["ProjectUsage"].(map[string]any)
 	if !ok {
@@ -269,6 +453,7 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(runtimeResourceSummaryRequired, "byKind") ||
 		!anySliceContainsString(runtimeResourceSummaryRequired, "byNamespace") ||
 		!anySliceContainsString(runtimeResourceSummaryRequired, "byOwner") ||
+		!anySliceContainsString(runtimeResourceSummaryRequired, "byProject") ||
 		!anySliceContainsString(runtimeResourceSummaryRequired, "workload") {
 		t.Fatalf("expected runtime resource summary required fields, got %#v", runtimeResourceSummary["required"])
 	}
@@ -394,6 +579,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !parametersContainName(auditParams, "operation") {
 		t.Fatalf("expected audit operation query parameter, got %#v", auditGet["parameters"])
 	}
+	if !parametersContainName(auditParams, "reason") {
+		t.Fatalf("expected audit reason query parameter, got %#v", auditGet["parameters"])
+	}
 	if !parametersContainName(auditParams, "since") || !parametersContainName(auditParams, "until") {
 		t.Fatalf("expected audit time-window query parameters, got %#v", auditGet["parameters"])
 	}
@@ -417,6 +605,12 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if _, ok := properties["requestId"].(map[string]any); !ok {
 		t.Fatalf("expected requestId policy denied metadata property, got %#v", properties["requestId"])
 	}
+	if _, ok := properties["authorizationAction"].(map[string]any); !ok {
+		t.Fatalf("expected authorizationAction policy denied metadata property, got %#v", properties["authorizationAction"])
+	}
+	if _, ok := properties["secretRef"].(map[string]any); !ok {
+		t.Fatalf("expected secretRef policy denied metadata property, got %#v", properties["secretRef"])
+	}
 	operation, ok := properties["operation"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected operation property, got %#v", properties["operation"])
@@ -425,9 +619,49 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok ||
 		!anySliceContainsString(operations, "sandbox.launch") ||
 		!anySliceContainsString(operations, "template.validation") ||
+		!anySliceContainsString(operations, "project.policy.update") ||
+		!anySliceContainsString(operations, "project.quota_policy.update") ||
+		!anySliceContainsString(operations, "runtime.terminal") ||
+		!anySliceContainsString(operations, "execution.task.create") ||
+		!anySliceContainsString(operations, "artifact.write") ||
 		!anySliceContainsString(operations, "artifact.content.capture") ||
-		!anySliceContainsString(operations, "artifact.content.upload") {
+		!anySliceContainsString(operations, "artifact.content.upload") ||
+		!anySliceContainsString(operations, "project.credential.create") ||
+		!anySliceContainsString(operations, "project.credential.delete") {
 		t.Fatalf("expected policy denied operation enum, got %#v", operation["enum"])
+	}
+}
+
+func TestOpenAPIPublishedOperationsMatchSDKCoverageExceptions(t *testing.T) {
+	doc := buildOpenAPI(buildAPIInfo(InfoOptions{}))
+	paths, ok := doc["paths"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected paths object, got %#v", doc["paths"])
+	}
+	exceptions := map[string]bool{
+		"GET /v1/sandboxes/{sandboxID}/ports/{port}/proxy/": true,
+		"GET /v1/sandboxes/{sandboxID}/terminal":            true,
+	}
+	seen := map[string]bool{}
+	for path, rawPathItem := range paths {
+		pathItem, ok := rawPathItem.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, method := range []string{"get", "post", "put", "patch", "delete"} {
+			if _, ok := pathItem[method].(map[string]any); !ok {
+				continue
+			}
+			key := strings.ToUpper(method) + " " + path
+			if exceptions[key] {
+				seen[key] = true
+			}
+		}
+	}
+	for key := range exceptions {
+		if !seen[key] {
+			t.Fatalf("expected intentional SDK non-helper OpenAPI operation %s", key)
+		}
 	}
 }
 
@@ -453,6 +687,7 @@ func TestRuntimeOrphansRequiresAuditor(t *testing.T) {
 func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 	sandboxID := uuid.NewString()
 	projectID := uuid.NewString()
+	otherProjectID := uuid.NewString()
 	templateID := uuid.NewString()
 	api := NewWithOptions(newFakeStore(), Options{
 		RuntimeAuditor: &fakeRuntimeAuditor{resources: []mboxruntime.ManagedResource{
@@ -509,7 +744,7 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 				Name:      "other-project-claim",
 				Owner: &mboxruntime.ManagedResourceOwner{
 					Kind:      "sandbox",
-					ProjectID: uuid.NewString(),
+					ProjectID: otherProjectID,
 					SandboxID: uuid.NewString(),
 				},
 			},
@@ -531,7 +766,9 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 		!managedResourceCountsContain(list.Summary.ByNamespace, "mbox-demo", 1) ||
 		!managedResourceCountsContain(list.Summary.ByNamespace, "other", 2) ||
 		!managedResourceCountsContain(list.Summary.ByOwner, "project/"+projectID+"/sandbox/"+sandboxID, 1) ||
-		!managedResourceCountsContain(list.Summary.ByOwner, "template/"+templateID, 1) {
+		!managedResourceCountsContain(list.Summary.ByOwner, "template/"+templateID, 1) ||
+		!managedResourceCountsContain(list.Summary.ByProject, projectID, 1) ||
+		!managedResourceCountsContain(list.Summary.ByProject, otherProjectID, 1) {
 		t.Fatalf("unexpected runtime resource summary: %+v", list.Summary)
 	}
 	if list.Summary.Workload.ObservedResources != 1 ||
@@ -573,7 +810,9 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 	if list.Summary.Total != 1 ||
 		!managedResourceCountsContain(list.Summary.ByKind, "SandboxClaim", 1) ||
 		!managedResourceCountsContain(list.Summary.ByNamespace, "mbox-demo", 1) ||
-		!managedResourceCountsContain(list.Summary.ByOwner, "project/"+projectID+"/sandbox/"+sandboxID, 1) {
+		!managedResourceCountsContain(list.Summary.ByOwner, "project/"+projectID+"/sandbox/"+sandboxID, 1) ||
+		!managedResourceCountsContain(list.Summary.ByProject, projectID, 1) ||
+		managedResourceCountsContain(list.Summary.ByProject, otherProjectID, 1) {
 		t.Fatalf("unexpected namespace-filtered runtime resource summary: %+v", list.Summary)
 	}
 	if list.Summary.Workload.ObservedResources != 1 || list.Summary.Workload.Requests["cpu"] != "250m" {
@@ -591,6 +830,8 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 		list.Items[0].Owner.ProjectID != projectID ||
 		list.Summary.Total != 1 ||
 		!managedResourceCountsContain(list.Summary.ByOwner, "project/"+projectID+"/sandbox/"+sandboxID, 1) ||
+		!managedResourceCountsContain(list.Summary.ByProject, projectID, 1) ||
+		managedResourceCountsContain(list.Summary.ByProject, otherProjectID, 1) ||
 		list.Summary.Workload.ObservedResources != 1 {
 		t.Fatalf("unexpected project-filtered runtime resources: %+v", list)
 	}
@@ -607,7 +848,8 @@ func TestRuntimeResourcesListsManagedResources(t *testing.T) {
 	if list.Summary.Total != 1 ||
 		!managedResourceCountsContain(list.Summary.ByKind, "SandboxTemplate", 1) ||
 		!managedResourceCountsContain(list.Summary.ByNamespace, "other", 1) ||
-		!managedResourceCountsContain(list.Summary.ByOwner, "template/"+templateID, 1) {
+		!managedResourceCountsContain(list.Summary.ByOwner, "template/"+templateID, 1) ||
+		len(list.Summary.ByProject) != 0 {
 		t.Fatalf("unexpected kind-filtered runtime resource summary: %+v", list.Summary)
 	}
 	if list.Items[0].Owner == nil || list.Items[0].Owner.Kind != "template" || list.Items[0].Owner.TemplateID != templateID {
@@ -921,6 +1163,15 @@ func ptr[T any](value T) *T {
 }
 
 func stringSliceContains(values []string, value string) bool {
+	for _, item := range values {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+func slicesContainsRole(values []domain.ProjectMemberRole, value domain.ProjectMemberRole) bool {
 	for _, item := range values {
 		if item == value {
 			return true
@@ -1609,6 +1860,116 @@ func TestCreateSandboxCopiesTemplatePorts(t *testing.T) {
 	}
 }
 
+func TestProjectRBACEnforcementGatesSandboxLaunch(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithOptions(store, Options{
+		TrustedPrincipalHeaders: TrustedPrincipalHeaderOptions{Enabled: true},
+		ProjectRBAC:             ProjectRBACOptions{EnforcementEnabled: true},
+	})
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+
+	deniedRes := requestWithHeaders(api, http.MethodPost, "/v1/sandboxes", map[string]any{
+		"projectId":  project.ID,
+		"templateId": template.ID,
+		"name":       "Denied Dev",
+		"slug":       "denied-dev",
+	}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "viewer-bot",
+	})
+	if deniedRes.Code != http.StatusForbidden {
+		t.Fatalf("expected RBAC denied status %d, got %d: %s", http.StatusForbidden, deniedRes.Code, deniedRes.Body.String())
+	}
+	if len(store.sandboxes) != 0 {
+		t.Fatalf("expected denied launch to avoid sandbox creation, got %+v", store.sandboxes)
+	}
+	denialEventsRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/audit-events?action=policy.denied&operation=sandbox.launch&limit=10", nil)
+	var denialEvents ListResponse[domain.AuditEvent]
+	decodeResponse(t, denialEventsRes, &denialEvents)
+	if len(denialEvents.Items) != 1 {
+		t.Fatalf("expected one RBAC denial audit event, got %+v", denialEvents.Items)
+	}
+	var denialMetadata map[string]any
+	if err := json.Unmarshal(denialEvents.Items[0].Metadata, &denialMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if denialMetadata["authorizationAction"] != projectAuthorizationActionSandboxLaunch ||
+		denialMetadata["callerPrincipal"] != "viewer-bot" {
+		t.Fatalf("unexpected RBAC denial metadata: %#v", denialMetadata)
+	}
+
+	_, err := store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+		ProjectID:     project.ID,
+		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
+		Principal:     "ci-bot",
+		Role:          domain.ProjectMemberRoleOperator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowedRes := requestWithHeaders(api, http.MethodPost, "/v1/sandboxes", map[string]any{
+		"projectId":  project.ID,
+		"templateId": template.ID,
+		"name":       "Allowed Dev",
+		"slug":       "allowed-dev",
+	}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	if allowedRes.Code != http.StatusCreated {
+		t.Fatalf("expected allowed launch status %d, got %d: %s", http.StatusCreated, allowedRes.Code, allowedRes.Body.String())
+	}
+	var sandbox domain.Sandbox
+	decodeResponse(t, allowedRes, &sandbox)
+	if sandbox.ProjectID != project.ID || sandbox.TemplateID != template.ID {
+		t.Fatalf("unexpected allowed sandbox: %+v", sandbox)
+	}
+}
+
+func TestProjectRBACEnforcementGatesTemplateValidationLaunch(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithOptions(store, Options{
+		TrustedPrincipalHeaders: TrustedPrincipalHeaderOptions{Enabled: true},
+		ProjectRBAC:             ProjectRBACOptions{EnforcementEnabled: true},
+	})
+	project := store.mustProject(t)
+	template := store.mustTemplate(t, &project.ID)
+
+	deniedRes := requestWithHeaders(api, http.MethodPost, "/v1/templates/"+template.ID.String()+"/validation-runs", map[string]any{}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "viewer-bot",
+	})
+	if deniedRes.Code != http.StatusForbidden {
+		t.Fatalf("expected validation launch denied status %d, got %d: %s", http.StatusForbidden, deniedRes.Code, deniedRes.Body.String())
+	}
+	if len(store.sandboxes) != 0 {
+		t.Fatalf("expected denied validation launch to avoid sandbox creation, got %+v", store.sandboxes)
+	}
+
+	_, err := store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+		ProjectID:     project.ID,
+		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
+		Principal:     "ci-bot",
+		Role:          domain.ProjectMemberRoleOperator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowedRes := requestWithHeaders(api, http.MethodPost, "/v1/templates/"+template.ID.String()+"/validation-runs", map[string]any{}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	if allowedRes.Code != http.StatusCreated {
+		t.Fatalf("expected validation launch allowed status %d, got %d: %s", http.StatusCreated, allowedRes.Code, allowedRes.Body.String())
+	}
+	var created templateValidationRunResponse
+	decodeResponse(t, allowedRes, &created)
+	if created.Sandbox.ProjectID != project.ID || created.Sandbox.TemplateID != template.ID {
+		t.Fatalf("unexpected validation sandbox: %+v", created.Sandbox)
+	}
+}
+
 func TestPatchSandboxPortsEnablesPreviewMetadata(t *testing.T) {
 	store := newFakeStore()
 	api := NewWithRuntimeAccess(store, &fakeRuntimeAccess{})
@@ -1757,6 +2118,551 @@ func TestProjectCredentialRoutes(t *testing.T) {
 	deleteRes := request(api, http.MethodDelete, "/v1/credentials/"+credential.ID.String(), nil)
 	if deleteRes.Code != http.StatusNoContent {
 		t.Fatalf("expected delete credential status %d, got %d: %s", http.StatusNoContent, deleteRes.Code, deleteRes.Body.String())
+	}
+}
+
+func TestProjectMemberRoutes(t *testing.T) {
+	store := newFakeStore()
+	api := New(store)
+	project := store.mustProject(t)
+
+	createRes := request(api, http.MethodPost, "/v1/projects/"+project.ID.String()+"/members", map[string]any{
+		"principalType": "user",
+		"principal":     "alice@example.com",
+		"role":          "operator",
+		"metadata": map[string]any{
+			"source": "test",
+		},
+	})
+	if createRes.Code != http.StatusCreated {
+		t.Fatalf("expected create member status %d, got %d: %s", http.StatusCreated, createRes.Code, createRes.Body.String())
+	}
+	var member domain.ProjectMember
+	decodeResponse(t, createRes, &member)
+	if member.ProjectID != project.ID ||
+		member.PrincipalType != domain.ProjectMemberPrincipalTypeUser ||
+		member.Principal != "alice@example.com" ||
+		member.Role != domain.ProjectMemberRoleOperator {
+		t.Fatalf("unexpected member: %+v", member)
+	}
+	createdAuditRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/audit-events?action=project.member.created&resourceType=project-member&limit=10", nil)
+	if createdAuditRes.Code != http.StatusOK {
+		t.Fatalf("expected created audit status %d, got %d: %s", http.StatusOK, createdAuditRes.Code, createdAuditRes.Body.String())
+	}
+	var createdAudit ListResponse[domain.AuditEvent]
+	decodeResponse(t, createdAuditRes, &createdAudit)
+	if len(createdAudit.Items) != 1 ||
+		createdAudit.Items[0].ProjectID == nil ||
+		*createdAudit.Items[0].ProjectID != project.ID ||
+		createdAudit.Items[0].ResourceID == nil ||
+		*createdAudit.Items[0].ResourceID != member.ID ||
+		createdAudit.Items[0].ResourceName != "alice@example.com" {
+		t.Fatalf("unexpected member create audit events: %+v", createdAudit.Items)
+	}
+
+	listRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/members", nil)
+	if listRes.Code != http.StatusOK {
+		t.Fatalf("expected list member status %d, got %d: %s", http.StatusOK, listRes.Code, listRes.Body.String())
+	}
+	var list ListResponse[domain.ProjectMember]
+	decodeResponse(t, listRes, &list)
+	if len(list.Items) != 1 || list.Items[0].ID != member.ID {
+		t.Fatalf("unexpected member list: %+v", list.Items)
+	}
+
+	getRes := request(api, http.MethodGet, "/v1/members/"+member.ID.String(), nil)
+	if getRes.Code != http.StatusOK {
+		t.Fatalf("expected get member status %d, got %d: %s", http.StatusOK, getRes.Code, getRes.Body.String())
+	}
+
+	duplicateRes := request(api, http.MethodPost, "/v1/projects/"+project.ID.String()+"/members", map[string]any{
+		"principalType": "user",
+		"principal":     "alice@example.com",
+		"role":          "viewer",
+	})
+	if duplicateRes.Code != http.StatusConflict {
+		t.Fatalf("expected duplicate member conflict, got %d: %s", duplicateRes.Code, duplicateRes.Body.String())
+	}
+
+	deleteRes := request(api, http.MethodDelete, "/v1/members/"+member.ID.String(), nil)
+	if deleteRes.Code != http.StatusNoContent {
+		t.Fatalf("expected delete member status %d, got %d: %s", http.StatusNoContent, deleteRes.Code, deleteRes.Body.String())
+	}
+	deletedAuditRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/audit-events?action=project.member.deleted&resourceType=project-member&limit=10", nil)
+	if deletedAuditRes.Code != http.StatusOK {
+		t.Fatalf("expected deleted audit status %d, got %d: %s", http.StatusOK, deletedAuditRes.Code, deletedAuditRes.Body.String())
+	}
+	var deletedAudit ListResponse[domain.AuditEvent]
+	decodeResponse(t, deletedAuditRes, &deletedAudit)
+	if len(deletedAudit.Items) != 1 ||
+		deletedAudit.Items[0].ProjectID == nil ||
+		*deletedAudit.Items[0].ProjectID != project.ID ||
+		deletedAudit.Items[0].ResourceID == nil ||
+		*deletedAudit.Items[0].ResourceID != member.ID ||
+		deletedAudit.Items[0].ResourceName != "alice@example.com" {
+		t.Fatalf("unexpected member delete audit events: %+v", deletedAudit.Items)
+	}
+}
+
+func TestProjectMemberCreateValidatesPrincipalAndRole(t *testing.T) {
+	store := newFakeStore()
+	api := New(store)
+	project := store.mustProject(t)
+
+	res := request(api, http.MethodPost, "/v1/projects/"+project.ID.String()+"/members", map[string]any{
+		"principalType": "user",
+		"principal":     "",
+		"role":          "admin",
+	})
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, res.Code, res.Body.String())
+	}
+}
+
+func TestProjectAuthorizationPreflightReportsNotEnforceableWithoutTrustedIdentity(t *testing.T) {
+	store := newFakeStore()
+	api := New(store)
+	project := store.mustProject(t)
+	_, err := store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+		ProjectID:     project.ID,
+		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
+		Principal:     "shared-token",
+		Role:          domain.ProjectMemberRoleOwner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization?action=sandbox.launch", nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected authorization preflight status %d, got %d: %s", http.StatusOK, res.Code, res.Body.String())
+	}
+	var decision ProjectAuthorizationDecision
+	decodeResponse(t, res, &decision)
+	if decision.ProjectID != project.ID ||
+		decision.Action != projectAuthorizationActionSandboxLaunch ||
+		decision.Allowed ||
+		decision.Enforced ||
+		decision.Evaluation != projectAuthorizationEvaluationNotEnforceable ||
+		decision.Caller.RBACTrusted ||
+		decision.Caller.ProjectRolesEnforced ||
+		decision.MemberCount != 1 ||
+		decision.MatchedMember != nil {
+		t.Fatalf("unexpected authorization decision: %+v", decision)
+	}
+	if !slicesContainsRole(decision.RequiredRoles, domain.ProjectMemberRoleOwner) ||
+		!slicesContainsRole(decision.RequiredRoles, domain.ProjectMemberRoleOperator) ||
+		!stringSliceContains(decision.AvailableActions, projectAuthorizationActionPolicyManage) {
+		t.Fatalf("unexpected authorization role/action metadata: %+v", decision)
+	}
+
+	defaultRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization", nil)
+	if defaultRes.Code != http.StatusOK {
+		t.Fatalf("expected default authorization preflight status %d, got %d: %s", http.StatusOK, defaultRes.Code, defaultRes.Body.String())
+	}
+	var defaultDecision ProjectAuthorizationDecision
+	decodeResponse(t, defaultRes, &defaultDecision)
+	if defaultDecision.Action != projectAuthorizationActionProjectView ||
+		!slicesContainsRole(defaultDecision.RequiredRoles, domain.ProjectMemberRoleViewer) {
+		t.Fatalf("unexpected default authorization decision: %+v", defaultDecision)
+	}
+}
+
+func TestProjectAuthorizationPreflightMatchesTrustedHeaderPrincipal(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithOptions(store, Options{
+		TrustedPrincipalHeaders: TrustedPrincipalHeaderOptions{Enabled: true},
+	})
+	project := store.mustProject(t)
+	operator, err := store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+		ProjectID:     project.ID,
+		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
+		Principal:     "ci-bot",
+		Role:          domain.ProjectMemberRoleOperator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	allowedRes := requestWithHeaders(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization?action=sandbox.launch", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	if allowedRes.Code != http.StatusOK {
+		t.Fatalf("expected authorization preflight status %d, got %d: %s", http.StatusOK, allowedRes.Code, allowedRes.Body.String())
+	}
+	var allowed ProjectAuthorizationDecision
+	decodeResponse(t, allowedRes, &allowed)
+	if !allowed.Allowed ||
+		allowed.Enforced ||
+		allowed.Evaluation != projectAuthorizationEvaluationAllowed ||
+		!allowed.Caller.RBACTrusted ||
+		allowed.Caller.Mode != callerModeTrustedHeader ||
+		allowed.MatchedMember == nil ||
+		allowed.MatchedMember.ID != operator.ID {
+		t.Fatalf("unexpected trusted-header allowed decision: %+v", allowed)
+	}
+
+	deniedRes := requestWithHeaders(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization?action=member.manage", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	if deniedRes.Code != http.StatusOK {
+		t.Fatalf("expected denied authorization preflight status %d, got %d: %s", http.StatusOK, deniedRes.Code, deniedRes.Body.String())
+	}
+	var denied ProjectAuthorizationDecision
+	decodeResponse(t, deniedRes, &denied)
+	if denied.Allowed ||
+		denied.Enforced ||
+		denied.Evaluation != projectAuthorizationEvaluationDenied ||
+		denied.MatchedMember == nil ||
+		denied.MatchedMember.ID != operator.ID ||
+		len(denied.Notes) == 0 ||
+		!strings.Contains(denied.Notes[0], "insufficient") {
+		t.Fatalf("unexpected trusted-header denied decision: %+v", denied)
+	}
+
+	missingRes := requestWithHeaders(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization?action=sandbox.launch", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "unknown-bot",
+	})
+	var missing ProjectAuthorizationDecision
+	decodeResponse(t, missingRes, &missing)
+	if missing.Allowed ||
+		missing.Evaluation != projectAuthorizationEvaluationDenied ||
+		missing.MatchedMember != nil ||
+		!missing.Caller.RBACTrusted {
+		t.Fatalf("unexpected trusted-header missing-member decision: %+v", missing)
+	}
+}
+
+func TestProjectAuthorizationPreflightReportsEnforcedStarterActions(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithOptions(store, Options{
+		TrustedPrincipalHeaders: TrustedPrincipalHeaderOptions{Enabled: true},
+		ProjectRBAC:             ProjectRBACOptions{EnforcementEnabled: true},
+	})
+	project := store.mustProject(t)
+	operator, err := store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+		ProjectID:     project.ID,
+		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
+		Principal:     "ci-bot",
+		Role:          domain.ProjectMemberRoleOperator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	allowedRes := requestWithHeaders(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization?action=sandbox.launch", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	if allowedRes.Code != http.StatusOK {
+		t.Fatalf("expected authorization preflight status %d, got %d: %s", http.StatusOK, allowedRes.Code, allowedRes.Body.String())
+	}
+	var allowed ProjectAuthorizationDecision
+	decodeResponse(t, allowedRes, &allowed)
+	if !allowed.Allowed ||
+		!allowed.Enforced ||
+		allowed.Evaluation != projectAuthorizationEvaluationAllowed ||
+		!allowed.Caller.ProjectRolesEnforced ||
+		allowed.MatchedMember == nil ||
+		allowed.MatchedMember.ID != operator.ID {
+		t.Fatalf("unexpected enforced allowed decision: %+v", allowed)
+	}
+
+	artifactWriteRes := requestWithHeaders(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization?action=artifact.write", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	var artifactWrite ProjectAuthorizationDecision
+	decodeResponse(t, artifactWriteRes, &artifactWrite)
+	if !artifactWrite.Allowed ||
+		!artifactWrite.Enforced ||
+		artifactWrite.Evaluation != projectAuthorizationEvaluationAllowed ||
+		artifactWrite.MatchedMember == nil ||
+		artifactWrite.MatchedMember.ID != operator.ID {
+		t.Fatalf("unexpected enforced artifact.write decision: %+v", artifactWrite)
+	}
+
+	runtimeOperateRes := requestWithHeaders(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization?action=runtime.operate", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	var runtimeOperate ProjectAuthorizationDecision
+	decodeResponse(t, runtimeOperateRes, &runtimeOperate)
+	if !runtimeOperate.Allowed ||
+		!runtimeOperate.Enforced ||
+		runtimeOperate.Evaluation != projectAuthorizationEvaluationAllowed ||
+		runtimeOperate.MatchedMember == nil ||
+		runtimeOperate.MatchedMember.ID != operator.ID {
+		t.Fatalf("unexpected enforced runtime.operate decision: %+v", runtimeOperate)
+	}
+
+	policyManageRes := requestWithHeaders(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization?action=policy.manage", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	var policyManage ProjectAuthorizationDecision
+	decodeResponse(t, policyManageRes, &policyManage)
+	if policyManage.Allowed ||
+		!policyManage.Enforced ||
+		policyManage.Evaluation != projectAuthorizationEvaluationDenied ||
+		policyManage.MatchedMember == nil ||
+		policyManage.MatchedMember.ID != operator.ID {
+		t.Fatalf("expected operator to be denied for enforced policy.manage, got %+v", policyManage)
+	}
+
+	credentialManageRes := requestWithHeaders(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization?action=credential.manage", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	var credentialManage ProjectAuthorizationDecision
+	decodeResponse(t, credentialManageRes, &credentialManage)
+	if credentialManage.Allowed ||
+		!credentialManage.Enforced ||
+		credentialManage.Evaluation != projectAuthorizationEvaluationDenied ||
+		credentialManage.MatchedMember == nil ||
+		credentialManage.MatchedMember.ID != operator.ID {
+		t.Fatalf("expected operator to be denied for enforced credential.manage, got %+v", credentialManage)
+	}
+
+	memberManageRes := requestWithHeaders(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization?action=member.manage", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	var memberManage ProjectAuthorizationDecision
+	decodeResponse(t, memberManageRes, &memberManage)
+	if memberManage.Enforced || !memberManage.Caller.ProjectRolesEnforced {
+		t.Fatalf("expected non-starter management actions to stay unenforced, got %+v", memberManage)
+	}
+
+	untrustedRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization?action=sandbox.launch", nil)
+	var untrusted ProjectAuthorizationDecision
+	decodeResponse(t, untrustedRes, &untrusted)
+	if untrusted.Allowed ||
+		!untrusted.Enforced ||
+		untrusted.Evaluation != projectAuthorizationEvaluationDenied ||
+		!untrusted.Caller.ProjectRolesEnforced ||
+		!strings.Contains(strings.Join(untrusted.Notes, " "), "not a trusted project identity") {
+		t.Fatalf("unexpected enforced untrusted decision: %+v", untrusted)
+	}
+}
+
+func TestProjectRBACEnforcementGatesPolicyManage(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithOptions(store, Options{
+		TrustedPrincipalHeaders: TrustedPrincipalHeaderOptions{Enabled: true},
+		ProjectRBAC:             ProjectRBACOptions{EnforcementEnabled: true},
+	})
+	project := store.mustProject(t)
+	_, err := store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+		ProjectID:     project.ID,
+		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
+		Principal:     "operator-bot",
+		Role:          domain.ProjectMemberRoleOperator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deniedPolicy := requestWithHeaders(api, http.MethodPut, "/v1/projects/"+project.ID.String()+"/policy", map[string]any{
+		"enforcement":          "enforced",
+		"allowedImagePrefixes": []string{"busybox:"},
+	}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "operator-bot",
+	})
+	if deniedPolicy.Code != http.StatusForbidden {
+		t.Fatalf("expected policy update denied status %d, got %d: %s", http.StatusForbidden, deniedPolicy.Code, deniedPolicy.Body.String())
+	}
+	if _, err := store.GetProjectPolicy(context.Background(), project.ID); err != domain.ErrNotFound {
+		t.Fatalf("expected denied launch policy update to avoid persistence, got %v", err)
+	}
+
+	deniedQuota := requestWithHeaders(api, http.MethodPut, "/v1/projects/"+project.ID.String()+"/quota-policy", map[string]any{
+		"enforcement":        "enforced",
+		"maxActiveSandboxes": 3,
+	}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "operator-bot",
+	})
+	if deniedQuota.Code != http.StatusForbidden {
+		t.Fatalf("expected quota policy update denied status %d, got %d: %s", http.StatusForbidden, deniedQuota.Code, deniedQuota.Body.String())
+	}
+	if _, err := store.GetProjectQuotaPolicy(context.Background(), project.ID); err != domain.ErrNotFound {
+		t.Fatalf("expected denied quota policy update to avoid persistence, got %v", err)
+	}
+
+	denialEventsRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/audit-events?action=policy.denied&operation=project.policy.update&limit=10", nil)
+	var denialEvents ListResponse[domain.AuditEvent]
+	decodeResponse(t, denialEventsRes, &denialEvents)
+	if len(denialEvents.Items) != 1 {
+		t.Fatalf("expected one policy.manage denial audit event, got %+v", denialEvents.Items)
+	}
+	var denialMetadata map[string]any
+	if err := json.Unmarshal(denialEvents.Items[0].Metadata, &denialMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if denialMetadata["authorizationAction"] != projectAuthorizationActionPolicyManage ||
+		denialMetadata["callerPrincipal"] != "operator-bot" ||
+		denialMetadata["policyKind"] != "launch" {
+		t.Fatalf("unexpected policy.manage denial metadata: %#v", denialMetadata)
+	}
+
+	_, err = store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+		ProjectID:     project.ID,
+		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
+		Principal:     "owner-bot",
+		Role:          domain.ProjectMemberRoleOwner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowedPolicy := requestWithHeaders(api, http.MethodPut, "/v1/projects/"+project.ID.String()+"/policy", map[string]any{
+		"enforcement":          "enforced",
+		"allowedImagePrefixes": []string{"busybox:"},
+	}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "owner-bot",
+	})
+	if allowedPolicy.Code != http.StatusOK {
+		t.Fatalf("expected owner policy update status %d, got %d: %s", http.StatusOK, allowedPolicy.Code, allowedPolicy.Body.String())
+	}
+	allowedQuota := requestWithHeaders(api, http.MethodPut, "/v1/projects/"+project.ID.String()+"/quota-policy", map[string]any{
+		"enforcement":        "enforced",
+		"maxActiveSandboxes": 3,
+	}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "owner-bot",
+	})
+	if allowedQuota.Code != http.StatusOK {
+		t.Fatalf("expected owner quota policy update status %d, got %d: %s", http.StatusOK, allowedQuota.Code, allowedQuota.Body.String())
+	}
+}
+
+func TestProjectRBACEnforcementGatesCredentialManage(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithOptions(store, Options{
+		TrustedPrincipalHeaders: TrustedPrincipalHeaderOptions{Enabled: true},
+		ProjectRBAC:             ProjectRBACOptions{EnforcementEnabled: true},
+	})
+	project := store.mustProject(t)
+	_, err := store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+		ProjectID:     project.ID,
+		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
+		Principal:     "operator-bot",
+		Role:          domain.ProjectMemberRoleOperator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deniedCreate := requestWithHeaders(api, http.MethodPost, "/v1/projects/"+project.ID.String()+"/credentials", map[string]any{
+		"name":   "GitHub App",
+		"slug":   "github-app",
+		"type":   "git",
+		"target": "https://github.com/mlhiter/mbox",
+		"secretRef": map[string]any{
+			"name": "github-app-token",
+			"key":  "token",
+		},
+	}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "operator-bot",
+	})
+	if deniedCreate.Code != http.StatusForbidden {
+		t.Fatalf("expected credential create denied status %d, got %d: %s", http.StatusForbidden, deniedCreate.Code, deniedCreate.Body.String())
+	}
+	listRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/credentials", nil)
+	var list ListResponse[domain.ProjectCredential]
+	decodeResponse(t, listRes, &list)
+	if len(list.Items) != 0 {
+		t.Fatalf("expected denied credential create to avoid persistence, got %+v", list.Items)
+	}
+
+	denialEventsRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/audit-events?action=policy.denied&operation=project.credential.create&limit=10", nil)
+	var denialEvents ListResponse[domain.AuditEvent]
+	decodeResponse(t, denialEventsRes, &denialEvents)
+	if len(denialEvents.Items) != 1 {
+		t.Fatalf("expected one credential.manage create denial audit event, got %+v", denialEvents.Items)
+	}
+	var createMetadata map[string]any
+	if err := json.Unmarshal(denialEvents.Items[0].Metadata, &createMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if createMetadata["authorizationAction"] != projectAuthorizationActionCredentialManage ||
+		createMetadata["callerPrincipal"] != "operator-bot" ||
+		createMetadata["type"] != "git" ||
+		createMetadata["secretRef"] != "github-app-token" {
+		t.Fatalf("unexpected credential create denial metadata: %#v", createMetadata)
+	}
+
+	_, err = store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+		ProjectID:     project.ID,
+		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
+		Principal:     "owner-bot",
+		Role:          domain.ProjectMemberRoleOwner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowedCreate := requestWithHeaders(api, http.MethodPost, "/v1/projects/"+project.ID.String()+"/credentials", map[string]any{
+		"name":   "GitHub App",
+		"slug":   "github-app",
+		"type":   "git",
+		"target": "https://github.com/mlhiter/mbox",
+		"secretRef": map[string]any{
+			"name": "github-app-token",
+			"key":  "token",
+		},
+	}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "owner-bot",
+	})
+	if allowedCreate.Code != http.StatusCreated {
+		t.Fatalf("expected owner credential create status %d, got %d: %s", http.StatusCreated, allowedCreate.Code, allowedCreate.Body.String())
+	}
+	var credential domain.ProjectCredential
+	decodeResponse(t, allowedCreate, &credential)
+
+	deniedDelete := requestWithHeaders(api, http.MethodDelete, "/v1/credentials/"+credential.ID.String(), nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "operator-bot",
+	})
+	if deniedDelete.Code != http.StatusForbidden {
+		t.Fatalf("expected credential delete denied status %d, got %d: %s", http.StatusForbidden, deniedDelete.Code, deniedDelete.Body.String())
+	}
+	if _, err := store.GetProjectCredential(context.Background(), credential.ID); err != nil {
+		t.Fatalf("expected denied credential delete to keep record, got %v", err)
+	}
+	deleteDenialRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/audit-events?action=policy.denied&operation=project.credential.delete&limit=10", nil)
+	var deleteDenialEvents ListResponse[domain.AuditEvent]
+	decodeResponse(t, deleteDenialRes, &deleteDenialEvents)
+	if len(deleteDenialEvents.Items) != 1 {
+		t.Fatalf("expected one credential.manage delete denial audit event, got %+v", deleteDenialEvents.Items)
+	}
+	if deleteDenialEvents.Items[0].ResourceID == nil || *deleteDenialEvents.Items[0].ResourceID != credential.ID {
+		t.Fatalf("unexpected credential delete denial resource id: %+v", deleteDenialEvents.Items[0])
+	}
+
+	allowedDelete := requestWithHeaders(api, http.MethodDelete, "/v1/credentials/"+credential.ID.String(), nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "owner-bot",
+	})
+	if allowedDelete.Code != http.StatusNoContent {
+		t.Fatalf("expected owner credential delete status %d, got %d: %s", http.StatusNoContent, allowedDelete.Code, allowedDelete.Body.String())
+	}
+}
+
+func TestProjectAuthorizationPreflightValidatesAction(t *testing.T) {
+	store := newFakeStore()
+	api := New(store)
+	project := store.mustProject(t)
+
+	res := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization?action=cluster.admin", nil)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, res.Code, res.Body.String())
 	}
 }
 
@@ -2092,6 +2998,26 @@ func TestProjectQuotaPolicyEnforcesActiveSandboxLimit(t *testing.T) {
 		t.Fatalf("expected operation-filtered denial event, got %+v", operationList.Items)
 	}
 
+	reasonRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/audit-events?action=policy.denied&reason="+url.QueryEscape(fmt.Sprint(metadata["reason"]))+"&limit=10", nil)
+	if reasonRes.Code != http.StatusOK {
+		t.Fatalf("expected audit status %d, got %d: %s", http.StatusOK, reasonRes.Code, reasonRes.Body.String())
+	}
+	var reasonList ListResponse[domain.AuditEvent]
+	decodeResponse(t, reasonRes, &reasonList)
+	if len(reasonList.Items) != 1 || reasonList.Items[0].ID != event.ID {
+		t.Fatalf("expected reason-filtered denial event, got %+v", reasonList.Items)
+	}
+
+	wrongReasonRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/audit-events?action=policy.denied&reason=other-denial&limit=10", nil)
+	if wrongReasonRes.Code != http.StatusOK {
+		t.Fatalf("expected audit status %d, got %d: %s", http.StatusOK, wrongReasonRes.Code, wrongReasonRes.Body.String())
+	}
+	var wrongReasonList ListResponse[domain.AuditEvent]
+	decodeResponse(t, wrongReasonRes, &wrongReasonList)
+	if len(wrongReasonList.Items) != 0 {
+		t.Fatalf("expected no events for other reason, got %+v", wrongReasonList.Items)
+	}
+
 	wrongOperationRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/audit-events?action=policy.denied&operation=artifact.content.upload&limit=10", nil)
 	if wrongOperationRes.Code != http.StatusOK {
 		t.Fatalf("expected audit status %d, got %d: %s", http.StatusOK, wrongOperationRes.Code, wrongOperationRes.Body.String())
@@ -2154,6 +3080,273 @@ func TestProjectQuotaPolicyEnforcesRetainedArtifactBytes(t *testing.T) {
 	}
 	if metadata["operation"] != "artifact.content.upload" || !strings.Contains(fmt.Sprint(metadata["reason"]), "retained artifact quota exceeded") {
 		t.Fatalf("unexpected audit metadata: %#v", metadata)
+	}
+}
+
+func TestProjectRBACEnforcementGatesArtifactWrite(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithOptions(store, Options{
+		RuntimeAccess:           &fakeRuntimeAccess{},
+		TrustedPrincipalHeaders: TrustedPrincipalHeaderOptions{Enabled: true},
+		ProjectRBAC:             ProjectRBACOptions{EnforcementEnabled: true},
+	})
+	sandbox := store.mustRunningSandbox(t)
+
+	deniedCreate := requestWithHeaders(api, http.MethodPost, "/v1/sandboxes/"+sandbox.ID.String()+"/artifacts", map[string]any{
+		"kind":        "report",
+		"name":        "Denied report",
+		"uri":         "client://denied/report.txt",
+		"contentType": "text/plain",
+	}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "viewer-bot",
+	})
+	if deniedCreate.Code != http.StatusForbidden {
+		t.Fatalf("expected artifact create denied status %d, got %d: %s", http.StatusForbidden, deniedCreate.Code, deniedCreate.Body.String())
+	}
+	if len(store.artifacts) != 0 {
+		t.Fatalf("expected denied artifact write to avoid artifact creation, got %+v", store.artifacts)
+	}
+	denialEventsRes := request(api, http.MethodGet, "/v1/projects/"+sandbox.ProjectID.String()+"/audit-events?action=policy.denied&operation=artifact.write&limit=10", nil)
+	var denialEvents ListResponse[domain.AuditEvent]
+	decodeResponse(t, denialEventsRes, &denialEvents)
+	if len(denialEvents.Items) != 1 {
+		t.Fatalf("expected one artifact.write denial audit event, got %+v", denialEvents.Items)
+	}
+	var denialMetadata map[string]any
+	if err := json.Unmarshal(denialEvents.Items[0].Metadata, &denialMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if denialMetadata["authorizationAction"] != projectAuthorizationActionArtifactWrite ||
+		denialMetadata["callerPrincipal"] != "viewer-bot" ||
+		denialMetadata["artifactKind"] != string(domain.ArtifactKindReport) {
+		t.Fatalf("unexpected artifact.write denial metadata: %#v", denialMetadata)
+	}
+
+	_, err := store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+		ProjectID:     sandbox.ProjectID,
+		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
+		Principal:     "ci-bot",
+		Role:          domain.ProjectMemberRoleOperator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowedCreate := requestWithHeaders(api, http.MethodPost, "/v1/sandboxes/"+sandbox.ID.String()+"/artifacts", map[string]any{
+		"kind":        "report",
+		"name":        "Allowed report",
+		"uri":         "client://allowed/report.txt",
+		"contentType": "text/plain",
+	}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	if allowedCreate.Code != http.StatusCreated {
+		t.Fatalf("expected artifact create status %d, got %d: %s", http.StatusCreated, allowedCreate.Code, allowedCreate.Body.String())
+	}
+	var artifact domain.Artifact
+	decodeResponse(t, allowedCreate, &artifact)
+
+	deniedUploadReq := httptest.NewRequest(http.MethodPut, "/v1/artifacts/"+artifact.ID.String()+"/content", strings.NewReader("denied"))
+	deniedUploadReq.Header.Set("X-Mbox-Principal-Type", "automation")
+	deniedUploadReq.Header.Set("X-Mbox-Principal", "viewer-bot")
+	deniedUpload := httptest.NewRecorder()
+	api.ServeHTTP(deniedUpload, deniedUploadReq)
+	if deniedUpload.Code != http.StatusForbidden {
+		t.Fatalf("expected artifact upload denied status %d, got %d: %s", http.StatusForbidden, deniedUpload.Code, deniedUpload.Body.String())
+	}
+	if _, err := store.GetArtifactContent(context.Background(), artifact.ID); err != domain.ErrNotFound {
+		t.Fatalf("expected denied upload to avoid retained content, got %v", err)
+	}
+
+	allowedUploadReq := httptest.NewRequest(http.MethodPut, "/v1/artifacts/"+artifact.ID.String()+"/content", strings.NewReader("allowed"))
+	allowedUploadReq.Header.Set("X-Mbox-Principal-Type", "automation")
+	allowedUploadReq.Header.Set("X-Mbox-Principal", "ci-bot")
+	allowedUploadReq.Header.Set("Content-Type", "text/plain")
+	allowedUpload := httptest.NewRecorder()
+	api.ServeHTTP(allowedUpload, allowedUploadReq)
+	if allowedUpload.Code != http.StatusOK {
+		t.Fatalf("expected artifact upload status %d, got %d: %s", http.StatusOK, allowedUpload.Code, allowedUpload.Body.String())
+	}
+	var uploaded domain.Artifact
+	decodeResponse(t, allowedUpload, &uploaded)
+	if uploaded.RetainedContent == nil || uploaded.RetainedContent.SizeBytes != int64(len("allowed")) {
+		t.Fatalf("unexpected retained content after allowed upload: %+v", uploaded.RetainedContent)
+	}
+
+	captureArtifact, err := store.CreateArtifact(context.Background(), domain.ArtifactCreate{
+		ProjectID: sandbox.ProjectID,
+		SandboxID: sandbox.ID,
+		Kind:      domain.ArtifactKindFile,
+		Name:      "Workspace report",
+		URI:       "workspace:///workspace/report.txt",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deniedCapture := requestWithHeaders(api, http.MethodPost, "/v1/artifacts/"+captureArtifact.ID.String()+"/capture", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "viewer-bot",
+	})
+	if deniedCapture.Code != http.StatusForbidden {
+		t.Fatalf("expected artifact capture denied status %d, got %d: %s", http.StatusForbidden, deniedCapture.Code, deniedCapture.Body.String())
+	}
+	allowedCapture := requestWithHeaders(api, http.MethodPost, "/v1/artifacts/"+captureArtifact.ID.String()+"/capture", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	})
+	if allowedCapture.Code != http.StatusOK {
+		t.Fatalf("expected artifact capture status %d, got %d: %s", http.StatusOK, allowedCapture.Code, allowedCapture.Body.String())
+	}
+	var captured domain.Artifact
+	decodeResponse(t, allowedCapture, &captured)
+	if captured.RetainedContent == nil || captured.RetainedContent.SizeBytes == 0 {
+		t.Fatalf("expected captured retained content, got %+v", captured.RetainedContent)
+	}
+}
+
+func TestProjectRBACEnforcementGatesRuntimeOperate(t *testing.T) {
+	store := newFakeStore()
+	access := &fakeRuntimeAccess{}
+	api := NewWithOptions(store, Options{
+		RuntimeAccess:           access,
+		TrustedPrincipalHeaders: TrustedPrincipalHeaderOptions{Enabled: true},
+		ProjectRBAC:             ProjectRBACOptions{EnforcementEnabled: true},
+	})
+	sandbox := store.mustRunningSandbox(t)
+
+	deniedLogs := requestWithHeaders(api, http.MethodGet, "/v1/sandboxes/"+sandbox.ID.String()+"/logs", nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "viewer-bot",
+	})
+	if deniedLogs.Code != http.StatusForbidden {
+		t.Fatalf("expected runtime logs denied status %d, got %d: %s", http.StatusForbidden, deniedLogs.Code, deniedLogs.Body.String())
+	}
+	if access.lastTailLines != 0 {
+		t.Fatalf("expected denied logs to avoid runtime access, got tailLines=%d", access.lastTailLines)
+	}
+	denialEventsRes := request(api, http.MethodGet, "/v1/projects/"+sandbox.ProjectID.String()+"/audit-events?action=policy.denied&operation=runtime.logs&limit=10", nil)
+	var denialEvents ListResponse[domain.AuditEvent]
+	decodeResponse(t, denialEventsRes, &denialEvents)
+	if len(denialEvents.Items) != 1 {
+		t.Fatalf("expected one runtime.operate denial audit event, got %+v", denialEvents.Items)
+	}
+	var denialMetadata map[string]any
+	if err := json.Unmarshal(denialEvents.Items[0].Metadata, &denialMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if denialMetadata["authorizationAction"] != projectAuthorizationActionRuntimeOperate ||
+		denialMetadata["callerPrincipal"] != "viewer-bot" ||
+		denialMetadata["sandboxId"] != sandbox.ID.String() {
+		t.Fatalf("unexpected runtime.operate denial metadata: %#v", denialMetadata)
+	}
+
+	_, err := store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+		ProjectID:     sandbox.ProjectID,
+		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
+		Principal:     "ci-bot",
+		Role:          domain.ProjectMemberRoleOperator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operatorHeaders := map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "ci-bot",
+	}
+
+	allowedLogs := requestWithHeaders(api, http.MethodGet, "/v1/sandboxes/"+sandbox.ID.String()+"/logs", nil, operatorHeaders)
+	if allowedLogs.Code != http.StatusOK {
+		t.Fatalf("expected runtime logs allowed status %d, got %d: %s", http.StatusOK, allowedLogs.Code, allowedLogs.Body.String())
+	}
+	var logs mboxruntime.LogResult
+	decodeResponse(t, allowedLogs, &logs)
+	if logs.Logs == "" || logs.Target.PodName == "" {
+		t.Fatalf("unexpected logs response: %+v", logs)
+	}
+
+	deniedSession := request(api, http.MethodPost, "/v1/sandboxes/"+sandbox.ID.String()+"/sessions", map[string]any{
+		"type":   "custom",
+		"client": "anonymous-client",
+	})
+	if deniedSession.Code != http.StatusForbidden {
+		t.Fatalf("expected session create denied status %d, got %d: %s", http.StatusForbidden, deniedSession.Code, deniedSession.Body.String())
+	}
+	if len(store.sessions) != 0 {
+		t.Fatalf("expected denied session create to avoid session record, got %+v", store.sessions)
+	}
+	allowedSession := requestWithHeaders(api, http.MethodPost, "/v1/sandboxes/"+sandbox.ID.String()+"/sessions", map[string]any{
+		"type":   "custom",
+		"client": "operator-client",
+	}, operatorHeaders)
+	if allowedSession.Code != http.StatusCreated {
+		t.Fatalf("expected session create allowed status %d, got %d: %s", http.StatusCreated, allowedSession.Code, allowedSession.Body.String())
+	}
+	var session domain.RuntimeSession
+	decodeResponse(t, allowedSession, &session)
+	deniedEndSession := request(api, http.MethodPost, "/v1/sessions/"+session.ID.String()+"/end", nil)
+	if deniedEndSession.Code != http.StatusForbidden {
+		t.Fatalf("expected session end denied status %d, got %d: %s", http.StatusForbidden, deniedEndSession.Code, deniedEndSession.Body.String())
+	}
+	allowedEndSession := requestWithHeaders(api, http.MethodPost, "/v1/sessions/"+session.ID.String()+"/end", nil, operatorHeaders)
+	if allowedEndSession.Code != http.StatusOK {
+		t.Fatalf("expected session end allowed status %d, got %d: %s", http.StatusOK, allowedEndSession.Code, allowedEndSession.Body.String())
+	}
+
+	deniedTask := request(api, http.MethodPost, "/v1/sandboxes/"+sandbox.ID.String()+"/tasks", map[string]any{
+		"command": []string{"echo", "denied"},
+	})
+	if deniedTask.Code != http.StatusForbidden {
+		t.Fatalf("expected task create denied status %d, got %d: %s", http.StatusForbidden, deniedTask.Code, deniedTask.Body.String())
+	}
+	if len(store.tasks) != 0 {
+		t.Fatalf("expected denied task create to avoid task record, got %+v", store.tasks)
+	}
+	allowedTask := requestWithHeaders(api, http.MethodPost, "/v1/sandboxes/"+sandbox.ID.String()+"/tasks", map[string]any{
+		"command": []string{"echo", "allowed"},
+	}, operatorHeaders)
+	if allowedTask.Code != http.StatusCreated {
+		t.Fatalf("expected task create allowed status %d, got %d: %s", http.StatusCreated, allowedTask.Code, allowedTask.Body.String())
+	}
+	var task domain.ExecutionTask
+	decodeResponse(t, allowedTask, &task)
+	task = waitForTaskStatus(t, store, task.ID, domain.ExecutionTaskStatusSucceeded)
+	if !strings.Contains(task.Stdout, "allowed") {
+		t.Fatalf("unexpected task stdout: %+v", task)
+	}
+
+	deniedTaskEvents := request(api, http.MethodGet, "/v1/tasks/"+task.ID.String()+"/events", nil)
+	if deniedTaskEvents.Code != http.StatusForbidden {
+		t.Fatalf("expected task events denied status %d, got %d: %s", http.StatusForbidden, deniedTaskEvents.Code, deniedTaskEvents.Body.String())
+	}
+	allowedTaskEvents := requestWithHeaders(api, http.MethodGet, "/v1/tasks/"+task.ID.String()+"/events", nil, operatorHeaders)
+	if allowedTaskEvents.Code != http.StatusOK {
+		t.Fatalf("expected task events allowed status %d, got %d: %s", http.StatusOK, allowedTaskEvents.Code, allowedTaskEvents.Body.String())
+	}
+	if !strings.Contains(allowedTaskEvents.Body.String(), `"type":"snapshot"`) {
+		t.Fatalf("expected task event snapshot, got %s", allowedTaskEvents.Body.String())
+	}
+
+	artifact, err := store.CreateArtifact(context.Background(), domain.ArtifactCreate{
+		ProjectID: sandbox.ProjectID,
+		SandboxID: sandbox.ID,
+		Kind:      domain.ArtifactKindFile,
+		Name:      "Workspace report",
+		URI:       "workspace:///workspace/report.txt",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deniedArtifactContent := request(api, http.MethodGet, "/v1/artifacts/"+artifact.ID.String()+"/content", nil)
+	if deniedArtifactContent.Code != http.StatusForbidden {
+		t.Fatalf("expected workspace artifact read denied status %d, got %d: %s", http.StatusForbidden, deniedArtifactContent.Code, deniedArtifactContent.Body.String())
+	}
+	allowedArtifactContent := requestWithHeaders(api, http.MethodGet, "/v1/artifacts/"+artifact.ID.String()+"/content", nil, operatorHeaders)
+	if allowedArtifactContent.Code != http.StatusOK {
+		t.Fatalf("expected workspace artifact read allowed status %d, got %d: %s", http.StatusOK, allowedArtifactContent.Code, allowedArtifactContent.Body.String())
+	}
+	if !strings.Contains(allowedArtifactContent.Body.String(), "artifact:/workspace/report.txt") {
+		t.Fatalf("unexpected workspace artifact content: %s", allowedArtifactContent.Body.String())
 	}
 }
 
@@ -3671,6 +4864,7 @@ type fakeStore struct {
 	templates        map[uuid.UUID]domain.EnvironmentTemplate
 	policies         map[uuid.UUID]domain.ProjectPolicy
 	quotaPolicies    map[uuid.UUID]domain.ProjectQuotaPolicy
+	members          map[uuid.UUID]domain.ProjectMember
 	credentials      map[uuid.UUID]domain.ProjectCredential
 	sandboxes        map[uuid.UUID]domain.Sandbox
 	sessions         map[uuid.UUID]domain.RuntimeSession
@@ -3686,6 +4880,7 @@ func newFakeStore() *fakeStore {
 		templates:        map[uuid.UUID]domain.EnvironmentTemplate{},
 		policies:         map[uuid.UUID]domain.ProjectPolicy{},
 		quotaPolicies:    map[uuid.UUID]domain.ProjectQuotaPolicy{},
+		members:          map[uuid.UUID]domain.ProjectMember{},
 		credentials:      map[uuid.UUID]domain.ProjectCredential{},
 		sandboxes:        map[uuid.UUID]domain.Sandbox{},
 		sessions:         map[uuid.UUID]domain.RuntimeSession{},
@@ -3893,6 +5088,69 @@ func (s *fakeStore) UpsertProjectQuotaPolicy(_ context.Context, projectID uuid.U
 	policy.UpdatedAt = now
 	s.quotaPolicies[projectID] = policy
 	return policy, nil
+}
+
+func (s *fakeStore) ListProjectMembers(_ context.Context, projectID uuid.UUID) ([]domain.ProjectMember, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.projects[projectID]; !ok {
+		return nil, domain.ErrNotFound
+	}
+	items := []domain.ProjectMember{}
+	for _, member := range s.members {
+		if member.ProjectID == projectID {
+			items = append(items, member)
+		}
+	}
+	return items, nil
+}
+
+func (s *fakeStore) CreateProjectMember(_ context.Context, input domain.ProjectMemberCreate) (domain.ProjectMember, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.projects[input.ProjectID]; !ok {
+		return domain.ProjectMember{}, domain.ErrNotFound
+	}
+	for _, member := range s.members {
+		if member.ProjectID == input.ProjectID &&
+			member.PrincipalType == input.PrincipalType &&
+			member.Principal == input.Principal {
+			return domain.ProjectMember{}, domain.ErrConflict
+		}
+	}
+	now := time.Now()
+	member := domain.ProjectMember{
+		ID:            uuid.New(),
+		ProjectID:     input.ProjectID,
+		PrincipalType: input.PrincipalType,
+		Principal:     input.Principal,
+		Role:          input.Role,
+		Metadata:      input.Metadata,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	s.members[member.ID] = member
+	return member, nil
+}
+
+func (s *fakeStore) GetProjectMember(_ context.Context, id uuid.UUID) (domain.ProjectMember, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	member, ok := s.members[id]
+	if !ok {
+		return domain.ProjectMember{}, domain.ErrNotFound
+	}
+	return member, nil
+}
+
+func (s *fakeStore) DeleteProjectMember(_ context.Context, id uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.members[id]; !ok {
+		return domain.ErrNotFound
+	}
+	delete(s.members, id)
+	return nil
 }
 
 func (s *fakeStore) ListProjectCredentials(_ context.Context, projectID uuid.UUID) ([]domain.ProjectCredential, error) {
@@ -4175,6 +5433,12 @@ func (s *fakeStore) ListAuditEvents(_ context.Context, filter domain.AuditEventF
 		if filter.Operation != "" {
 			var metadata map[string]any
 			if json.Unmarshal(event.Metadata, &metadata) != nil || fmt.Sprint(metadata["operation"]) != filter.Operation {
+				continue
+			}
+		}
+		if filter.Reason != "" {
+			var metadata map[string]any
+			if json.Unmarshal(event.Metadata, &metadata) != nil || fmt.Sprint(metadata["reason"]) != filter.Reason {
 				continue
 			}
 		}

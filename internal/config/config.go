@@ -22,6 +22,8 @@ type Config struct {
 	ArtifactContentBackend   string
 	ArtifactContentDir       string
 	ArtifactContentS3        ArtifactContentS3Config
+	TrustedPrincipalHeaders  TrustedPrincipalHeaderConfig
+	ProjectRBAC              ProjectRBACConfig
 }
 
 type ArtifactContentS3Config struct {
@@ -32,6 +34,16 @@ type ArtifactContentS3Config struct {
 	AccessKeyID     string
 	SecretAccessKey string
 	ForcePathStyle  bool
+}
+
+type TrustedPrincipalHeaderConfig struct {
+	Enabled             bool
+	PrincipalHeader     string
+	PrincipalTypeHeader string
+}
+
+type ProjectRBACConfig struct {
+	EnforcementEnabled bool
 }
 
 func Load() (Config, error) {
@@ -48,6 +60,14 @@ func Load() (Config, error) {
 		AgentSandboxWarmPool:     os.Getenv("MBOX_AGENT_SANDBOX_WARM_POOL"),
 		ArtifactContentBackend:   envDefault("MBOX_ARTIFACT_CONTENT_BACKEND", "postgres"),
 		ArtifactContentDir:       os.Getenv("MBOX_ARTIFACT_CONTENT_DIR"),
+		TrustedPrincipalHeaders: TrustedPrincipalHeaderConfig{
+			Enabled:             envBool("MBOX_TRUSTED_PRINCIPAL_HEADERS_ENABLED", false),
+			PrincipalHeader:     envDefaultTrimmed("MBOX_TRUSTED_PRINCIPAL_HEADER", "X-Mbox-Principal"),
+			PrincipalTypeHeader: envDefaultTrimmed("MBOX_TRUSTED_PRINCIPAL_TYPE_HEADER", "X-Mbox-Principal-Type"),
+		},
+		ProjectRBAC: ProjectRBACConfig{
+			EnforcementEnabled: envBool("MBOX_PROJECT_RBAC_ENFORCEMENT_ENABLED", false),
+		},
 		ArtifactContentS3: ArtifactContentS3Config{
 			Endpoint:        strings.TrimSpace(os.Getenv("MBOX_ARTIFACT_CONTENT_S3_ENDPOINT")),
 			Region:          envDefault("MBOX_ARTIFACT_CONTENT_S3_REGION", "us-east-1"),
@@ -60,6 +80,15 @@ func Load() (Config, error) {
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	}
+	cfg.TrustedPrincipalHeaders.PrincipalHeader = strings.TrimSpace(cfg.TrustedPrincipalHeaders.PrincipalHeader)
+	cfg.TrustedPrincipalHeaders.PrincipalTypeHeader = strings.TrimSpace(cfg.TrustedPrincipalHeaders.PrincipalTypeHeader)
+	if cfg.TrustedPrincipalHeaders.Enabled &&
+		(cfg.TrustedPrincipalHeaders.PrincipalHeader == "" || cfg.TrustedPrincipalHeaders.PrincipalTypeHeader == "") {
+		return Config{}, fmt.Errorf("trusted principal header names are required when MBOX_TRUSTED_PRINCIPAL_HEADERS_ENABLED=true")
+	}
+	if cfg.ProjectRBAC.EnforcementEnabled && !cfg.TrustedPrincipalHeaders.Enabled {
+		return Config{}, fmt.Errorf("MBOX_PROJECT_RBAC_ENFORCEMENT_ENABLED requires MBOX_TRUSTED_PRINCIPAL_HEADERS_ENABLED=true")
 	}
 	cfg.ArtifactContentBackend = strings.ToLower(strings.TrimSpace(cfg.ArtifactContentBackend))
 	switch cfg.ArtifactContentBackend {
@@ -90,6 +119,14 @@ func envDefault(name string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func envDefaultTrimmed(name string, fallback string) string {
+	value, ok := os.LookupEnv(name)
+	if !ok {
+		return fallback
+	}
+	return strings.TrimSpace(value)
 }
 
 func envBool(name string, fallback bool) bool {
