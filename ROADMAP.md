@@ -424,6 +424,7 @@ First slice status:
 82. Done: SDK/OpenAPI schema alignment guard now checks starter RBAC/policy/credential enum values, including project policy/quota `enforcement`, project member `principalType`/`role`, and project credential `type`, so published SDK union types fail fast on OpenAPI enum drift.
 83. Done: SDK/OpenAPI schema alignment guard now checks runtime-facing enum values for template validation decisions, sandbox statuses, runtime session types/statuses, execution task statuses/events/streams, artifact kinds, and retained-content storage providers, preserving the SDK as a thin typed client over existing execution primitives.
 84. Done: SDK/OpenAPI schema alignment guard now checks runtime orphan audit and gated cleanup enum/literal values, including orphan reasons, orphan sandbox statuses, cleanup request/result reasons, and the `delete-orphan-runtime-resource` confirmation string, without adding automatic cleanup or new runtime write paths.
-85. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+85. Done: SDK/OpenAPI schema alignment guard now checks `RuntimeResourceOwner.kind` values (`sandbox` and `template`) so read-only runtime inventory attribution cannot silently drift away from the SDK owner model.
+86. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

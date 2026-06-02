@@ -1287,6 +1287,22 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeResourceOwner.properties.kind.enum = ["sandbox"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "RuntimeResourceOwner" &&
+        issue.property === "kind" &&
+        issue.enumValue === "template",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.RuntimeOrphanCleanupRequest.properties.confirm.enum = ["delete-runtime-resource"]
     assertOpenAPIAlignment(broken)
   },
@@ -2142,6 +2158,7 @@ function schemaComponents() {
   schemas.Artifact.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]
   schemas.ArtifactCreate.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]
   schemas.ArtifactContent.properties.storageProvider.enum = ["postgres", "filesystem", "s3"]
+  schemas.RuntimeResourceOwner.properties.kind.enum = ["sandbox", "template"]
   schemas.RuntimeOrphan.properties.reason.enum = [
     "missing-sandbox-record",
     "cleanup-pending",

@@ -143,6 +143,7 @@ const runtimeOrphanReasonValues = [
   "unlabeled-owner",
 ] as const
 const runtimeOrphanCleanupConfirmValues = ["delete-orphan-runtime-resource"] as const
+const runtimeResourceOwnerKindValues = ["sandbox", "template"] as const
 
 function jsonResponse(schema: string, status = "200"): SDKRouteResponseContract {
   return { status, schema }
@@ -592,6 +593,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeResourceOwner",
     required: ["kind"],
     properties: ["kind", "projectId", "sandboxId", "templateId"],
+    enumProperties: [{ property: "kind", values: runtimeResourceOwnerKindValues }],
   },
   {
     schema: "RuntimeResourceObservation",
