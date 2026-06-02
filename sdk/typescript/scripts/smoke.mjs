@@ -924,6 +924,38 @@ assert.throws(
         issue.reason === "missing-schema-required" &&
         issue.schema === "RuntimeSessionCreate" &&
         issue.property === "type",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ExecutionTask.required = broken.components.schemas.ExecutionTask.required.filter(
+      (name) => name !== "outputTruncated",
+    )
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-required" &&
+        issue.schema === "ExecutionTask" &&
+        issue.property === "outputTruncated",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ExecutionTaskCreate.required = []
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-required" &&
+        issue.schema === "ExecutionTaskCreate" &&
+        issue.property === "command",
     ),
 )
 assert.equal(assertOpenAPIAlignment(buildOpenAPIWithIntentionalSDKExceptions()).ok, true)
@@ -1326,6 +1358,30 @@ function schemaComponents() {
       "stream",
       "data",
       "offset",
+    ]),
+    ExecutionTask: objectSchema([
+      "id",
+      "projectId",
+      "sandboxId",
+      "status",
+      "command",
+      "timeoutSeconds",
+      "stdout",
+      "stderr",
+      "outputTruncated",
+      "createdAt",
+      "updatedAt",
+    ], [
+      "exitCode",
+      "error",
+      "runtimeRef",
+      "metadata",
+      "startedAt",
+      "finishedAt",
+    ]),
+    ExecutionTaskCreate: objectSchema(["command"], [
+      "timeoutSeconds",
+      "metadata",
     ]),
     RuntimeOrphanAudit: objectSchema([
       "adapter",

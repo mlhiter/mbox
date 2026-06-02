@@ -334,7 +334,7 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected schemas object, got %#v", components["schemas"])
 	}
-	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "SecretRef", "ProjectCredential", "ProjectCredentialCreate", "TemplatePort", "EnvironmentTemplate", "TemplateCreate", "TemplateUpdate", "RuntimeRef", "SandboxPort", "Sandbox", "SandboxCreate", "SandboxUpdate", "PreviewPort", "PreviewPortsResult", "RuntimeSession", "RuntimeSessionCreate", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "ExecutionTask", "Artifact", "Error"} {
+	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "SecretRef", "ProjectCredential", "ProjectCredentialCreate", "TemplatePort", "EnvironmentTemplate", "TemplateCreate", "TemplateUpdate", "RuntimeRef", "SandboxPort", "Sandbox", "SandboxCreate", "SandboxUpdate", "PreviewPort", "PreviewPortsResult", "RuntimeSession", "RuntimeSessionCreate", "ExecutionTask", "ExecutionTaskCreate", "ExecutionTaskEvent", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "Artifact", "Error"} {
 		if _, ok := schemas[name]; !ok {
 			t.Fatalf("expected schema %s in OpenAPI components", name)
 		}
@@ -488,6 +488,66 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		runtimeSessionCreateProperties["client"] == nil ||
 		runtimeSessionCreateProperties["metadata"] == nil {
 		t.Fatalf("expected RuntimeSessionCreate client/metadata properties, got %#v", runtimeSessionCreate["properties"])
+	}
+	executionTask, ok := schemas["ExecutionTask"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ExecutionTask schema in %#v", schemas["ExecutionTask"])
+	}
+	executionTaskRequired, ok := executionTask["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(executionTaskRequired, "id") ||
+		!anySliceContainsString(executionTaskRequired, "projectId") ||
+		!anySliceContainsString(executionTaskRequired, "sandboxId") ||
+		!anySliceContainsString(executionTaskRequired, "status") ||
+		!anySliceContainsString(executionTaskRequired, "command") ||
+		!anySliceContainsString(executionTaskRequired, "timeoutSeconds") ||
+		!anySliceContainsString(executionTaskRequired, "stdout") ||
+		!anySliceContainsString(executionTaskRequired, "stderr") ||
+		!anySliceContainsString(executionTaskRequired, "outputTruncated") ||
+		!anySliceContainsString(executionTaskRequired, "createdAt") ||
+		!anySliceContainsString(executionTaskRequired, "updatedAt") {
+		t.Fatalf("expected ExecutionTask identity/status/output required fields, got %#v", executionTask["required"])
+	}
+	executionTaskProperties, ok := executionTask["properties"].(map[string]any)
+	if !ok ||
+		executionTaskProperties["exitCode"] == nil ||
+		executionTaskProperties["runtimeRef"] == nil ||
+		executionTaskProperties["metadata"] == nil ||
+		executionTaskProperties["startedAt"] == nil ||
+		executionTaskProperties["finishedAt"] == nil {
+		t.Fatalf("expected ExecutionTask result/runtime metadata properties, got %#v", executionTask["properties"])
+	}
+	executionTaskCreate, ok := schemas["ExecutionTaskCreate"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ExecutionTaskCreate schema in %#v", schemas["ExecutionTaskCreate"])
+	}
+	executionTaskCreateRequired, ok := executionTaskCreate["required"].([]any)
+	if !ok || !anySliceContainsString(executionTaskCreateRequired, "command") {
+		t.Fatalf("expected ExecutionTaskCreate command required field, got %#v", executionTaskCreate["required"])
+	}
+	executionTaskCreateProperties, ok := executionTaskCreate["properties"].(map[string]any)
+	if !ok ||
+		executionTaskCreateProperties["timeoutSeconds"] == nil ||
+		executionTaskCreateProperties["metadata"] == nil {
+		t.Fatalf("expected ExecutionTaskCreate timeout/metadata properties, got %#v", executionTaskCreate["properties"])
+	}
+	executionTaskEvent, ok := schemas["ExecutionTaskEvent"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ExecutionTaskEvent schema in %#v", schemas["ExecutionTaskEvent"])
+	}
+	executionTaskEventRequired, ok := executionTaskEvent["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(executionTaskEventRequired, "type") ||
+		!anySliceContainsString(executionTaskEventRequired, "createdAt") {
+		t.Fatalf("expected ExecutionTaskEvent type/createdAt required fields, got %#v", executionTaskEvent["required"])
+	}
+	executionTaskEventProperties, ok := executionTaskEvent["properties"].(map[string]any)
+	if !ok ||
+		executionTaskEventProperties["task"] == nil ||
+		executionTaskEventProperties["stream"] == nil ||
+		executionTaskEventProperties["data"] == nil ||
+		executionTaskEventProperties["offset"] == nil {
+		t.Fatalf("expected ExecutionTaskEvent task/output properties, got %#v", executionTaskEvent["properties"])
 	}
 	apiInfo, ok := schemas["APIInfo"].(map[string]any)
 	if !ok {

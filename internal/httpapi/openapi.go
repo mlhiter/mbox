@@ -1348,7 +1348,7 @@ func executionTaskSchema(create bool) map[string]any {
 			prop("metadata", objectAnySchema()),
 		)
 	}
-	return objectSchema(requiredProps("id", "projectId", "sandboxId", "status", "command", "timeoutSeconds"),
+	return objectSchema(requiredProps("id", "projectId", "sandboxId", "status", "command", "timeoutSeconds", "stdout", "stderr", "outputTruncated", "createdAt", "updatedAt"),
 		prop("id", stringSchema()),
 		prop("projectId", stringSchema()),
 		prop("sandboxId", stringSchema()),
