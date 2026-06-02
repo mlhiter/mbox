@@ -441,6 +441,8 @@ Sandbox launch rejects a project-scoped template that belongs to a different pro
 
 When launch policy enforcement is `enforced`, `POST /v1/sandboxes` and `POST /v1/templates/{templateID}/validation-runs` can return `403` with a `policy denied: ...` error. This is a launch-policy gate, not full RBAC, credential mounting, or custom NetworkPolicy projection. Lifecycle policy enforcement is separate and currently covers only template `lifecyclePolicy.ttlSeconds`.
 
+The CLI keeps `projects policy <project-id>` as JSON by default and adds `--summary` for a human-readable launch-policy view over the same response. The summary output is for operator triage only; it does not change launch-policy enforcement or expand the policy model.
+
 `GET /v1/projects/{projectID}/quota-policy` returns the effective project quota policy:
 
 ```json
@@ -459,6 +461,8 @@ When launch policy enforcement is `enforced`, `POST /v1/sandboxes` and `POST /v1
 - `maxRetainedArtifactBytes`: optional non-negative integer. When enforced, artifact capture/upload is denied if current retained artifact bytes plus incoming bytes would exceed the limit.
 
 This is a product-record guard, not live cluster capacity management, billing, reservation, or real-time Kubernetes metrics. The checks use the same project usage aggregation as the read-only usage summary.
+
+The CLI keeps `projects quota-policy <project-id>` as JSON by default and adds `--summary` for a human-readable quota-policy view over the same response. The summary output is for operator triage only; it does not change quota enforcement or turn product-record limits into live runtime capacity metrics.
 
 `POST /v1/projects/{projectID}/members` accepts:
 
@@ -690,7 +694,7 @@ Current command groups:
 - `audit-events` for recent product audit events.
 - `runtime resources` for the read-only managed runtime resource inventory. Add `--summary` to print only the filtered JSON `summary` object, or `--summary-table` for a human-readable total/grouping/workload summary; use `--project-id` to filter by runtime owner project label.
 - `runtime orphans` for the read-only runtime orphan audit. Use `--project-id` to inspect drift for one runtime owner project label, and add `--summary-table` when an operator wants reason counts and actionable resource rows instead of raw JSON.
-- `projects`: list, create, get, usage, authorization, audit-events, policy, set-policy, quota-policy, set-quota-policy, members, add-member, credentials, add-credential, delete. Add `projects usage <project-id> --summary` when an operator wants product-record counts and declared request totals in compact text instead of raw JSON; add `projects members <project-id> --summary` when an operator wants starter RBAC role/principal-type counts over the member registry; add `projects credentials <project-id> --summary` when an operator wants credential-reference type/usage/Secret-reference counts without exposing secret values.
+- `projects`: list, create, get, usage, authorization, audit-events, policy, set-policy, quota-policy, set-quota-policy, members, add-member, credentials, add-credential, delete. Add `projects usage <project-id> --summary` when an operator wants product-record counts and declared request totals in compact text instead of raw JSON; add `projects policy <project-id> --summary` or `projects quota-policy <project-id> --summary` when an operator wants launch-policy or quota-policy boundaries rendered as text while preserving JSON defaults; add `projects members <project-id> --summary` when an operator wants starter RBAC role/principal-type counts over the member registry; add `projects credentials <project-id> --summary` when an operator wants credential-reference type/usage/Secret-reference counts without exposing secret values.
 - `members`: get, delete.
 - `credentials`: get, delete.
 - `templates`: list, create, get, boundary, validate, validate-run, decide-validation, delete. `templates validate-run <template-id> --project-id <project-id> -- ...` is a CLI-only composition over validation-run creation, sandbox wait, execution task creation/waiting, and validation decision; it does not add a server route or CI workflow model.

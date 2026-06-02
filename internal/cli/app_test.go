@@ -805,6 +805,59 @@ func TestProjectsPolicyUsesPolicyRoute(t *testing.T) {
 	}
 }
 
+func TestProjectsPolicySummaryPrintsReadablePolicy(t *testing.T) {
+	var method string
+	var path string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"projectId":"project-1",
+			"enforcement":"enforced",
+			"allowedImagePrefixes":["node:","busybox:"],
+			"allowedServiceAccounts":["mbox-sandbox"],
+			"allowedSecretRefs":["git-token"],
+			"createdAt":"2026-06-02T09:00:00Z",
+			"updatedAt":"2026-06-02T10:00:00Z"
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"projects", "policy", "project-1",
+		"--summary",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || path != "/v1/projects/project-1/policy" {
+		t.Fatalf("unexpected request %s %s", method, path)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"PROJECT LAUNCH POLICY SUMMARY",
+		"Project\tproject-1",
+		"Enforcement\tenforced",
+		"Allowed image prefixes\tbusybox:,node:",
+		"Allowed service accounts\tmbox-sandbox",
+		"Allowed secret refs\tgit-token",
+		"Created at\t2026-06-02T09:00:00Z",
+		"Updated at\t2026-06-02T10:00:00Z",
+		"Boundary\tlaunch-policy gate for sandbox creation and template validation launches",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in policy summary output, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"allowedImagePrefixes"`) || strings.Contains(output, `"projectId"`) {
+		t.Fatalf("expected human-readable policy summary without raw JSON, got %q", output)
+	}
+}
+
 func TestProjectsSetQuotaPolicyPutsExpectedPayload(t *testing.T) {
 	var method string
 	var path string
@@ -861,6 +914,57 @@ func TestProjectsQuotaPolicyUsesQuotaPolicyRoute(t *testing.T) {
 	}
 	if method != http.MethodGet || path != "/v1/projects/project-1/quota-policy" {
 		t.Fatalf("unexpected request %s %s", method, path)
+	}
+}
+
+func TestProjectsQuotaPolicySummaryPrintsReadablePolicy(t *testing.T) {
+	var method string
+	var path string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"projectId":"project-1",
+			"enforcement":"enforced",
+			"maxActiveSandboxes":5,
+			"maxRetainedArtifactBytes":1048576,
+			"createdAt":"2026-06-02T09:00:00Z",
+			"updatedAt":"2026-06-02T10:00:00Z"
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"projects", "quota-policy", "project-1",
+		"--summary",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || path != "/v1/projects/project-1/quota-policy" {
+		t.Fatalf("unexpected request %s %s", method, path)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"PROJECT QUOTA POLICY SUMMARY",
+		"Project\tproject-1",
+		"Enforcement\tenforced",
+		"Max active sandboxes\t5",
+		"Max retained artifact bytes\t1048576",
+		"Created at\t2026-06-02T09:00:00Z",
+		"Updated at\t2026-06-02T10:00:00Z",
+		"Boundary\tproduct-record quota gate for active sandbox count and retained artifact bytes",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in quota policy summary output, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"maxActiveSandboxes"`) || strings.Contains(output, `"projectId"`) {
+		t.Fatalf("expected human-readable quota policy summary without raw JSON, got %q", output)
 	}
 }
 

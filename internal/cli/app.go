@@ -172,9 +172,9 @@ Commands:
   projects members <project-id> [--summary]
   projects add-member <project-id> --principal PRINCIPAL --role owner|operator|viewer [--principal-type user|service_account|automation]
   projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--policy-denied-summary]
-  projects policy <project-id>
+  projects policy <project-id> [--summary]
   projects set-policy <project-id> --enforcement disabled|enforced [--allowed-image-prefix PREFIX] [--allowed-service-account NAME] [--allowed-secret-ref NAME]
-  projects quota-policy <project-id>
+  projects quota-policy <project-id> [--summary]
   projects set-quota-policy <project-id> --enforcement disabled|enforced [--max-active-sandboxes N] [--max-retained-artifact-bytes N]
   projects credentials <project-id> [--summary]
   projects add-credential <project-id> --name NAME --type git|registry|kubernetes|ssh|generic --secret-ref NAME [--secret-key KEY]
@@ -902,6 +902,25 @@ type policyDeniedSummaryRow struct {
 	Resources map[string]bool
 }
 
+type projectPolicySummary struct {
+	ProjectID              string   `json:"projectId"`
+	Enforcement            string   `json:"enforcement"`
+	AllowedImagePrefixes   []string `json:"allowedImagePrefixes"`
+	AllowedServiceAccounts []string `json:"allowedServiceAccounts"`
+	AllowedSecretRefs      []string `json:"allowedSecretRefs"`
+	CreatedAt              string   `json:"createdAt"`
+	UpdatedAt              string   `json:"updatedAt"`
+}
+
+type projectQuotaPolicySummary struct {
+	ProjectID                string `json:"projectId"`
+	Enforcement              string `json:"enforcement"`
+	MaxActiveSandboxes       *int   `json:"maxActiveSandboxes"`
+	MaxRetainedArtifactBytes *int64 `json:"maxRetainedArtifactBytes"`
+	CreatedAt                string `json:"createdAt"`
+	UpdatedAt                string `json:"updatedAt"`
+}
+
 type projectUsageSummary struct {
 	ProjectID       string                        `json:"projectId"`
 	GeneratedAt     string                        `json:"generatedAt"`
@@ -1074,6 +1093,75 @@ type projectAuthorizationSummaryMember struct {
 	PrincipalType string `json:"principalType"`
 	Principal     string `json:"principal"`
 	Role          string `json:"role"`
+}
+
+func writeProjectPolicySummary(w io.Writer, policy projectPolicySummary) error {
+	out := bufio.NewWriter(w)
+	if _, err := fmt.Fprintln(out, "PROJECT LAUNCH POLICY SUMMARY"); err != nil {
+		return err
+	}
+	rows := [][2]string{
+		{"Project", tableValue(policy.ProjectID, "unknown")},
+		{"Enforcement", tableValue(policy.Enforcement, "disabled")},
+		{"Allowed image prefixes", formatStringList(cleanStringList(policy.AllowedImagePrefixes))},
+		{"Allowed service accounts", formatStringList(cleanStringList(policy.AllowedServiceAccounts))},
+		{"Allowed secret refs", formatStringList(cleanStringList(policy.AllowedSecretRefs))},
+	}
+	for _, row := range rows {
+		if _, err := fmt.Fprintf(out, "%s\t%s\n", row[0], row[1]); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(policy.CreatedAt) != "" || strings.TrimSpace(policy.UpdatedAt) != "" {
+		if _, err := fmt.Fprintf(out, "Created at\t%s\nUpdated at\t%s\n", tableValue(policy.CreatedAt, "-"), tableValue(policy.UpdatedAt, "-")); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(out, "Boundary\tlaunch-policy gate for sandbox creation and template validation launches"); err != nil {
+		return err
+	}
+	return out.Flush()
+}
+
+func writeProjectQuotaPolicySummary(w io.Writer, policy projectQuotaPolicySummary) error {
+	out := bufio.NewWriter(w)
+	if _, err := fmt.Fprintln(out, "PROJECT QUOTA POLICY SUMMARY"); err != nil {
+		return err
+	}
+	rows := [][2]string{
+		{"Project", tableValue(policy.ProjectID, "unknown")},
+		{"Enforcement", tableValue(policy.Enforcement, "disabled")},
+		{"Max active sandboxes", formatOptionalInt(policy.MaxActiveSandboxes)},
+		{"Max retained artifact bytes", formatOptionalInt64(policy.MaxRetainedArtifactBytes)},
+	}
+	for _, row := range rows {
+		if _, err := fmt.Fprintf(out, "%s\t%s\n", row[0], row[1]); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(policy.CreatedAt) != "" || strings.TrimSpace(policy.UpdatedAt) != "" {
+		if _, err := fmt.Fprintf(out, "Created at\t%s\nUpdated at\t%s\n", tableValue(policy.CreatedAt, "-"), tableValue(policy.UpdatedAt, "-")); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(out, "Boundary\tproduct-record quota gate for active sandbox count and retained artifact bytes"); err != nil {
+		return err
+	}
+	return out.Flush()
+}
+
+func formatOptionalInt(value *int) string {
+	if value == nil {
+		return "unlimited"
+	}
+	return strconv.Itoa(*value)
+}
+
+func formatOptionalInt64(value *int64) string {
+	if value == nil {
+		return "unlimited"
+	}
+	return strconv.FormatInt(*value, 10)
 }
 
 func writeProjectUsageSummary(w io.Writer, usage projectUsageSummary) error {
@@ -2096,10 +2184,27 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 		}
 		return a.runAuditEvents(ctx, client, args[2:], args[1])
 	case "policy":
-		if len(args) != 2 {
-			return usageError("usage: mbox projects policy <project-id>")
+		if len(args) < 2 {
+			return usageError("usage: mbox projects policy <project-id> [--summary]")
 		}
-		return a.get(ctx, client, "/v1/projects/"+url.PathEscape(args[1])+"/policy")
+		fs := flag.NewFlagSet("projects policy", flag.ContinueOnError)
+		fs.SetOutput(a.streams.Stderr)
+		summary := fs.Bool("summary", false, "")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return usageError("usage: mbox projects policy <project-id> [--summary]")
+		}
+		path := "/v1/projects/" + url.PathEscape(args[1]) + "/policy"
+		if *summary {
+			var policy projectPolicySummary
+			if err := client.JSON(ctx, http.MethodGet, path, nil, &policy); err != nil {
+				return err
+			}
+			return writeProjectPolicySummary(a.streams.Stdout, policy)
+		}
+		return a.get(ctx, client, path)
 	case "set-policy":
 		if len(args) < 2 {
 			return usageError("usage: mbox projects set-policy <project-id> --enforcement disabled|enforced")
@@ -2129,10 +2234,27 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 		}
 		return WriteJSON(a.streams.Stdout, out)
 	case "quota-policy":
-		if len(args) != 2 {
-			return usageError("usage: mbox projects quota-policy <project-id>")
+		if len(args) < 2 {
+			return usageError("usage: mbox projects quota-policy <project-id> [--summary]")
 		}
-		return a.get(ctx, client, "/v1/projects/"+url.PathEscape(args[1])+"/quota-policy")
+		fs := flag.NewFlagSet("projects quota-policy", flag.ContinueOnError)
+		fs.SetOutput(a.streams.Stderr)
+		summary := fs.Bool("summary", false, "")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return usageError("usage: mbox projects quota-policy <project-id> [--summary]")
+		}
+		path := "/v1/projects/" + url.PathEscape(args[1]) + "/quota-policy"
+		if *summary {
+			var policy projectQuotaPolicySummary
+			if err := client.JSON(ctx, http.MethodGet, path, nil, &policy); err != nil {
+				return err
+			}
+			return writeProjectQuotaPolicySummary(a.streams.Stdout, policy)
+		}
+		return a.get(ctx, client, path)
 	case "set-quota-policy":
 		if len(args) < 2 {
 			return usageError("usage: mbox projects set-quota-policy <project-id> --enforcement disabled|enforced")
