@@ -1103,6 +1103,78 @@ func TestProjectAuthorizationUsesPreflightRoute(t *testing.T) {
 	}
 }
 
+func TestProjectAuthorizationSummaryUsesPreflightRoute(t *testing.T) {
+	var method string
+	var uri string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		uri = r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"projectId": "project-1",
+			"action": "member.manage",
+			"allowed": true,
+			"enforced": true,
+			"evaluation": "allowed",
+			"requiredRoles": ["owner"],
+			"caller": {
+				"authenticated": true,
+				"authenticationRequired": false,
+				"mode": "trusted_header",
+				"principalType": "user",
+				"principal": "alice@example.com",
+				"rbacTrusted": true,
+				"projectRolesEnforced": true,
+				"notes": ["trusted principal headers are enabled"]
+			},
+			"matchedMember": {
+				"id": "member-1",
+				"principalType": "user",
+				"principal": "alice@example.com",
+				"role": "owner"
+			},
+			"memberCount": 2,
+			"availableActions": ["project.view", "member.manage"],
+			"notes": ["caller matches a project member role and this action is route-enforced"]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"projects", "authorization", "project-1",
+		"--action", "member.manage",
+		"--summary",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || uri != "/v1/projects/project-1/authorization?action=member.manage" {
+		t.Fatalf("unexpected request %s %s", method, uri)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"PROJECT AUTHORIZATION",
+		"Project\tproject-1",
+		"Action\tmember.manage",
+		"Decision\tallowed / route enforced",
+		"Required roles\towner",
+		"Caller\tuser:alice@example.com (trusted_header, authenticated, rbac trusted, roles enforced)",
+		"Matched member\tuser:alice@example.com role=owner id=member-1",
+		"Member records\t2",
+		"Available actions\tproject.view,member.manage",
+		"- caller matches a project member role and this action is route-enforced",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected authorization summary to contain %q, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"projectId"`) || strings.Contains(output, `"matchedMember"`) {
+		t.Fatalf("expected human summary output without raw authorization JSON, got %q", output)
+	}
+}
+
 func TestCredentialsGetAndDeleteUseCredentialRoute(t *testing.T) {
 	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

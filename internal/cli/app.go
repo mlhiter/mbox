@@ -171,7 +171,7 @@ Commands:
   projects create --name NAME --namespace NAMESPACE [--slug SLUG]
   projects get <project-id>
   projects usage <project-id>
-  projects authorization <project-id> [--action ACTION]
+  projects authorization <project-id> [--action ACTION] [--summary]
   projects members <project-id>
   projects add-member <project-id> --principal PRINCIPAL --role owner|operator|viewer [--principal-type user|service_account|automation]
   projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--policy-denied-summary]
@@ -740,6 +740,142 @@ type policyDeniedSummaryRow struct {
 	Resources map[string]bool
 }
 
+type projectAuthorizationSummaryDecision struct {
+	ProjectID        string                             `json:"projectId"`
+	Action           string                             `json:"action"`
+	Allowed          bool                               `json:"allowed"`
+	Enforced         bool                               `json:"enforced"`
+	Evaluation       string                             `json:"evaluation"`
+	RequiredRoles    []string                           `json:"requiredRoles"`
+	Caller           projectAuthorizationSummaryCaller  `json:"caller"`
+	MatchedMember    *projectAuthorizationSummaryMember `json:"matchedMember"`
+	MemberCount      int                                `json:"memberCount"`
+	AvailableActions []string                           `json:"availableActions"`
+	Notes            []string                           `json:"notes"`
+}
+
+type projectAuthorizationSummaryCaller struct {
+	Authenticated          bool     `json:"authenticated"`
+	AuthenticationRequired bool     `json:"authenticationRequired"`
+	Mode                   string   `json:"mode"`
+	PrincipalType          string   `json:"principalType"`
+	Principal              string   `json:"principal"`
+	RBACTrusted            bool     `json:"rbacTrusted"`
+	ProjectRolesEnforced   bool     `json:"projectRolesEnforced"`
+	Notes                  []string `json:"notes"`
+}
+
+type projectAuthorizationSummaryMember struct {
+	ID            string `json:"id"`
+	PrincipalType string `json:"principalType"`
+	Principal     string `json:"principal"`
+	Role          string `json:"role"`
+}
+
+func writeProjectAuthorizationSummary(w io.Writer, decision projectAuthorizationSummaryDecision) error {
+	out := bufio.NewWriter(w)
+	if _, err := fmt.Fprintln(out, "PROJECT AUTHORIZATION"); err != nil {
+		return err
+	}
+	rows := [][2]string{
+		{"Project", tableValue(decision.ProjectID, "unknown")},
+		{"Action", tableValue(decision.Action, "project.view")},
+		{"Decision", projectAuthorizationDecisionLabel(decision)},
+		{"Required roles", formatStringList(decision.RequiredRoles)},
+		{"Caller", projectAuthorizationCallerLabel(decision.Caller)},
+		{"Matched member", projectAuthorizationMemberLabel(decision.MatchedMember)},
+		{"Member records", strconv.Itoa(decision.MemberCount)},
+		{"Available actions", formatStringList(decision.AvailableActions)},
+	}
+	for _, row := range rows {
+		if _, err := fmt.Fprintf(out, "%s\t%s\n", row[0], row[1]); err != nil {
+			return err
+		}
+	}
+	if len(decision.Notes) > 0 {
+		if _, err := fmt.Fprintln(out, "Notes"); err != nil {
+			return err
+		}
+		for _, note := range decision.Notes {
+			note = strings.TrimSpace(note)
+			if note == "" {
+				continue
+			}
+			if _, err := fmt.Fprintf(out, "- %s\n", note); err != nil {
+				return err
+			}
+		}
+	}
+	return out.Flush()
+}
+
+func projectAuthorizationDecisionLabel(decision projectAuthorizationSummaryDecision) string {
+	parts := []string{tableValue(decision.Evaluation, "unknown")}
+	if decision.Enforced {
+		parts = append(parts, "route enforced")
+	} else {
+		parts = append(parts, "not route enforced")
+	}
+	return strings.Join(parts, " / ")
+}
+
+func projectAuthorizationCallerLabel(caller projectAuthorizationSummaryCaller) string {
+	identity := strings.TrimSpace(caller.Principal)
+	if identity == "" {
+		identity = "anonymous"
+	}
+	principalType := strings.TrimSpace(caller.PrincipalType)
+	if principalType != "" {
+		identity = principalType + ":" + identity
+	}
+	mode := tableValue(caller.Mode, "unknown-mode")
+	trust := "not trusted"
+	if caller.RBACTrusted {
+		trust = "rbac trusted"
+	}
+	enforcement := "roles not enforced"
+	if caller.ProjectRolesEnforced {
+		enforcement = "roles enforced"
+	}
+	auth := "unauthenticated"
+	if caller.Authenticated {
+		auth = "authenticated"
+	}
+	if caller.AuthenticationRequired {
+		auth += ", auth required"
+	}
+	return fmt.Sprintf("%s (%s, %s, %s, %s)", identity, mode, auth, trust, enforcement)
+}
+
+func projectAuthorizationMemberLabel(member *projectAuthorizationSummaryMember) string {
+	if member == nil {
+		return "-"
+	}
+	principal := tableValue(member.Principal, "unknown")
+	if strings.TrimSpace(member.PrincipalType) != "" {
+		principal = strings.TrimSpace(member.PrincipalType) + ":" + principal
+	}
+	role := tableValue(member.Role, "unknown-role")
+	if strings.TrimSpace(member.ID) != "" {
+		return fmt.Sprintf("%s role=%s id=%s", principal, role, strings.TrimSpace(member.ID))
+	}
+	return fmt.Sprintf("%s role=%s", principal, role)
+}
+
+func formatStringList(values []string) string {
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			items = append(items, value)
+		}
+	}
+	if len(items) == 0 {
+		return "-"
+	}
+	return strings.Join(items, ",")
+}
+
 func writePolicyDeniedSummaryTable(w io.Writer, events []auditEventSummaryItem) error {
 	out := bufio.NewWriter(w)
 	if _, err := fmt.Fprintln(out, "POLICY DENIED SUMMARY"); err != nil {
@@ -1087,22 +1223,30 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 		return a.get(ctx, client, "/v1/projects/"+url.PathEscape(args[1])+"/usage")
 	case "authorization", "authz":
 		if len(args) < 2 {
-			return usageError("usage: mbox projects authorization <project-id> [--action ACTION]")
+			return usageError("usage: mbox projects authorization <project-id> [--action ACTION] [--summary]")
 		}
 		fs := flag.NewFlagSet("projects authorization", flag.ContinueOnError)
 		fs.SetOutput(a.streams.Stderr)
 		action := fs.String("action", "", "")
+		summary := fs.Bool("summary", false, "")
 		if err := fs.Parse(args[2:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 0 {
-			return usageError("usage: mbox projects authorization <project-id> [--action ACTION]")
+			return usageError("usage: mbox projects authorization <project-id> [--action ACTION] [--summary]")
 		}
 		path := "/v1/projects/" + url.PathEscape(args[1]) + "/authorization"
 		if strings.TrimSpace(*action) != "" {
 			values := url.Values{}
 			values.Set("action", strings.TrimSpace(*action))
 			path += "?" + values.Encode()
+		}
+		if *summary {
+			var decision projectAuthorizationSummaryDecision
+			if err := client.JSON(ctx, http.MethodGet, path, nil, &decision); err != nil {
+				return err
+			}
+			return writeProjectAuthorizationSummary(a.streams.Stdout, decision)
 		}
 		return a.get(ctx, client, path)
 	case "members":
