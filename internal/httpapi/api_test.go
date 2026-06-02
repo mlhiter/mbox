@@ -49,6 +49,51 @@ func TestCreateProject(t *testing.T) {
 	}
 }
 
+func TestCreateProjectBootstrapsTrustedCallerOwnerWhenRBACEnforced(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithOptions(store, Options{
+		TrustedPrincipalHeaders: TrustedPrincipalHeaderOptions{Enabled: true},
+		ProjectRBAC:             ProjectRBACOptions{EnforcementEnabled: true},
+	})
+
+	res := requestWithHeaders(api, http.MethodPost, "/v1/projects", map[string]any{
+		"name":             "Demo Project",
+		"slug":             "demo-project",
+		"defaultNamespace": "mbox-demo",
+	}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "owner-bot",
+	})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, res.Code, res.Body.String())
+	}
+	var project domain.Project
+	decodeResponse(t, res, &project)
+	members, err := store.ListProjectMembers(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 1 ||
+		members[0].PrincipalType != domain.ProjectMemberPrincipalTypeAutomation ||
+		members[0].Principal != "owner-bot" ||
+		members[0].Role != domain.ProjectMemberRoleOwner {
+		t.Fatalf("expected trusted caller owner bootstrap member, got %+v", members)
+	}
+	auditRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/audit-events?action=project.member.created&resourceType=project-member&limit=10", nil)
+	var audit ListResponse[domain.AuditEvent]
+	decodeResponse(t, auditRes, &audit)
+	if len(audit.Items) != 1 {
+		t.Fatalf("expected bootstrap member audit event, got %+v", audit.Items)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(audit.Items[0].Metadata, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata["bootstrap"] != true || metadata["role"] != string(domain.ProjectMemberRoleOwner) {
+		t.Fatalf("unexpected bootstrap member audit metadata: %#v", metadata)
+	}
+}
+
 func TestInfoReportsCapabilities(t *testing.T) {
 	backend, err := NewFilesystemArtifactContentBackend(t.TempDir())
 	if err != nil {
@@ -674,6 +719,26 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok || apiInfoProperties["trustedPrincipalHeaders"] == nil || apiInfoProperties["projectRbac"] == nil {
 		t.Fatalf("expected APIInfo trusted principal/project RBAC properties, got %#v", apiInfoProperties)
 	}
+	projectRBAC, ok := schemas["ProjectRBACInfo"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ProjectRBACInfo schema in %#v", schemas["ProjectRBACInfo"])
+	}
+	projectRBACProperties, ok := projectRBAC["properties"].(map[string]any)
+	if !ok || projectRBACProperties["enforcedActions"] == nil {
+		t.Fatalf("expected ProjectRBACInfo enforcedActions property, got %#v", projectRBACProperties)
+	}
+	enforcedActionsProperty, ok := projectRBACProperties["enforcedActions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ProjectRBACInfo enforcedActions schema, got %#v", projectRBACProperties["enforcedActions"])
+	}
+	enforcedActionItems, ok := enforcedActionsProperty["items"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ProjectRBACInfo enforcedActions item schema, got %#v", enforcedActionsProperty["items"])
+	}
+	enforcedActionValues, ok := enforcedActionItems["enum"].([]any)
+	if !ok || !anySliceContainsString(enforcedActionValues, "member.manage") {
+		t.Fatalf("expected enforcedActions enum to include member.manage, got %#v", enforcedActionItems["enum"])
+	}
 	callerInfo, ok := schemas["CallerInfo"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected CallerInfo schema in %#v", schemas["CallerInfo"])
@@ -938,6 +1003,12 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if _, ok := properties["secretRef"].(map[string]any); !ok {
 		t.Fatalf("expected secretRef policy denied metadata property, got %#v", properties["secretRef"])
 	}
+	if _, ok := properties["principal"].(map[string]any); !ok {
+		t.Fatalf("expected principal policy denied metadata property, got %#v", properties["principal"])
+	}
+	if _, ok := properties["role"].(map[string]any); !ok {
+		t.Fatalf("expected role policy denied metadata property, got %#v", properties["role"])
+	}
 	operation, ok := properties["operation"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected operation property, got %#v", properties["operation"])
@@ -954,7 +1025,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(operations, "artifact.content.capture") ||
 		!anySliceContainsString(operations, "artifact.content.upload") ||
 		!anySliceContainsString(operations, "project.credential.create") ||
-		!anySliceContainsString(operations, "project.credential.delete") {
+		!anySliceContainsString(operations, "project.credential.delete") ||
+		!anySliceContainsString(operations, "project.member.create") ||
+		!anySliceContainsString(operations, "project.member.delete") {
 		t.Fatalf("expected policy denied operation enum, got %#v", operation["enum"])
 	}
 }
@@ -2760,8 +2833,12 @@ func TestProjectAuthorizationPreflightReportsEnforcedStarterActions(t *testing.T
 	})
 	var memberManage ProjectAuthorizationDecision
 	decodeResponse(t, memberManageRes, &memberManage)
-	if memberManage.Enforced || !memberManage.Caller.ProjectRolesEnforced {
-		t.Fatalf("expected non-starter management actions to stay unenforced, got %+v", memberManage)
+	if memberManage.Allowed ||
+		!memberManage.Enforced ||
+		memberManage.Evaluation != projectAuthorizationEvaluationDenied ||
+		memberManage.MatchedMember == nil ||
+		memberManage.MatchedMember.ID != operator.ID {
+		t.Fatalf("expected operator to be denied for enforced member.manage, got %+v", memberManage)
 	}
 
 	untrustedRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/authorization?action=sandbox.launch", nil)
@@ -2979,6 +3056,111 @@ func TestProjectRBACEnforcementGatesCredentialManage(t *testing.T) {
 	})
 	if allowedDelete.Code != http.StatusNoContent {
 		t.Fatalf("expected owner credential delete status %d, got %d: %s", http.StatusNoContent, allowedDelete.Code, allowedDelete.Body.String())
+	}
+}
+
+func TestProjectRBACEnforcementGatesMemberManage(t *testing.T) {
+	store := newFakeStore()
+	api := NewWithOptions(store, Options{
+		TrustedPrincipalHeaders: TrustedPrincipalHeaderOptions{Enabled: true},
+		ProjectRBAC:             ProjectRBACOptions{EnforcementEnabled: true},
+	})
+	project := store.mustProject(t)
+	_, err := store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+		ProjectID:     project.ID,
+		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
+		Principal:     "operator-bot",
+		Role:          domain.ProjectMemberRoleOperator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+		ProjectID:     project.ID,
+		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
+		Principal:     "owner-bot",
+		Role:          domain.ProjectMemberRoleOwner,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deniedCreate := requestWithHeaders(api, http.MethodPost, "/v1/projects/"+project.ID.String()+"/members", map[string]any{
+		"principalType": "user",
+		"principal":     "alice@example.com",
+		"role":          "viewer",
+	}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "operator-bot",
+	})
+	if deniedCreate.Code != http.StatusForbidden {
+		t.Fatalf("expected member create denied status %d, got %d: %s", http.StatusForbidden, deniedCreate.Code, deniedCreate.Body.String())
+	}
+	listRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/members", nil)
+	var list ListResponse[domain.ProjectMember]
+	decodeResponse(t, listRes, &list)
+	if len(list.Items) != 2 {
+		t.Fatalf("expected denied member create to avoid persistence, got %+v", list.Items)
+	}
+
+	createDenialRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/audit-events?action=policy.denied&operation=project.member.create&limit=10", nil)
+	var createDenialEvents ListResponse[domain.AuditEvent]
+	decodeResponse(t, createDenialRes, &createDenialEvents)
+	if len(createDenialEvents.Items) != 1 {
+		t.Fatalf("expected one member.manage create denial audit event, got %+v", createDenialEvents.Items)
+	}
+	var createMetadata map[string]any
+	if err := json.Unmarshal(createDenialEvents.Items[0].Metadata, &createMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if createMetadata["authorizationAction"] != projectAuthorizationActionMemberManage ||
+		createMetadata["callerPrincipal"] != "operator-bot" ||
+		createMetadata["principalType"] != "user" ||
+		createMetadata["principal"] != "alice@example.com" ||
+		createMetadata["role"] != "viewer" {
+		t.Fatalf("unexpected member create denial metadata: %#v", createMetadata)
+	}
+
+	allowedCreate := requestWithHeaders(api, http.MethodPost, "/v1/projects/"+project.ID.String()+"/members", map[string]any{
+		"principalType": "user",
+		"principal":     "alice@example.com",
+		"role":          "viewer",
+	}, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "owner-bot",
+	})
+	if allowedCreate.Code != http.StatusCreated {
+		t.Fatalf("expected owner member create status %d, got %d: %s", http.StatusCreated, allowedCreate.Code, allowedCreate.Body.String())
+	}
+	var member domain.ProjectMember
+	decodeResponse(t, allowedCreate, &member)
+
+	deniedDelete := requestWithHeaders(api, http.MethodDelete, "/v1/members/"+member.ID.String(), nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "operator-bot",
+	})
+	if deniedDelete.Code != http.StatusForbidden {
+		t.Fatalf("expected member delete denied status %d, got %d: %s", http.StatusForbidden, deniedDelete.Code, deniedDelete.Body.String())
+	}
+	if _, err := store.GetProjectMember(context.Background(), member.ID); err != nil {
+		t.Fatalf("expected denied member delete to keep record, got %v", err)
+	}
+	deleteDenialRes := request(api, http.MethodGet, "/v1/projects/"+project.ID.String()+"/audit-events?action=policy.denied&operation=project.member.delete&limit=10", nil)
+	var deleteDenialEvents ListResponse[domain.AuditEvent]
+	decodeResponse(t, deleteDenialRes, &deleteDenialEvents)
+	if len(deleteDenialEvents.Items) != 1 {
+		t.Fatalf("expected one member.manage delete denial audit event, got %+v", deleteDenialEvents.Items)
+	}
+	if deleteDenialEvents.Items[0].ResourceID == nil || *deleteDenialEvents.Items[0].ResourceID != member.ID {
+		t.Fatalf("unexpected member delete denial resource id: %+v", deleteDenialEvents.Items[0])
+	}
+
+	allowedDelete := requestWithHeaders(api, http.MethodDelete, "/v1/members/"+member.ID.String(), nil, map[string]string{
+		"X-Mbox-Principal-Type": "automation",
+		"X-Mbox-Principal":      "owner-bot",
+	})
+	if allowedDelete.Code != http.StatusNoContent {
+		t.Fatalf("expected owner member delete status %d, got %d: %s", http.StatusNoContent, allowedDelete.Code, allowedDelete.Body.String())
 	}
 }
 

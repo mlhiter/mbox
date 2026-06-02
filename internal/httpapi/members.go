@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/mlhiter/mbox/internal/domain"
 )
 
@@ -51,6 +53,13 @@ func (api *API) createProjectMember(w http.ResponseWriter, r *http.Request) {
 	principal := strings.TrimSpace(req.Principal)
 	if !validProjectMemberPrincipalType(req.PrincipalType) || !validateRequired(principal) || !validProjectMemberRole(req.Role) {
 		writeError(w, http.StatusBadRequest, "principalType, principal, and role are required")
+		return
+	}
+	if !api.enforceMemberManage(w, r, projectID, "project.member.create", nil, principal, map[string]any{
+		"principalType": req.PrincipalType,
+		"principal":     principal,
+		"role":          req.Role,
+	}) {
 		return
 	}
 	member, err := api.store.CreateProjectMember(r.Context(), domain.ProjectMemberCreate{
@@ -103,6 +112,13 @@ func (api *API) deleteProjectMember(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	if !api.enforceMemberManage(w, r, member.ProjectID, "project.member.delete", &member.ID, member.Principal, map[string]any{
+		"principalType": member.PrincipalType,
+		"principal":     member.Principal,
+		"role":          member.Role,
+	}) {
+		return
+	}
 	if err := api.store.DeleteProjectMember(r.Context(), memberID); err != nil {
 		writeStoreError(w, err)
 		return
@@ -119,6 +135,28 @@ func (api *API) deleteProjectMember(w http.ResponseWriter, r *http.Request) {
 		}),
 	})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (api *API) enforceMemberManage(w http.ResponseWriter, r *http.Request, projectID uuid.UUID, operation string, memberID *uuid.UUID, memberName string, metadata map[string]any) bool {
+	if err := api.enforceProjectAuthorization(r, projectID, projectAuthorizationActionMemberManage); err != nil {
+		caller := api.callerInfo(r)
+		denialMetadata := map[string]any{
+			"authorizationAction": projectAuthorizationActionMemberManage,
+			"callerMode":          caller.Mode,
+			"callerPrincipalType": caller.PrincipalType,
+			"callerPrincipal":     caller.Principal,
+		}
+		for key, value := range metadata {
+			denialMetadata[key] = value
+		}
+		api.recordPolicyDeniedAuditEvent(r.Context(), projectID, operation, "project-member", memberID, memberName, err, denialMetadata)
+		if writePolicyError(w, err) {
+			return false
+		}
+		writeStoreError(w, err)
+		return false
+	}
+	return true
 }
 
 func validProjectMemberPrincipalType(value domain.ProjectMemberPrincipalType) bool {

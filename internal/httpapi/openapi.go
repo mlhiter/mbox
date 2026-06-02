@@ -58,6 +58,8 @@ var knownPolicyDeniedOperations = []string{
 	"artifact.content.upload",
 	"project.credential.create",
 	"project.credential.delete",
+	"project.member.create",
+	"project.member.delete",
 }
 
 type openAPIDocument map[string]any
@@ -702,7 +704,7 @@ func projectRBACInfoSchema() map[string]any {
 		prop("enforcementEnabled", boolSchema()),
 		prop("enforcedActions", arraySchema(enumSchema(projectAuthorizationActions...))),
 	)
-	schema["description"] = "Disabled-by-default project RBAC enforcement status. The starter enforcement gate currently covers sandbox.launch, runtime.operate, artifact.write, policy.manage, and credential.manage only when explicitly enabled with a trusted principal provider."
+	schema["description"] = "Disabled-by-default project RBAC enforcement status. The starter enforcement gate currently covers sandbox.launch, runtime.operate, artifact.write, policy.manage, credential.manage, and member.manage only when explicitly enabled with a trusted principal provider."
 	return schema
 }
 
@@ -812,7 +814,7 @@ func projectAuthorizationDecisionSchema() map[string]any {
 		prop("availableActions", arraySchema(enumSchema(projectAuthorizationActions...))),
 		prop("notes", arraySchema(stringSchema())),
 	)
-	schema["description"] = "Project authorization preflight for known project actions. It reports action-level enforcement status; the starter route-level gate can enforce sandbox.launch, runtime.operate, artifact.write, policy.manage, and credential.manage when project RBAC enforcement and trusted principal headers are explicitly enabled."
+	schema["description"] = "Project authorization preflight for known project actions. It reports action-level enforcement status; the starter route-level gate can enforce sandbox.launch, runtime.operate, artifact.write, policy.manage, credential.manage, and member.manage when project RBAC enforcement and trusted principal headers are explicitly enabled."
 	return schema
 }
 
@@ -830,7 +832,7 @@ func projectMemberSchema(create bool) map[string]any {
 		props = append(props, prop("createdAt", dateTimeSchema()), prop("updatedAt", dateTimeSchema()))
 	}
 	schema := objectSchema(required, props...)
-	schema["description"] = "Project member role record for RBAC groundwork. These records are not enforced as authorization decisions by the current shared-token API."
+	schema["description"] = "Project member role record for RBAC groundwork. When project RBAC enforcement and trusted principal headers are explicitly enabled, member create/delete routes require an owner project member."
 	return schema
 }
 
@@ -1242,8 +1244,11 @@ func policyDeniedAuditMetadataSchema() map[string]any {
 		prop("type", stringSchema()),
 		prop("target", stringSchema()),
 		prop("secretRef", stringSchema()),
+		prop("principalType", enumSchema("user", "service_account", "automation")),
+		prop("principal", stringSchema()),
+		prop("role", enumSchema("owner", "operator", "viewer")),
 	)
-	schema["description"] = "Metadata shape for action=policy.denied. Current coverage is intentionally narrow: sandbox launch policy/quota/RBAC denials, template validation launch policy/RBAC denials, project policy-management RBAC denials, project credential-management RBAC denials, runtime operation RBAC denials, artifact write RBAC denials, and retained artifact byte quota denials."
+	schema["description"] = "Metadata shape for action=policy.denied. Current coverage is intentionally narrow: sandbox launch policy/quota/RBAC denials, template validation launch policy/RBAC denials, project policy/member/credential-management RBAC denials, runtime operation RBAC denials, artifact write RBAC denials, and retained artifact byte quota denials."
 	schema["additionalProperties"] = true
 	return schema
 }

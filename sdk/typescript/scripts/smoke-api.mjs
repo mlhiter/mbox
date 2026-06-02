@@ -20,6 +20,8 @@ let project
 let projectMember
 let template
 let sandbox
+let rbacRequestOptions
+let ownerRequestOptions
 
 try {
   await client.health()
@@ -39,11 +41,16 @@ try {
     assert.ok(info.projectRbac.enforcedActions.includes("runtime.operate"))
     assert.ok(info.projectRbac.enforcedActions.includes("artifact.write"))
     assert.ok(info.projectRbac.enforcedActions.includes("policy.manage"))
+    assert.ok(info.projectRbac.enforcedActions.includes("credential.manage"))
+    assert.ok(info.projectRbac.enforcedActions.includes("member.manage"))
   } else {
     assert.deepEqual(info.projectRbac.enforcedActions, [])
   }
-  const rbacRequestOptions = info.projectRbac.enforcementEnabled
-    ? trustedPrincipalRequestOptions(info)
+  rbacRequestOptions = info.projectRbac.enforcementEnabled
+    ? trustedPrincipalRequestOptions(info, "sdk-smoke-bot")
+    : undefined
+  ownerRequestOptions = info.projectRbac.enforcementEnabled
+    ? trustedPrincipalRequestOptions(info, "sdk-smoke-owner")
     : undefined
   const caller = await client.caller(rbacRequestOptions)
   assert.equal(caller.authenticationRequired, info.authenticationRequired)
@@ -59,12 +66,15 @@ try {
   })
   await fetchAndAssertOpenAPIAlignment(client)
 
-  project = await client.createProject({
-    name,
-    slug: name,
-    defaultNamespace: name,
-    metadata: { smoke: "sdk-live-api" },
-  })
+  project = await client.createProject(
+    {
+      name,
+      slug: name,
+      defaultNamespace: name,
+      metadata: { smoke: "sdk-live-api" },
+    },
+    ownerRequestOptions,
+  )
   assert.equal(project.slug, name)
 
   template = await client.createTemplate({
@@ -97,6 +107,20 @@ try {
         metadata: { smoke: "sdk-live-api-denied" },
       }),
     )
+    await expectForbidden(
+      () =>
+        client.createProjectMember(
+          project.id,
+          {
+            principalType: "automation",
+            principal: "sdk-smoke-viewer",
+            role: "viewer",
+            metadata: { smoke: "sdk-live-api-rbac-denied" },
+          },
+          rbacRequestOptions,
+        ),
+      "expected operator member create to be denied",
+    )
     projectMember = await client.createProjectMember(
       project.id,
       {
@@ -105,7 +129,7 @@ try {
         role: "operator",
         metadata: { smoke: "sdk-live-api-rbac" },
       },
-      rbacRequestOptions,
+      ownerRequestOptions,
     )
     assert.equal(projectMember.projectId, project.id)
     assert.equal(projectMember.role, "operator")
@@ -199,6 +223,17 @@ try {
       () => client.setProjectQuotaPolicy(project.id, { enforcement: "enforced", maxActiveSandboxes: 3 }, rbacRequestOptions),
       "expected operator quota policy update to be denied",
     )
+    const memberAuthorization = await client.getProjectAuthorization(project.id, {
+      action: "member.manage",
+      ...rbacRequestOptions,
+    })
+    assert.equal(memberAuthorization.projectId, project.id)
+    assert.equal(memberAuthorization.action, "member.manage")
+    assert.equal(memberAuthorization.enforced, true)
+    assert.deepEqual(memberAuthorization.requiredRoles, ["owner"])
+    assert.equal(memberAuthorization.allowed, false)
+    assert.equal(memberAuthorization.evaluation, "denied")
+    assert.equal(memberAuthorization.matchedMember?.id, projectMember.id)
   } else {
     const updatedPolicy = await client.setProjectPolicy(project.id, { enforcement: "enforced", allowedImagePrefixes: ["busybox:"] }, rbacRequestOptions)
     assert.equal(updatedPolicy.enforcement, "enforced")
@@ -345,15 +380,15 @@ try {
 
 async function cleanup() {
   if (sandbox) {
-    await ignoreNotFound(() => client.deleteSandbox(sandbox.id))
+    await ignoreNotFound(() => client.deleteSandbox(sandbox.id, rbacRequestOptions))
     sandbox = undefined
   }
   if (projectMember) {
-    await ignoreNotFound(() => client.deleteProjectMember(projectMember.id))
+    await ignoreNotFound(() => client.deleteProjectMember(projectMember.id, ownerRequestOptions))
     projectMember = undefined
   }
   if (project) {
-    await ignoreNotFound(() => client.deleteProject(project.id))
+    await ignoreNotFound(() => client.deleteProject(project.id, ownerRequestOptions))
     project = undefined
   }
   template = undefined
@@ -370,13 +405,13 @@ async function ignoreNotFound(action) {
   }
 }
 
-function trustedPrincipalRequestOptions(info) {
+function trustedPrincipalRequestOptions(info, principal) {
   const principalHeader = info.trustedPrincipalHeaders.principalHeader ?? "X-Mbox-Principal"
   const principalTypeHeader = info.trustedPrincipalHeaders.principalTypeHeader ?? "X-Mbox-Principal-Type"
   return {
     headers: {
       [principalTypeHeader]: "automation",
-      [principalHeader]: "sdk-smoke-bot",
+      [principalHeader]: principal,
     },
   }
 }

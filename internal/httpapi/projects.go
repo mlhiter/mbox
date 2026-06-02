@@ -106,7 +106,43 @@ func (api *API) createProject(w http.ResponseWriter, r *http.Request) {
 		ResourceID:   &project.ID,
 		ResourceName: project.Name,
 	})
+	api.bootstrapProjectOwnerForTrustedCaller(r, project)
 	writeJSON(w, http.StatusCreated, project)
+}
+
+func (api *API) bootstrapProjectOwnerForTrustedCaller(r *http.Request, project domain.Project) {
+	if !api.projectRolesEnforced() {
+		return
+	}
+	caller := api.callerInfo(r)
+	if !caller.RBACTrusted {
+		return
+	}
+	principalType, ok := projectMemberPrincipalTypeForCaller(caller.PrincipalType)
+	if !ok {
+		return
+	}
+	member, err := api.store.CreateProjectMember(r.Context(), domain.ProjectMemberCreate{
+		ProjectID:     project.ID,
+		PrincipalType: principalType,
+		Principal:     caller.Principal,
+		Role:          domain.ProjectMemberRoleOwner,
+	})
+	if err != nil {
+		return
+	}
+	api.recordAuditEvent(r.Context(), domain.AuditEventCreate{
+		ProjectID:    &project.ID,
+		Action:       "project.member.created",
+		ResourceType: "project-member",
+		ResourceID:   &member.ID,
+		ResourceName: member.Principal,
+		Metadata: auditMetadata(map[string]any{
+			"principalType": member.PrincipalType,
+			"role":          member.Role,
+			"bootstrap":     true,
+		}),
+	})
 }
 
 func (api *API) getProject(w http.ResponseWriter, r *http.Request) {

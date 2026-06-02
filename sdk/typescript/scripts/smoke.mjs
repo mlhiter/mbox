@@ -312,7 +312,30 @@ const memberClient = new MboxClient({
       case "GET /v1/projects/project-1/members":
         return jsonResponse({ items: [{ id: "member-1", projectId: "project-1", principalType: "user", principal: "alice@example.com", role: "operator" }] })
       case "GET /v1/projects/project-1/authorization":
-        assert.ok(["sandbox.launch", "policy.manage"].includes(parsed.searchParams.get("action")))
+        assert.ok(["sandbox.launch", "policy.manage", "member.manage"].includes(parsed.searchParams.get("action")))
+        if (parsed.searchParams.get("action") === "member.manage") {
+          return jsonResponse({
+            projectId: "project-1",
+            action: "member.manage",
+            allowed: false,
+            enforced: true,
+            evaluation: "denied",
+            requiredRoles: ["owner"],
+            caller: {
+              authenticated: true,
+              authenticationRequired: false,
+              mode: "trusted_header",
+              principalType: "automation",
+              principal: "sdk-bot",
+              rbacTrusted: true,
+              projectRolesEnforced: true,
+              notes: [],
+            },
+            memberCount: 1,
+            availableActions: ["project.view", "sandbox.launch", "policy.manage", "member.manage"],
+            notes: ["caller matches a project member, but the role is insufficient for this action"],
+          })
+        }
         if (parsed.searchParams.get("action") === "policy.manage") {
           return jsonResponse({
             projectId: "project-1",
@@ -374,11 +397,13 @@ const memberClient = new MboxClient({
 assert.equal((await memberClient.listProjectMembers("project-1")).items[0].principal, "alice@example.com")
 assert.equal((await memberClient.getProjectAuthorization("project-1", { action: "sandbox.launch" })).evaluation, "not_enforceable")
 assert.equal((await memberClient.getProjectAuthorization("project-1", { action: "policy.manage" })).enforced, true)
+assert.equal((await memberClient.getProjectAuthorization("project-1", { action: "member.manage" })).enforced, true)
 assert.equal((await memberClient.createProjectMember("project-1", { principalType: "automation", principal: "sdk-bot", role: "viewer" })).role, "viewer")
 assert.equal((await memberClient.getProjectMember("member-1")).role, "operator")
 await memberClient.deleteProjectMember("member-1")
 assert.deepEqual(memberCalls, [
   "GET /v1/projects/project-1/members",
+  "GET /v1/projects/project-1/authorization",
   "GET /v1/projects/project-1/authorization",
   "GET /v1/projects/project-1/authorization",
   "POST /v1/projects/project-1/members",
@@ -802,6 +827,21 @@ assert.throws(
         issue.reason === "missing-schema-property" &&
         issue.schema === "PolicyDeniedAuditMetadata" &&
         issue.property === "policyKind",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    delete broken.components.schemas.PolicyDeniedAuditMetadata.properties.role
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-property" &&
+        issue.schema === "PolicyDeniedAuditMetadata" &&
+        issue.property === "role",
     ),
 )
 assert.throws(
@@ -1772,6 +1812,9 @@ function schemaComponents() {
       "type",
       "target",
       "secretRef",
+      "principalType",
+      "principal",
+      "role",
     ]),
   })
   schemas.AuditEvent = objectSchema(["id", "action", "resourceType", "createdAt"], [

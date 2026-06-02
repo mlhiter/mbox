@@ -594,6 +594,8 @@ export type PolicyDeniedOperation =
   | "artifact.content.upload"
   | "project.credential.create"
   | "project.credential.delete"
+  | "project.member.create"
+  | "project.member.delete"
 
 export type PolicyDeniedAuditMetadata = JSONObject & {
   operation: PolicyDeniedOperation
@@ -617,6 +619,9 @@ export type PolicyDeniedAuditMetadata = JSONObject & {
   type?: string
   target?: string
   secretRef?: string
+  principalType?: ProjectMemberPrincipalType
+  principal?: string
+  role?: ProjectMemberRole
 }
 
 export type AuditEvent = {
@@ -1990,7 +1995,9 @@ function isPolicyDeniedOperation(value: unknown): value is PolicyDeniedOperation
     value === "artifact.content.capture" ||
     value === "artifact.content.upload" ||
     value === "project.credential.create" ||
-    value === "project.credential.delete"
+    value === "project.credential.delete" ||
+    value === "project.member.create" ||
+    value === "project.member.delete"
   )
 }
 

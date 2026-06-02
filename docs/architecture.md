@@ -23,7 +23,7 @@ The API server owns product records. Kubernetes resources are runtime projection
 - `RuntimeSession`: audit record for terminal, IDE, notebook, browser, command, or custom clients that attach to a sandbox.
 - `Artifact`: output reference for sandbox or task outputs, with optional retained bytes for small captured `workspace://` files.
 - `ProjectPolicy`: project-scoped launch gate for image prefixes, runtime identity, and template secret reference names.
-- `ProjectMember`: project member role record for `user`, `service_account`, or `automation` principals. It is starter RBAC data and can gate `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage` only when the explicit project RBAC enforcement switch and trusted principal provider are enabled.
+- `ProjectMember`: project member role record for `user`, `service_account`, or `automation` principals. It is starter RBAC data and can gate `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, `credential.manage`, and `member.manage` only when the explicit project RBAC enforcement switch and trusted principal provider are enabled. In that mode, project creation seeds the trusted caller as owner for the new project.
 - `CallerInfo`: read-only caller/auth boundary response for anonymous local mode, accepted shared-token mode, or explicitly enabled trusted-header mode. It reports whether the caller is usable for RBAC matching and whether any project-role route gate is enabled.
 - `ProjectAuthorizationDecision`: project authorization preflight for known project actions. It maps actions to required roles, reports action-level `enforced`, reports anonymous/shared-token callers as untrusted when enforcement is active, and can match trusted-header principals to project member records.
 - `ProjectCredential`: typed project credential reference pointing at a Kubernetes Secret name/key without storing secret values.
@@ -132,6 +132,6 @@ The template flow follows the same product direction as E2B-style sandboxes: use
 - Ordinary sandbox Pods do not receive broad Kubernetes tokens by default.
 - Project credential references store Secret names and metadata only; the current runtime adapter does not mount those credentials into Pods.
 - Project member records are product records for starter RBAC; they are not trusted login sessions, and the shared API token is still not a user identity.
-- Trusted principal headers are disabled by default and intended for deployments where a reverse proxy already authenticated the caller. They feed caller/preflight visibility and the explicitly enabled starter `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage` project RBAC gates only.
+- Trusted principal headers are disabled by default and intended for deployments where a reverse proxy already authenticated the caller. They feed caller/preflight visibility and the explicitly enabled starter `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, `credential.manage`, and `member.manage` project RBAC gates only.
 - Caller/auth handshake responses are visibility for clients and operators; they are not login sessions.
 - Do not run Postgres integration tests or Kubernetes smoke tests against external targets unless that target is explicitly intended for test writes.

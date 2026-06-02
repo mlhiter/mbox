@@ -42,6 +42,7 @@ var starterEnforcedProjectAuthorizationActions = []string{
 	projectAuthorizationActionArtifactWrite,
 	projectAuthorizationActionPolicyManage,
 	projectAuthorizationActionCredentialManage,
+	projectAuthorizationActionMemberManage,
 }
 
 type ProjectAuthorizationDecision struct {
@@ -183,7 +184,7 @@ func (api *API) projectAuthorizationEnforcementNote(action string) string {
 		return "route-level project RBAC is enforced for this action"
 	}
 	if api.projectRolesEnforced() {
-		return "route-level project RBAC is enabled only for sandbox.launch, runtime.operate, artifact.write, policy.manage, and credential.manage"
+		return "route-level project RBAC is enabled only for sandbox.launch, runtime.operate, artifact.write, policy.manage, credential.manage, and member.manage"
 	}
 	return "route-level project RBAC is not enforced yet"
 }

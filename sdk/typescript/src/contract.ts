@@ -1152,6 +1152,9 @@ export const SDK_SCHEMA_CONTRACT = [
       "type",
       "target",
       "secretRef",
+      "principalType",
+      "principal",
+      "role",
     ],
   },
 ] as const satisfies readonly SDKSchemaContractEntry[]

@@ -106,7 +106,7 @@ func (api *API) projectRolesEnforced() bool {
 
 func (api *API) projectRoleEnforcementNote() string {
 	if api.projectRolesEnforced() {
-		return "project member roles are enforced for sandbox.launch, runtime.operate, artifact.write, policy.manage, and credential.manage starter routes only"
+		return "project member roles are enforced for sandbox.launch, runtime.operate, artifact.write, policy.manage, credential.manage, and member.manage starter routes only"
 	}
 	return "project member roles are registered but not enforced for route authorization"
 }
