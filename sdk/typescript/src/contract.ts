@@ -1058,6 +1058,35 @@ export const SDK_SCHEMA_CONTRACT = [
     properties: ["type", "client", "metadata"],
   },
   {
+    schema: "Artifact",
+    required: ["id", "projectId", "sandboxId", "kind", "name", "uri"],
+    properties: [
+      "id",
+      "projectId",
+      "sandboxId",
+      "taskId",
+      "kind",
+      "name",
+      "uri",
+      "contentType",
+      "sizeBytes",
+      "metadata",
+      "retainedContent",
+      "createdAt",
+      "updatedAt",
+    ],
+  },
+  {
+    schema: "ArtifactCreate",
+    required: ["kind", "name", "uri"],
+    properties: ["taskId", "kind", "name", "uri", "contentType", "sizeBytes", "metadata"],
+  },
+  {
+    schema: "ArtifactContent",
+    required: ["artifactId", "sizeBytes", "sha256", "sourceUri", "storageProvider", "capturedAt"],
+    properties: ["artifactId", "contentType", "sizeBytes", "sha256", "sourceUri", "storageProvider", "storageKey", "capturedAt"],
+  },
+  {
     schema: "AuditEvent",
     required: ["id", "action", "resourceType", "createdAt"],
     properties: [

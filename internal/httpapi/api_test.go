@@ -334,7 +334,7 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected schemas object, got %#v", components["schemas"])
 	}
-	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "SecretRef", "ProjectCredential", "ProjectCredentialCreate", "TemplatePort", "EnvironmentTemplate", "TemplateCreate", "TemplateUpdate", "RuntimeRef", "SandboxPort", "Sandbox", "SandboxCreate", "SandboxUpdate", "PreviewPort", "PreviewPortsResult", "RuntimeSession", "RuntimeSessionCreate", "ExecutionTask", "ExecutionTaskCreate", "ExecutionTaskEvent", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "Artifact", "Error"} {
+	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "SecretRef", "ProjectCredential", "ProjectCredentialCreate", "TemplatePort", "EnvironmentTemplate", "TemplateCreate", "TemplateUpdate", "RuntimeRef", "SandboxPort", "Sandbox", "SandboxCreate", "SandboxUpdate", "PreviewPort", "PreviewPortsResult", "RuntimeSession", "RuntimeSessionCreate", "ExecutionTask", "ExecutionTaskCreate", "ExecutionTaskEvent", "Artifact", "ArtifactCreate", "ArtifactContent", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "Error"} {
 		if _, ok := schemas[name]; !ok {
 			t.Fatalf("expected schema %s in OpenAPI components", name)
 		}
@@ -548,6 +548,70 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		executionTaskEventProperties["data"] == nil ||
 		executionTaskEventProperties["offset"] == nil {
 		t.Fatalf("expected ExecutionTaskEvent task/output properties, got %#v", executionTaskEvent["properties"])
+	}
+	artifactSchema, ok := schemas["Artifact"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Artifact schema in %#v", schemas["Artifact"])
+	}
+	artifactRequired, ok := artifactSchema["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(artifactRequired, "id") ||
+		!anySliceContainsString(artifactRequired, "projectId") ||
+		!anySliceContainsString(artifactRequired, "sandboxId") ||
+		!anySliceContainsString(artifactRequired, "kind") ||
+		!anySliceContainsString(artifactRequired, "name") ||
+		!anySliceContainsString(artifactRequired, "uri") {
+		t.Fatalf("expected Artifact identity/reference required fields, got %#v", artifactSchema["required"])
+	}
+	artifactProperties, ok := artifactSchema["properties"].(map[string]any)
+	if !ok ||
+		artifactProperties["taskId"] == nil ||
+		artifactProperties["contentType"] == nil ||
+		artifactProperties["sizeBytes"] == nil ||
+		artifactProperties["metadata"] == nil ||
+		artifactProperties["retainedContent"] == nil ||
+		artifactProperties["createdAt"] == nil ||
+		artifactProperties["updatedAt"] == nil {
+		t.Fatalf("expected Artifact metadata/retained content properties, got %#v", artifactSchema["properties"])
+	}
+	artifactCreate, ok := schemas["ArtifactCreate"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ArtifactCreate schema in %#v", schemas["ArtifactCreate"])
+	}
+	artifactCreateRequired, ok := artifactCreate["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(artifactCreateRequired, "kind") ||
+		!anySliceContainsString(artifactCreateRequired, "name") ||
+		!anySliceContainsString(artifactCreateRequired, "uri") {
+		t.Fatalf("expected ArtifactCreate kind/name/uri required fields, got %#v", artifactCreate["required"])
+	}
+	artifactCreateProperties, ok := artifactCreate["properties"].(map[string]any)
+	if !ok ||
+		artifactCreateProperties["taskId"] == nil ||
+		artifactCreateProperties["contentType"] == nil ||
+		artifactCreateProperties["sizeBytes"] == nil ||
+		artifactCreateProperties["metadata"] == nil {
+		t.Fatalf("expected ArtifactCreate metadata properties, got %#v", artifactCreate["properties"])
+	}
+	artifactContent, ok := schemas["ArtifactContent"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ArtifactContent schema in %#v", schemas["ArtifactContent"])
+	}
+	artifactContentRequired, ok := artifactContent["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(artifactContentRequired, "artifactId") ||
+		!anySliceContainsString(artifactContentRequired, "sizeBytes") ||
+		!anySliceContainsString(artifactContentRequired, "sha256") ||
+		!anySliceContainsString(artifactContentRequired, "sourceUri") ||
+		!anySliceContainsString(artifactContentRequired, "storageProvider") ||
+		!anySliceContainsString(artifactContentRequired, "capturedAt") {
+		t.Fatalf("expected ArtifactContent retained-content required fields, got %#v", artifactContent["required"])
+	}
+	artifactContentProperties, ok := artifactContent["properties"].(map[string]any)
+	if !ok ||
+		artifactContentProperties["contentType"] == nil ||
+		artifactContentProperties["storageKey"] == nil {
+		t.Fatalf("expected ArtifactContent content/storage metadata properties, got %#v", artifactContent["properties"])
 	}
 	apiInfo, ok := schemas["APIInfo"].(map[string]any)
 	if !ok {

@@ -956,6 +956,38 @@ assert.throws(
         issue.reason === "missing-schema-required" &&
         issue.schema === "ExecutionTaskCreate" &&
         issue.property === "command",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.Artifact.required = broken.components.schemas.Artifact.required.filter((name) => name !== "uri")
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-required" &&
+        issue.schema === "Artifact" &&
+        issue.property === "uri",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ArtifactContent.required = broken.components.schemas.ArtifactContent.required.filter(
+      (name) => name !== "storageProvider",
+    )
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-required" &&
+        issue.schema === "ArtifactContent" &&
+        issue.property === "storageProvider",
     ),
 )
 assert.equal(assertOpenAPIAlignment(buildOpenAPIWithIntentionalSDKExceptions()).ok, true)
@@ -1291,6 +1323,7 @@ function schemaComponents() {
     "ExecutionTaskEvent",
     "Artifact",
     "ArtifactCreate",
+    "ArtifactContent",
   ]) {
     schemas[name] = { type: "object", properties: {}, required: [] }
   }
@@ -1580,6 +1613,25 @@ function schemaComponents() {
     RuntimeSessionCreate: objectSchema(["type"], [
       "client",
       "metadata",
+    ]),
+    Artifact: objectSchema(["id", "projectId", "sandboxId", "kind", "name", "uri"], [
+      "taskId",
+      "contentType",
+      "sizeBytes",
+      "metadata",
+      "retainedContent",
+      "createdAt",
+      "updatedAt",
+    ]),
+    ArtifactCreate: objectSchema(["kind", "name", "uri"], [
+      "taskId",
+      "contentType",
+      "sizeBytes",
+      "metadata",
+    ]),
+    ArtifactContent: objectSchema(["artifactId", "sizeBytes", "sha256", "sourceUri", "storageProvider", "capturedAt"], [
+      "contentType",
+      "storageKey",
     ]),
     APIInfo: objectSchema([
       "name",
