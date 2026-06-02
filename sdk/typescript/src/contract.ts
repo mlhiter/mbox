@@ -135,6 +135,14 @@ const runtimeSessionStatusValues = ["active", "ended", "failed"] as const
 const artifactKindValues = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"] as const
 const artifactStorageProviderValues = ["postgres", "filesystem", "s3"] as const
 const templateValidationDecisionStatusValues = ["passed", "failed"] as const
+const runtimeOrphanReasonValues = [
+  "missing-sandbox-record",
+  "cleanup-pending",
+  "runtime-ref-mismatch",
+  "missing-template-record",
+  "unlabeled-owner",
+] as const
+const runtimeOrphanCleanupConfirmValues = ["delete-orphan-runtime-resource"] as const
 
 function jsonResponse(schema: string, status = "200"): SDKRouteResponseContract {
   return { status, schema }
@@ -689,6 +697,10 @@ export const SDK_SCHEMA_CONTRACT = [
       "message",
       "evidence",
     ],
+    enumProperties: [
+      { property: "reason", values: runtimeOrphanReasonValues },
+      { property: "status", values: sandboxStatusValues },
+    ],
   },
   {
     schema: "ManagedResourceRef",
@@ -699,11 +711,16 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeOrphanCleanupRequest",
     required: ["resource", "reason", "confirm", "deleteOrphan"],
     properties: ["resource", "reason", "confirm", "deleteOrphan"],
+    enumProperties: [
+      { property: "reason", values: runtimeOrphanReasonValues },
+      { property: "confirm", values: runtimeOrphanCleanupConfirmValues },
+    ],
   },
   {
     schema: "RuntimeOrphanCleanupResult",
     required: ["deleted", "resource", "reason", "message"],
     properties: ["deleted", "resource", "reason", "message"],
+    enumProperties: [{ property: "reason", values: runtimeOrphanReasonValues }],
   },
   {
     schema: "ProjectUsage",

@@ -1266,6 +1266,59 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeOrphan.properties.reason.enum = [
+      "missing-sandbox-record",
+      "cleanup-pending",
+      "missing-template-record",
+      "unlabeled-owner",
+    ]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "RuntimeOrphan" &&
+        issue.property === "reason" &&
+        issue.enumValue === "runtime-ref-mismatch",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeOrphanCleanupRequest.properties.confirm.enum = ["delete-runtime-resource"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "RuntimeOrphanCleanupRequest" &&
+        issue.property === "confirm" &&
+        issue.enumValue === "delete-orphan-runtime-resource",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeOrphan.properties.status.enum = ["pending", "running", "failed", "deleted"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "RuntimeOrphan" &&
+        issue.property === "status" &&
+        issue.enumValue === "stopped",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.ProjectUpdate.properties.slug = { type: "string" }
     assertOpenAPIAlignment(broken)
   },
@@ -2089,6 +2142,29 @@ function schemaComponents() {
   schemas.Artifact.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]
   schemas.ArtifactCreate.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]
   schemas.ArtifactContent.properties.storageProvider.enum = ["postgres", "filesystem", "s3"]
+  schemas.RuntimeOrphan.properties.reason.enum = [
+    "missing-sandbox-record",
+    "cleanup-pending",
+    "runtime-ref-mismatch",
+    "missing-template-record",
+    "unlabeled-owner",
+  ]
+  schemas.RuntimeOrphan.properties.status.enum = ["pending", "running", "stopped", "failed", "deleted"]
+  schemas.RuntimeOrphanCleanupRequest.properties.reason.enum = [
+    "missing-sandbox-record",
+    "cleanup-pending",
+    "runtime-ref-mismatch",
+    "missing-template-record",
+    "unlabeled-owner",
+  ]
+  schemas.RuntimeOrphanCleanupRequest.properties.confirm.enum = ["delete-orphan-runtime-resource"]
+  schemas.RuntimeOrphanCleanupResult.properties.reason.enum = [
+    "missing-sandbox-record",
+    "cleanup-pending",
+    "runtime-ref-mismatch",
+    "missing-template-record",
+    "unlabeled-owner",
+  ]
   return schemas
 }
 
