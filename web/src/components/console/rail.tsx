@@ -1,6 +1,6 @@
 import { Boxes, FolderKanban, Layers3, ServerCog } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { APIStatus, WorkspaceView } from "@/types"
+import type { APIStatus, CallerInfo, WorkspaceView } from "@/types"
 
 const navItems: Array<{
   id: WorkspaceView
@@ -16,10 +16,12 @@ const navItems: Array<{
 export function Rail({
   activeView,
   apiState,
+  callerInfo,
   onViewChange,
 }: {
   activeView: WorkspaceView
   apiState: APIStatus
+  callerInfo: CallerInfo | null
   onViewChange: (view: WorkspaceView) => void
 }) {
   return (
@@ -61,6 +63,40 @@ export function Rail({
         />
         <span>{apiState.label}</span>
       </div>
+      <div className="rail-auth" aria-label="Caller boundary">
+        <span>Caller</span>
+        <strong>{callerLabel(callerInfo)}</strong>
+        <small>{callerTrustLabel(callerInfo)}</small>
+      </div>
     </aside>
   )
+}
+
+function callerLabel(callerInfo: CallerInfo | null) {
+  if (!callerInfo) {
+    return "Unknown"
+  }
+  if (callerInfo.mode === "trusted_header") {
+    return callerInfo.principal
+  }
+  if (callerInfo.mode === "shared_token") {
+    return "Shared token"
+  }
+  return "Anonymous"
+}
+
+function callerTrustLabel(callerInfo: CallerInfo | null) {
+  if (!callerInfo) {
+    return "No caller handshake"
+  }
+  if (callerInfo.rbacTrusted && callerInfo.projectRolesEnforced) {
+    return "Project RBAC enforced"
+  }
+  if (callerInfo.projectRolesEnforced) {
+    return "Enforced, caller untrusted"
+  }
+  if (callerInfo.rbacTrusted) {
+    return "Trusted preflight only"
+  }
+  return "RBAC not enforced"
 }

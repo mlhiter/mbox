@@ -77,6 +77,32 @@ func TestInfoUsesInfoRoute(t *testing.T) {
 	}
 }
 
+func TestAuthCallerUsesCallerRoute(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"authenticated":true,"authenticationRequired":true,"mode":"shared_token","principalType":"shared_token","principal":"shared-token","rbacTrusted":false,"projectRolesEnforced":false,"notes":["shared token"]}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "auth", "caller"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "caller"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(requests, ",") != "GET /v1/auth/caller,GET /v1/auth/caller" {
+		t.Fatalf("unexpected requests: %#v", requests)
+	}
+	if !strings.Contains(stdout.String(), `"mode": "shared_token"`) ||
+		!strings.Contains(stdout.String(), `"rbacTrusted": false`) {
+		t.Fatalf("expected caller JSON response, got %q", stdout.String())
+	}
+}
+
 func TestCompatSucceedsForCompatibleInfo(t *testing.T) {
 	var method string
 	var path string
@@ -365,6 +391,78 @@ func TestRuntimeResourcesSummaryPrintsSummaryOnly(t *testing.T) {
 	}
 }
 
+func TestRuntimeResourcesSummaryTablePrintsReadableSummary(t *testing.T) {
+	var method string
+	var uri string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		uri = r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"adapter":"agent-sandbox",
+			"summary":{
+				"total":2,
+				"byKind":[{"name":"SandboxClaim","count":1},{"name":"SandboxTemplate","count":1}],
+				"byNamespace":[{"name":"mbox-smoke","count":1}],
+				"byProject":[{"name":"project-1","count":1}],
+				"byOwner":[{"name":"project/project-1/sandbox/sandbox-1","count":1},{"name":"template/template-1","count":1}],
+				"workload":{
+					"observedResources":1,
+					"desiredPods":1,
+					"observedPods":1,
+					"runningPods":1,
+					"containersReady":1,
+					"containersTotal":1,
+					"restartCount":0,
+					"requests":{"cpu":"250m","memory":"512Mi"},
+					"limits":{"cpu":"500m"},
+					"storageCapacity":"2Gi",
+					"storage":[{"phase":"Bound","count":1,"capacity":"2Gi"}]
+				}
+			},
+			"items":[{"kind":"SandboxClaim","namespace":"mbox-smoke","name":"claim"}]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "runtime", "resources", "--summary-table", "--namespace", "mbox-smoke", "--project-id", "project-1", "--kind", "SandboxClaim"}); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || uri != "/v1/runtime/resources?kind=SandboxClaim&namespace=mbox-smoke&projectId=project-1" {
+		t.Fatalf("unexpected request %s %s", method, uri)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"RUNTIME RESOURCES SUMMARY",
+		"TOTAL\t2",
+		"BY KIND",
+		"SandboxClaim\t1",
+		"BY PROJECT",
+		"project-1\t1",
+		"WORKLOAD",
+		"observedResources\t1",
+		"requests\tcpu=250m memory=512Mi",
+		"storage\tBound=1(2Gi)",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in summary table output, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"items"`) || strings.Contains(output, `"summary"`) {
+		t.Fatalf("expected human-readable summary table without raw response JSON, got %q", output)
+	}
+}
+
+func TestRuntimeResourcesSummaryFlagsAreMutuallyExclusive(t *testing.T) {
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{"--api-url", "http://127.0.0.1:18080", "runtime", "resources", "--summary", "--summary-table"})
+	if err == nil || !strings.Contains(err.Error(), "only one of --summary or --summary-table") {
+		t.Fatalf("expected mutually exclusive summary flag error, got %v", err)
+	}
+}
+
 func TestRuntimeResourcesSummaryRequiresSummaryField(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -609,6 +707,7 @@ func TestAuditEventsUsesAuditEventsRoute(t *testing.T) {
 		"--source", "mbox-cli",
 		"--filter-request-id", "cli-request-1",
 		"--operation", "sandbox.launch",
+		"--reason", "active sandbox quota exceeded",
 		"--since", "2026-05-30T00:00:00Z",
 		"--until", "2026-05-30T01:00:00Z",
 		"--limit", "5",
@@ -616,7 +715,7 @@ func TestAuditEventsUsesAuditEventsRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if method != http.MethodGet || uri != "/v1/audit-events?action=sandbox.created&actor=alice&limit=5&operation=sandbox.launch&projectId=project-1&requestId=cli-request-1&resourceId=sandbox-1&resourceType=sandbox&since=2026-05-30T00%3A00%3A00Z&source=mbox-cli&until=2026-05-30T01%3A00%3A00Z" {
+	if method != http.MethodGet || uri != "/v1/audit-events?action=sandbox.created&actor=alice&limit=5&operation=sandbox.launch&projectId=project-1&reason=active+sandbox+quota+exceeded&requestId=cli-request-1&resourceId=sandbox-1&resourceType=sandbox&since=2026-05-30T00%3A00%3A00Z&source=mbox-cli&until=2026-05-30T01%3A00%3A00Z" {
 		t.Fatalf("unexpected request %s %s", method, uri)
 	}
 	if !strings.Contains(stdout.String(), `"sandbox.created"`) {
@@ -645,6 +744,7 @@ func TestProjectsAuditEventsUsesProjectAuditEventsRoute(t *testing.T) {
 		"--source", "sdk",
 		"--filter-request-id", "sdk-run-1",
 		"--operation", "artifact.content.upload",
+		"--reason", "retained artifact quota exceeded",
 		"--since", "2026-05-30T00:00:00Z",
 		"--until", "2026-05-30T01:00:00Z",
 		"--limit", "10",
@@ -652,7 +752,7 @@ func TestProjectsAuditEventsUsesProjectAuditEventsRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if method != http.MethodGet || uri != "/v1/projects/project-1/audit-events?action=artifact.content.uploaded&actor=agent-runner&limit=10&operation=artifact.content.upload&requestId=sdk-run-1&resourceType=artifact&since=2026-05-30T00%3A00%3A00Z&source=sdk&until=2026-05-30T01%3A00%3A00Z" {
+	if method != http.MethodGet || uri != "/v1/projects/project-1/audit-events?action=artifact.content.uploaded&actor=agent-runner&limit=10&operation=artifact.content.upload&reason=retained+artifact+quota+exceeded&requestId=sdk-run-1&resourceType=artifact&since=2026-05-30T00%3A00%3A00Z&source=sdk&until=2026-05-30T01%3A00%3A00Z" {
 		t.Fatalf("unexpected request %s %s", method, uri)
 	}
 }
@@ -703,6 +803,105 @@ func TestProjectsAddCredentialPostsExpectedPayload(t *testing.T) {
 	usage, ok := payload["usage"].([]any)
 	if !ok || len(usage) != 2 || usage[0] != "clone" || usage[1] != "fetch" {
 		t.Fatalf("unexpected usage: %#v", payload["usage"])
+	}
+}
+
+func TestProjectsAddMemberPostsExpectedPayload(t *testing.T) {
+	var method string
+	var path string
+	var payload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"member-1","projectId":"project-1","principal":"alice@example.com","role":"operator"}`))
+	}))
+	defer server.Close()
+
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"projects", "add-member", "project-1",
+		"--principal-type", "user",
+		"--principal", "alice@example.com",
+		"--role", "operator",
+		"--metadata", `{"source":"test"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodPost || path != "/v1/projects/project-1/members" {
+		t.Fatalf("unexpected request %s %s", method, path)
+	}
+	if payload["principalType"] != "user" || payload["principal"] != "alice@example.com" || payload["role"] != "operator" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	metadata, ok := payload["metadata"].(map[string]any)
+	if !ok || metadata["source"] != "test" {
+		t.Fatalf("unexpected metadata: %#v", payload["metadata"])
+	}
+}
+
+func TestProjectMembersListAndMemberGetDeleteUseMemberRoutes(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/projects/project-1/members" {
+			_, _ = w.Write([]byte(`{"items":[{"id":"member-1"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"member-1"}`))
+	}))
+	defer server.Close()
+
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "projects", "members", "project-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "members", "get", "member-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "members", "delete", "member-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(requests, ",") != "GET /v1/projects/project-1/members,GET /v1/members/member-1,DELETE /v1/members/member-1" {
+		t.Fatalf("unexpected requests: %#v", requests)
+	}
+}
+
+func TestProjectAuthorizationUsesPreflightRoute(t *testing.T) {
+	var method string
+	var path string
+	var action string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		action = r.URL.Query().Get("action")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"projectId":"project-1","action":"sandbox.launch","allowed":false,"enforced":false,"evaluation":"not_enforceable","requiredRoles":["owner","operator"],"caller":{"authenticated":false,"authenticationRequired":false,"mode":"anonymous","principalType":"anonymous","principal":"anonymous","rbacTrusted":false,"projectRolesEnforced":false,"notes":[]},"memberCount":0,"availableActions":["project.view","sandbox.launch"],"notes":["route-level project RBAC is not enforced yet"]}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "projects", "authorization", "project-1", "--action", "sandbox.launch"}); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || path != "/v1/projects/project-1/authorization" || action != "sandbox.launch" {
+		t.Fatalf("unexpected request %s %s?action=%s", method, path, action)
+	}
+	if !strings.Contains(stdout.String(), `"evaluation": "not_enforceable"`) ||
+		!strings.Contains(stdout.String(), `"requiredRoles": [`) {
+		t.Fatalf("expected authorization preflight JSON response, got %q", stdout.String())
 	}
 }
 

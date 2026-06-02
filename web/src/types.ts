@@ -24,12 +24,56 @@ export type APIInfo = {
     storageProvider: string
     maxBytes: number
   }
+  trustedPrincipalHeaders: {
+    enabled: boolean
+    principalHeader?: string
+    principalTypeHeader?: string
+  }
+  projectRbac: {
+    enforcementEnabled: boolean
+    enforcedActions: ProjectAuthorizationAction[]
+  }
   capabilities: string[]
   compatibility: {
     minimumCliApiVersion: string
     minimumSdkApiVersion: string
   }
   authenticationRequired: boolean
+}
+
+export type CallerInfo = {
+  authenticated: boolean
+  authenticationRequired: boolean
+  mode: "anonymous" | "shared_token" | "trusted_header"
+  principalType: "anonymous" | "shared_token" | ProjectMemberPrincipalType
+  principal: string
+  rbacTrusted: boolean
+  projectRolesEnforced: boolean
+  notes: string[]
+}
+
+export type ProjectAuthorizationAction =
+  | "project.view"
+  | "project.manage"
+  | "sandbox.launch"
+  | "runtime.operate"
+  | "artifact.write"
+  | "policy.manage"
+  | "credential.manage"
+  | "member.manage"
+
+export type ProjectAuthorizationDecision = {
+  projectId: string
+  action: ProjectAuthorizationAction
+  allowed: boolean
+  enforced: boolean
+  evaluation: "allowed" | "denied" | "not_enforceable"
+  requiredRoles: ProjectMemberRole[]
+  caller: CallerInfo
+  matchedMember?: ProjectMember
+  memberCount: number
+  availableActions: ProjectAuthorizationAction[]
+  notes: string[]
 }
 
 export type ResourceKind = "project" | "template" | "sandbox"
@@ -89,6 +133,7 @@ export type ManagedResourceSummary = {
   byKind: ManagedResourceCount[]
   byNamespace: ManagedResourceCount[]
   byOwner: ManagedResourceCount[]
+  byProject: ManagedResourceCount[]
   workload: ManagedWorkloadSummary
 }
 
@@ -278,6 +323,21 @@ export type ProjectCredential = {
   target?: string
   secretRef: { name: string; key?: string }
   usage?: string[]
+  metadata?: Record<string, unknown>
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type ProjectMemberPrincipalType = "user" | "service_account" | "automation"
+
+export type ProjectMemberRole = "owner" | "operator" | "viewer"
+
+export type ProjectMember = {
+  id: string
+  projectId: string
+  principalType: ProjectMemberPrincipalType
+  principal: string
+  role: ProjectMemberRole
   metadata?: Record<string, unknown>
   createdAt?: string
   updatedAt?: string

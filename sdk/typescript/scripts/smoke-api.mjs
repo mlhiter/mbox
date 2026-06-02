@@ -17,6 +17,7 @@ const client = createMboxClientFromEnv(process.env, {
 })
 
 let project
+let projectMember
 let template
 let sandbox
 
@@ -25,6 +26,34 @@ try {
 
   const info = await client.info()
   assert.equal(info.name, "mbox")
+  assert.ok(info.capabilities.includes("caller-info"))
+  assert.ok(info.capabilities.includes("trusted-principal-headers"))
+  assert.ok(info.capabilities.includes("project-authorization-preflight"))
+  assert.ok(info.capabilities.includes("project-rbac-enforcement"))
+  assert.equal(typeof info.trustedPrincipalHeaders.enabled, "boolean")
+  assert.equal(typeof info.projectRbac.enforcementEnabled, "boolean")
+  assert.ok(Array.isArray(info.projectRbac.enforcedActions))
+  if (info.projectRbac.enforcementEnabled) {
+    assert.equal(info.trustedPrincipalHeaders.enabled, true)
+    assert.ok(info.projectRbac.enforcedActions.includes("sandbox.launch"))
+    assert.ok(info.projectRbac.enforcedActions.includes("runtime.operate"))
+    assert.ok(info.projectRbac.enforcedActions.includes("artifact.write"))
+    assert.ok(info.projectRbac.enforcedActions.includes("policy.manage"))
+  } else {
+    assert.deepEqual(info.projectRbac.enforcedActions, [])
+  }
+  const rbacRequestOptions = info.projectRbac.enforcementEnabled
+    ? trustedPrincipalRequestOptions(info)
+    : undefined
+  const caller = await client.caller(rbacRequestOptions)
+  assert.equal(caller.authenticationRequired, info.authenticationRequired)
+  if (caller.mode === "trusted_header") {
+    assert.equal(caller.mode, "trusted_header")
+    assert.equal(caller.rbacTrusted, true)
+  } else {
+    assert.equal(caller.rbacTrusted, false)
+  }
+  assert.equal(caller.projectRolesEnforced, info.projectRbac.enforcementEnabled)
   await client.assertCompatibility({
     requiredCapabilities: ["sandboxes", "artifact-client-upload"],
   })
@@ -53,20 +82,129 @@ try {
   })
   assert.equal(template.projectId, project.id)
 
+  if (info.projectRbac.enforcementEnabled) {
+    const deniedAuthorization = await client.getProjectAuthorization(project.id, { action: "sandbox.launch" })
+    assert.equal(deniedAuthorization.enforced, true)
+    assert.equal(deniedAuthorization.allowed, false)
+    assert.equal(deniedAuthorization.evaluation, "denied")
+    assert.equal(deniedAuthorization.caller.rbacTrusted, false)
+    await expectLaunchDenied(() =>
+      client.createSandbox({
+        projectId: project.id,
+        templateId: template.id,
+        name: `${name}-denied-sandbox`,
+        slug: `${name}-denied-sandbox`,
+        metadata: { smoke: "sdk-live-api-denied" },
+      }),
+    )
+    projectMember = await client.createProjectMember(
+      project.id,
+      {
+        principalType: "automation",
+        principal: "sdk-smoke-bot",
+        role: "operator",
+        metadata: { smoke: "sdk-live-api-rbac" },
+      },
+      rbacRequestOptions,
+    )
+    assert.equal(projectMember.projectId, project.id)
+    assert.equal(projectMember.role, "operator")
+  }
+
   await client.getTemplate(template.id)
   const templates = await client.listTemplates(project.id)
   assert.ok((templates.items ?? []).some((item) => item.id === template.id))
 
-  sandbox = await client.createSandbox({
-    projectId: project.id,
-    templateId: template.id,
-    name: `${name}-sandbox`,
-    slug: `${name}-sandbox`,
-    metadata: { smoke: "sdk-live-api" },
-  })
+  sandbox = await client.createSandbox(
+    {
+      projectId: project.id,
+      templateId: template.id,
+      name: `${name}-sandbox`,
+      slug: `${name}-sandbox`,
+      metadata: { smoke: "sdk-live-api" },
+    },
+    rbacRequestOptions,
+  )
   assert.equal(sandbox.projectId, project.id)
   assert.equal(sandbox.templateId, template.id)
   assert.equal(sandbox.status, "pending")
+
+  const authorization = await client.getProjectAuthorization(project.id, {
+    action: "sandbox.launch",
+    ...rbacRequestOptions,
+  })
+  assert.equal(authorization.projectId, project.id)
+  assert.equal(authorization.action, "sandbox.launch")
+  assert.equal(authorization.enforced, info.projectRbac.enforcementEnabled)
+  assert.deepEqual(authorization.requiredRoles, ["owner", "operator"])
+  assert.equal(authorization.caller.projectRolesEnforced, info.projectRbac.enforcementEnabled)
+  if (info.projectRbac.enforcementEnabled) {
+    assert.equal(authorization.allowed, true)
+    assert.equal(authorization.evaluation, "allowed")
+    assert.equal(authorization.caller.rbacTrusted, true)
+    assert.equal(authorization.matchedMember?.id, projectMember.id)
+  } else if (authorization.caller.rbacTrusted) {
+    assert.ok(["allowed", "denied"].includes(authorization.evaluation))
+  } else {
+    assert.equal(authorization.allowed, false)
+    assert.equal(authorization.evaluation, "not_enforceable")
+    assert.equal(authorization.caller.rbacTrusted, false)
+  }
+
+  const artifactAuthorization = await client.getProjectAuthorization(project.id, {
+    action: "artifact.write",
+    ...rbacRequestOptions,
+  })
+  assert.equal(artifactAuthorization.projectId, project.id)
+  assert.equal(artifactAuthorization.action, "artifact.write")
+  assert.equal(artifactAuthorization.enforced, info.projectRbac.enforcementEnabled)
+  assert.deepEqual(artifactAuthorization.requiredRoles, ["owner", "operator"])
+  if (info.projectRbac.enforcementEnabled) {
+    assert.equal(artifactAuthorization.allowed, true)
+    assert.equal(artifactAuthorization.evaluation, "allowed")
+    assert.equal(artifactAuthorization.matchedMember?.id, projectMember.id)
+  }
+
+  const runtimeAuthorization = await client.getProjectAuthorization(project.id, {
+    action: "runtime.operate",
+    ...rbacRequestOptions,
+  })
+  assert.equal(runtimeAuthorization.projectId, project.id)
+  assert.equal(runtimeAuthorization.action, "runtime.operate")
+  assert.equal(runtimeAuthorization.enforced, info.projectRbac.enforcementEnabled)
+  assert.deepEqual(runtimeAuthorization.requiredRoles, ["owner", "operator"])
+  if (info.projectRbac.enforcementEnabled) {
+    assert.equal(runtimeAuthorization.allowed, true)
+    assert.equal(runtimeAuthorization.evaluation, "allowed")
+    assert.equal(runtimeAuthorization.matchedMember?.id, projectMember.id)
+  }
+
+  const policyAuthorization = await client.getProjectAuthorization(project.id, {
+    action: "policy.manage",
+    ...rbacRequestOptions,
+  })
+  assert.equal(policyAuthorization.projectId, project.id)
+  assert.equal(policyAuthorization.action, "policy.manage")
+  assert.equal(policyAuthorization.enforced, info.projectRbac.enforcementEnabled)
+  assert.deepEqual(policyAuthorization.requiredRoles, ["owner"])
+  if (info.projectRbac.enforcementEnabled) {
+    assert.equal(policyAuthorization.allowed, false)
+    assert.equal(policyAuthorization.evaluation, "denied")
+    assert.equal(policyAuthorization.matchedMember?.id, projectMember.id)
+    await expectForbidden(
+      () => client.setProjectPolicy(project.id, { enforcement: "enforced", allowedImagePrefixes: ["busybox:"] }, rbacRequestOptions),
+      "expected operator policy update to be denied",
+    )
+    await expectForbidden(
+      () => client.setProjectQuotaPolicy(project.id, { enforcement: "enforced", maxActiveSandboxes: 3 }, rbacRequestOptions),
+      "expected operator quota policy update to be denied",
+    )
+  } else {
+    const updatedPolicy = await client.setProjectPolicy(project.id, { enforcement: "enforced", allowedImagePrefixes: ["busybox:"] }, rbacRequestOptions)
+    assert.equal(updatedPolicy.enforcement, "enforced")
+    const updatedQuotaPolicy = await client.setProjectQuotaPolicy(project.id, { enforcement: "enforced", maxActiveSandboxes: 3 }, rbacRequestOptions)
+    assert.equal(updatedQuotaPolicy.enforcement, "enforced")
+  }
 
   const projectUsage = await client.getProjectUsage(project.id)
   assert.equal(projectUsage.sandboxes.active, 1)
@@ -77,36 +215,89 @@ try {
   assert.equal(sandboxBoundary.sandboxId, sandbox.id)
   assert.equal(sandboxBoundary.serviceAccountTokenAutomount, false)
 
-  const session = await client.createRuntimeSession(sandbox.id, {
-    type: "custom",
-    client: "sdk-smoke",
-    metadata: { purpose: "live-api-smoke" },
-  })
+  if (info.projectRbac.enforcementEnabled) {
+    const deniedRuntimeAuthorization = await client.getProjectAuthorization(project.id, { action: "runtime.operate" })
+    assert.equal(deniedRuntimeAuthorization.enforced, true)
+    assert.equal(deniedRuntimeAuthorization.allowed, false)
+    assert.equal(deniedRuntimeAuthorization.evaluation, "denied")
+    await expectForbidden(() =>
+      client.createRuntimeSession(sandbox.id, {
+        type: "custom",
+        client: "sdk-smoke-denied",
+        metadata: { purpose: "sdk-live-api-denied-runtime" },
+      }),
+      "expected runtime operation to be denied",
+    )
+  }
+
+  const session = await client.createRuntimeSession(
+    sandbox.id,
+    {
+      type: "custom",
+      client: "sdk-smoke",
+      metadata: { purpose: "live-api-smoke" },
+    },
+    rbacRequestOptions,
+  )
   assert.equal(session.status, "active")
 
   const sessions = await client.listRuntimeSessions(sandbox.id)
   assert.ok((sessions.items ?? []).some((item) => item.id === session.id))
 
-  const endedSession = await client.endRuntimeSession(session.id)
+  const endedSession = await client.endRuntimeSession(session.id, rbacRequestOptions)
   assert.equal(endedSession.status, "ended")
   assert.ok(endedSession.endedAt)
 
-  const artifact = await client.createArtifact(sandbox.id, {
-    kind: "report",
-    name: "sdk-smoke-report.txt",
-    uri: "client://sdk-smoke/report.txt",
-    contentType: "text/plain",
-    metadata: { source: "sdk-live-api-smoke" },
-  })
+  if (info.projectRbac.enforcementEnabled) {
+    const deniedArtifactAuthorization = await client.getProjectAuthorization(project.id, { action: "artifact.write" })
+    assert.equal(deniedArtifactAuthorization.enforced, true)
+    assert.equal(deniedArtifactAuthorization.allowed, false)
+    assert.equal(deniedArtifactAuthorization.evaluation, "denied")
+    await expectForbidden(() =>
+      client.createArtifact(sandbox.id, {
+        kind: "report",
+        name: "sdk-smoke-denied-report.txt",
+        uri: "client://sdk-smoke/denied-report.txt",
+        contentType: "text/plain",
+        metadata: { source: "sdk-live-api-denied-artifact" },
+      }),
+      "expected artifact write to be denied",
+    )
+  }
+
+  const artifact = await client.createArtifact(
+    sandbox.id,
+    {
+      kind: "report",
+      name: "sdk-smoke-report.txt",
+      uri: "client://sdk-smoke/report.txt",
+      contentType: "text/plain",
+      metadata: { source: "sdk-live-api-smoke" },
+    },
+    rbacRequestOptions,
+  )
   assert.equal(artifact.kind, "report")
 
+  if (info.projectRbac.enforcementEnabled) {
+    await expectForbidden(
+      () => client.uploadArtifactContent(artifact.id, new Blob(["denied"], { type: "text/plain" })),
+      "expected artifact content upload to be denied",
+    )
+  }
+
   const reportBody = `sdk-smoke-ok:${suffix}`
-  const uploaded = await client.uploadArtifactContent(artifact.id, new Blob([reportBody], { type: "text/plain" }), {
-    headers: {
-      "content-type": "text/plain",
-      "x-mbox-artifact-source-uri": "client://sdk-smoke/report.txt",
+  const uploaded = await client.uploadArtifactContent(
+    artifact.id,
+    new Blob([reportBody], { type: "text/plain" }),
+    {
+      ...rbacRequestOptions,
+      headers: {
+        ...rbacRequestOptions?.headers,
+        "content-type": "text/plain",
+        "x-mbox-artifact-source-uri": "client://sdk-smoke/report.txt",
+      },
     },
-  })
+  )
   assert.equal(uploaded.retainedContent?.sizeBytes, reportBody.length)
   assert.equal(uploaded.retainedContent?.storageProvider, info.artifactContent.storageProvider)
 
@@ -157,6 +348,10 @@ async function cleanup() {
     await ignoreNotFound(() => client.deleteSandbox(sandbox.id))
     sandbox = undefined
   }
+  if (projectMember) {
+    await ignoreNotFound(() => client.deleteProjectMember(projectMember.id))
+    projectMember = undefined
+  }
   if (project) {
     await ignoreNotFound(() => client.deleteProject(project.id))
     project = undefined
@@ -173,6 +368,33 @@ async function ignoreNotFound(action) {
     }
     throw error
   }
+}
+
+function trustedPrincipalRequestOptions(info) {
+  const principalHeader = info.trustedPrincipalHeaders.principalHeader ?? "X-Mbox-Principal"
+  const principalTypeHeader = info.trustedPrincipalHeaders.principalTypeHeader ?? "X-Mbox-Principal-Type"
+  return {
+    headers: {
+      [principalTypeHeader]: "automation",
+      [principalHeader]: "sdk-smoke-bot",
+    },
+  }
+}
+
+async function expectLaunchDenied(action) {
+  await expectForbidden(action, "expected sandbox launch to be denied")
+}
+
+async function expectForbidden(action, message) {
+  try {
+    await action()
+  } catch (error) {
+    if (error instanceof MboxAPIError && error.status === 403) {
+      return
+    }
+    throw error
+  }
+  throw new Error(message)
 }
 
 function timestampSuffix() {

@@ -4,13 +4,16 @@ import type {
   AuditEvent,
   APIInfo,
   BoundarySummary,
+  CallerInfo,
   ExecutionTask,
   ExecutionTaskEvent,
   ListResponse,
   LogResult,
   PreviewPortsResult,
   Project,
+  ProjectAuthorizationDecision,
   ProjectCredential,
+  ProjectMember,
   ProjectPolicy,
   ProjectQuotaPolicy,
   ProjectUsage,
@@ -71,15 +74,22 @@ export function getInfo() {
   return request<APIInfo>("/v1/info")
 }
 
+export function getCaller() {
+  return request<CallerInfo>("/v1/auth/caller")
+}
+
 export function getRuntimeOrphans(namespace?: string) {
   const query = namespace ? `?namespace=${encodeURIComponent(namespace)}` : ""
   return request<RuntimeOrphanAudit>(`/v1/runtime/orphans${query}`)
 }
 
-export function getRuntimeResources(options: { namespace?: string; kind?: string } = {}) {
+export function getRuntimeResources(options: { namespace?: string; projectId?: string; kind?: string } = {}) {
   const query = new URLSearchParams()
   if (options.namespace?.trim()) {
     query.set("namespace", options.namespace.trim())
+  }
+  if (options.projectId?.trim()) {
+    query.set("projectId", options.projectId.trim())
   }
   if (options.kind?.trim()) {
     query.set("kind", options.kind.trim())
@@ -111,8 +121,17 @@ export function listProjectCredentials(projectID: string) {
   return request<ListResponse<ProjectCredential>>(`/v1/projects/${projectID}/credentials`)
 }
 
+export function listProjectMembers(projectID: string) {
+  return request<ListResponse<ProjectMember>>(`/v1/projects/${projectID}/members`)
+}
+
 export function getProjectUsage(projectID: string) {
   return request<ProjectUsage>(`/v1/projects/${projectID}/usage`)
+}
+
+export function getProjectAuthorization(projectID: string, action = "sandbox.launch") {
+  const query = new URLSearchParams({ action })
+  return request<ProjectAuthorizationDecision>(`/v1/projects/${projectID}/authorization?${query.toString()}`)
 }
 
 export type AuditEventListOptions = {
@@ -124,6 +143,7 @@ export type AuditEventListOptions = {
   resourceId?: string
   requestId?: string
   operation?: string
+  reason?: string
   since?: string
   until?: string
 }
@@ -151,6 +171,9 @@ export function listProjectAuditEvents(projectID: string, options: AuditEventLis
   }
   if (options.operation?.trim()) {
     query.set("operation", options.operation.trim())
+  }
+  if (options.reason?.trim()) {
+    query.set("reason", options.reason.trim())
   }
   if (options.since?.trim()) {
     query.set("since", options.since.trim())

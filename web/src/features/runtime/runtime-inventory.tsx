@@ -13,6 +13,7 @@ import { EmptyRow, SkeletonRows } from "@/components/console/table-state"
 import type {
   ManagedResource,
   ManagedResourceOwner,
+  Project,
   RuntimeResourceList,
 } from "@/types"
 
@@ -27,11 +28,17 @@ export function RuntimeInventory({
   error,
   inventory,
   loading,
+  projects,
+  selectedProjectId,
+  onProjectChange,
   onRefresh,
 }: {
   error: string | null
   inventory: RuntimeResourceList | null
   loading: boolean
+  projects: Project[]
+  selectedProjectId: string
+  onProjectChange: (projectId: string) => void
   onRefresh: () => Promise<RuntimeResourceList>
 }) {
   const items = inventory?.items || []
@@ -39,6 +46,10 @@ export function RuntimeInventory({
   const workload = summary?.workload
   const checkedAt = inventory?.checkedAt ? formatTimestamp(inventory.checkedAt) : "Not checked"
   const adapter = inventory?.adapter || "runtime auditor"
+  const projectRollup = projectRollupLabel(summary?.byProject, projects)
+  const selectedProject = selectedProjectId ? projects.find((project) => project.id === selectedProjectId) : undefined
+  const scopeValue = selectedProjectId ? selectedProject?.name || "Unknown project" : "All projects"
+  const scopeDetail = selectedProjectId ? `project/${shortID(selectedProjectId)}` : "all owner labels"
   return (
     <ConsolePanel
       id="runtime"
@@ -52,8 +63,29 @@ export function RuntimeInventory({
         </Button>
       }
     >
+      <div className="runtime-inventory-filters" aria-label="Runtime inventory filters">
+        <div>
+          <label htmlFor="runtime-project-filter">Project</label>
+          <select
+            id="runtime-project-filter"
+            value={selectedProjectId}
+            onChange={(event) => onProjectChange(event.target.value)}
+            disabled={loading}
+          >
+            <option value="">All projects</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <span>{items.length} matched resources</span>
+      </div>
       <div className="runtime-inventory-summary" aria-label="Runtime inventory summary">
         <SummaryCell label="Managed" value={String(summary?.total ?? 0)} detail="runtime resources" />
+        <SummaryCell label="Scope" value={scopeValue} detail={scopeDetail} />
+        <SummaryCell label="Projects" value={projectRollup.value} detail={projectRollup.detail} />
         <SummaryCell label="Adapter" value={adapter} detail="auditor source" mono />
         <SummaryCell label="Pods" value={podSummaryValue(workload)} detail={podSummaryDetail(workload)} />
         <SummaryCell label="Requests" value={requestSummaryValue(workload)} detail={storageSummaryDetail(workload)} mono />
@@ -76,7 +108,7 @@ export function RuntimeInventory({
           ) : error ? (
             <EmptyRow columns={6} title="Runtime inventory unavailable" detail={error} />
           ) : items.length === 0 ? (
-            <EmptyRow columns={6} title="No managed runtime resources" detail="The auditor did not report mbox-managed Kubernetes resources." />
+            <EmptyRow columns={6} title="No managed runtime resources" detail={selectedProjectId ? "No mbox-managed Kubernetes resources matched this project owner label." : "The auditor did not report mbox-managed Kubernetes resources."} />
           ) : (
             items.map((resource) => (
               <TableRow key={`${resource.adapter}:${resource.kind}:${resource.namespace}:${resource.name}`}>
@@ -225,6 +257,23 @@ function ownerLabel(owner?: ManagedResourceOwner) {
     }
   }
   return { primary: "Unknown", detail: "" }
+}
+
+function projectRollupLabel(
+  byProject: Array<{ name: string; count: number }> | undefined,
+  projects: Project[],
+) {
+  const items = byProject || []
+  if (items.length === 0) {
+    return { value: "0", detail: "labeled projects" }
+  }
+  const total = items.reduce((sum, item) => sum + item.count, 0)
+  const [top] = items
+  const project = projects.find((item) => item.id === top.name)
+  return {
+    value: `${items.length}`,
+    detail: `${total} resources · top ${project?.name || shortID(top.name)} (${top.count})`,
+  }
 }
 
 function shortID(value: string) {

@@ -7,7 +7,9 @@ import {
   createTemplateValidationRun,
   decideTemplateValidationRun as decideTemplateValidationRunRequest,
   deleteSandbox as deleteSandboxRequest,
+  getCaller,
   getHealth,
+  getProjectAuthorization,
   getProjectPolicy,
   getProjectQuotaPolicy,
   getProjectUsage,
@@ -15,6 +17,7 @@ import {
   getSandbox,
   listProjectAuditEvents,
   listProjectCredentials,
+  listProjectMembers,
   listProjects,
   listSandboxes,
   listTemplates,
@@ -32,9 +35,12 @@ import {
 import type {
   APIStatus,
   AuditEvent,
+  CallerInfo,
   FormRecord,
   Project,
+  ProjectAuthorizationDecision,
   ProjectCredential,
+  ProjectMember,
   ProjectPolicy,
   ProjectQuotaPolicy,
   ProjectUsage,
@@ -49,15 +55,24 @@ const initialAPIStatus: APIStatus = {
   label: "Checking API",
 }
 
+type RuntimeResourceFilters = {
+  namespace?: string
+  projectId?: string
+  kind?: string
+}
+
 export function useMboxData() {
   const [projects, setProjects] = useState<Project[]>([])
   const [projectPolicies, setProjectPolicies] = useState<Record<string, ProjectPolicy>>({})
+  const [projectAuthorizations, setProjectAuthorizations] = useState<Record<string, ProjectAuthorizationDecision[]>>({})
   const [projectQuotaPolicies, setProjectQuotaPolicies] = useState<Record<string, ProjectQuotaPolicy>>({})
   const [projectCredentials, setProjectCredentials] = useState<Record<string, ProjectCredential[]>>({})
+  const [projectMembers, setProjectMembers] = useState<Record<string, ProjectMember[]>>({})
   const [projectUsage, setProjectUsage] = useState<Record<string, ProjectUsage>>({})
   const [projectAuditEvents, setProjectAuditEvents] = useState<Record<string, AuditEvent[]>>({})
   const [runtimeResources, setRuntimeResources] = useState<RuntimeResourceList | null>(null)
   const [runtimeResourcesError, setRuntimeResourcesError] = useState<string | null>(null)
+  const [callerInfo, setCallerInfo] = useState<CallerInfo | null>(null)
   const [templates, setTemplates] = useState<Template[]>([])
   const [sandboxes, setSandboxes] = useState<Sandbox[]>([])
   const [selection, setSelection] = useState<Selection | null>(null)
@@ -82,17 +97,19 @@ export function useMboxData() {
     return sandboxes.find((sandbox) => sandbox.id === selection.id) || null
   }, [sandboxes, selection])
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (runtimeFilters: RuntimeResourceFilters = {}) => {
     setLoading(true)
     setError(null)
     setAPIState(initialAPIStatus)
     try {
-      const [health, projectList, templateList, sandboxList] = await Promise.all([
+      const [health, caller, projectList, templateList, sandboxList] = await Promise.all([
         getHealth(),
+        getCaller(),
         listProjects(),
         listTemplates(),
         listSandboxes(),
       ])
+      setCallerInfo(caller)
       const nextProjects = projectList.items || []
       setProjects(nextProjects)
       setTemplates(templateList.items || [])
@@ -110,6 +127,27 @@ export function useMboxData() {
         }),
       )
       setProjectPolicies(Object.fromEntries(policies.map((policy) => [policy.projectId, policy])))
+      const authorizations = await Promise.all(
+        nextProjects.map(async (project) => {
+          try {
+            const decisions: ProjectAuthorizationDecision[] = await Promise.all([
+              getProjectAuthorization(project.id, "sandbox.launch"),
+              getProjectAuthorization(project.id, "runtime.operate"),
+              getProjectAuthorization(project.id, "artifact.write"),
+              getProjectAuthorization(project.id, "policy.manage"),
+              getProjectAuthorization(project.id, "credential.manage"),
+            ])
+            return [project.id, decisions] as const
+          } catch {
+            return [project.id, undefined] as const
+          }
+        }),
+      )
+      setProjectAuthorizations(
+        Object.fromEntries(
+          authorizations.filter((entry): entry is readonly [string, ProjectAuthorizationDecision[]] => Boolean(entry[1])),
+        ),
+      )
       const quotaPolicies = await Promise.all(
         nextProjects.map(async (project) => {
           try {
@@ -134,6 +172,17 @@ export function useMboxData() {
         }),
       )
       setProjectCredentials(Object.fromEntries(credentials))
+      const members = await Promise.all(
+        nextProjects.map(async (project) => {
+          try {
+            const result = await listProjectMembers(project.id)
+            return [project.id, result.items || []] as const
+          } catch {
+            return [project.id, []] as const
+          }
+        }),
+      )
+      setProjectMembers(Object.fromEntries(members))
       const usage = await Promise.all(
         nextProjects.map(async (project) => {
           try {
@@ -156,7 +205,7 @@ export function useMboxData() {
       )
       setProjectAuditEvents(Object.fromEntries(auditEvents))
       try {
-        const inventory = await getRuntimeResources()
+        const inventory = await getRuntimeResources(runtimeFilters)
         setRuntimeResources(inventory)
         setRuntimeResourcesError(null)
       } catch (runtimeError) {
@@ -171,6 +220,8 @@ export function useMboxData() {
     } catch (requestError) {
       const message = requestError instanceof Error ? requestError.message : "Request failed"
       setError(message)
+      setCallerInfo(null)
+      setProjectAuthorizations({})
       setAPIState({ state: "bad", label: "API unavailable" })
       toast.error(message)
     } finally {
@@ -358,6 +409,7 @@ export function useMboxData() {
         source?: string
         requestId?: string
         operation?: string
+        reason?: string
         since?: string
         until?: string
       } = {},
@@ -369,6 +421,7 @@ export function useMboxData() {
         source: filters.source,
         requestId: filters.requestId,
         operation: filters.operation,
+        reason: filters.reason,
         since: filters.since,
         until: filters.until,
       })
@@ -379,9 +432,9 @@ export function useMboxData() {
     [],
   )
 
-  const refreshRuntimeResources = useCallback(async () => {
+  const refreshRuntimeResources = useCallback(async (filters: RuntimeResourceFilters = {}) => {
     try {
-      const inventory = await getRuntimeResources()
+      const inventory = await getRuntimeResources(filters)
       setRuntimeResources(inventory)
       setRuntimeResourcesError(null)
       return inventory
@@ -395,6 +448,7 @@ export function useMboxData() {
 
   return {
     apiState,
+    callerInfo,
     counts,
     createProject,
     createSandbox,
@@ -407,6 +461,8 @@ export function useMboxData() {
     projectPolicies,
     projectQuotaPolicies,
     projectCredentials,
+    projectAuthorizations,
+    projectMembers,
     projectAuditEvents,
     projectUsage,
     projects,

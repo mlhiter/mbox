@@ -290,7 +290,12 @@ api_json GET /v1/info | jq -e \
 	.runtimeAccess.enabled == true and
 	.runtimeAccess.adapter == "agent-sandbox" and
 	.artifactContent.storageProvider == $backend and
+	.trustedPrincipalHeaders.enabled == false and
+	.projectRbac.enforcementEnabled == false and
 	(.capabilities | index("openapi")) and
+	(.capabilities | index("caller-info")) and
+	(.capabilities | index("trusted-principal-headers")) and
+	(.capabilities | index("project-rbac-enforcement")) and
 	(.capabilities | index("project-usage")) and
 	(.capabilities | index("project-quota-policies")) and
 	(.capabilities | index("execution-tasks")) and
@@ -609,6 +614,8 @@ echo "Checking mbox TypeScript SDK runtime path"
 	cd sdk/typescript
 	MBOX_API_URL="$API_URL" \
 		MBOX_SDK_RUNTIME_SANDBOX_ID="$sandbox_id" \
+		MBOX_SDK_RUNTIME_TEMPLATE_ID="$template_id" \
+		MBOX_SDK_RUNTIME_PROJECT_ID="$project_id" \
 		MBOX_EXPECTED_ARTIFACT_CONTENT_BACKEND="$EXPECTED_ARTIFACT_CONTENT_BACKEND" \
 		MBOX_SMOKE_TIMEOUT_SECONDS="$TIMEOUT_SECONDS" \
 		npm run smoke:runtime

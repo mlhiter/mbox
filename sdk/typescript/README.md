@@ -24,6 +24,12 @@ const envMbox = createMboxClientFromEnv()
 const info = await mbox.info()
 console.log(info.apiVersion, info.capabilities)
 
+const caller = await mbox.caller()
+console.log(caller.mode, caller.rbacTrusted, caller.projectRolesEnforced)
+
+const authorization = await mbox.getProjectAuthorization("project-id", { action: "sandbox.launch" })
+console.log(authorization.evaluation, authorization.requiredRoles)
+
 await mbox.assertCompatibility({
   requiredCapabilities: ["sandboxes", "execution-tasks", "task-events", "artifact-client-upload"],
 })
@@ -66,9 +72,19 @@ const sandbox = await mbox.getSandbox("sandbox-id")
 const usage = await mbox.getProjectUsage(sandbox.projectId)
 console.log(usage.sandboxes.running, usage.executionTasks.total, usage.artifacts.retainedBytes)
 
+const member = await mbox.createProjectMember(sandbox.projectId, {
+  principalType: "automation",
+  principal: "agent-runner",
+  role: "operator",
+})
+console.log((await mbox.listProjectMembers(sandbox.projectId)).items.length, member.role)
+const launchAuthorization = await mbox.getProjectAuthorization(sandbox.projectId, { action: "sandbox.launch" })
+console.log(launchAuthorization.evaluation, launchAuthorization.caller.rbacTrusted)
+
 const events = await mbox.listProjectAuditEvents(sandbox.projectId, {
   action: "policy.denied",
   operation: "sandbox.launch",
+  reason: "active sandbox quota exceeded",
   actor: "agent-runner",
   source: "sdk",
   requestId: process.env.MBOX_REQUEST_ID,
@@ -118,6 +134,20 @@ await mbox.decideTemplateValidationRun("template-id", validation.sandbox.id, {
   status: "passed",
 })
 
+const validationResult = await mbox.runTemplateValidation("template-id", {
+  projectId: sandbox.projectId,
+  validationMetadata: { caller: "agent-runner" },
+  task: {
+    command: ["sh", "-lc", "pwd && echo template-ok"],
+    timeoutSeconds: 60,
+    metadata: { caller: "agent-runner" },
+  },
+  intervalMs: 1500,
+  timeoutMs: 300_000,
+  requireSuccess: true,
+})
+console.log(validationResult.status, validationResult.task?.status)
+
 const session = await mbox.createRuntimeSession(sandbox.id, {
   type: "custom",
   client: "agent-runner",
@@ -163,8 +193,10 @@ await mbox.uploadArtifactContent("artifact-id", new Blob(["client report"], { ty
 await mbox.endRuntimeSession(session.id)
 ```
 
-Boundary summaries expose namespace, ServiceAccount, token automount, secret reference projection, project credential-reference projection, network policy projection, lifecycle policy projection, launch policy state, runtime access paths, and cleanup behavior. Project usage summarizes mbox product records for sandboxes, sessions, tasks, artifacts, templates, and credential references; active/running sandbox request totals are summed from saved template request strings and are not live Kubernetes metrics. Project quota policy currently gates active sandbox creation and retained artifact-byte capture/upload from product records; it is not billing, reservation, or live cluster capacity management. Product audit events list recent successful API mutations for operator visibility, but they are not yet a strong transactional audit log or auth identity model. `policy.denied` events expose typed metadata for the current denial operations: `sandbox.launch`, `template.validation`, `artifact.content.capture`, and `artifact.content.upload`. Project launch policy currently gates sandbox launches by image prefix, ServiceAccount name, and template secret reference names; lifecycle `ttlSeconds` is enforced by the reconciler; project credential records store only Kubernetes Secret references and metadata. Runtime resource inventory lists mbox-managed runtime resources as reported by the runtime auditor and includes a live summary by kind, namespace, label-derived owner, and best-effort SandboxClaim Pod/PVC observation for operator triage; inventory and orphan audit helpers can be scoped by namespace, runtime owner project label, kind, or a combination of those filters. Summary workload fields roll up observed Pods, container readiness, restarts, requests, limits, and storage capacity for the filtered inventory. Observation fields expose current Pod phase, readiness, restart count, summed requests/limits, and PVC state. Neither layer is metrics-server utilization, quota, billing, or capacity reservation. Runtime orphan audit compares that inventory with product records, and cleanup deletes only one currently reported orphan after the caller supplies the matching reason and confirmation string. This slice does not mount credentials, replace full RBAC, or add automatic orphan cleanup.
+Boundary summaries expose namespace, ServiceAccount, token automount, secret reference projection, project credential-reference projection, network policy projection, lifecycle policy projection, launch policy state, runtime access paths, and cleanup behavior. Project usage summarizes mbox product records for sandboxes, sessions, tasks, artifacts, templates, and credential references; active/running sandbox request totals are summed from saved template request strings and are not live Kubernetes metrics. Project quota policy currently gates active sandbox creation and retained artifact-byte capture/upload from product records; it is not billing, reservation, or live cluster capacity management. `caller()` reports the current caller/auth boundary as anonymous, shared-token, or explicitly enabled `trusted_header` mode. Trusted-header callers can set `rbacTrusted=true` for preflight matching and explicitly enabled project RBAC actions; `projectRolesEnforced=true` currently means only the starter `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage` gates are active. `getProjectAuthorization(projectId, { action })` maps project actions to required roles and explains the current caller/member state; anonymous/shared-token callers are untrusted when enforcement is active, while trusted-header callers can return allowed or denied decisions. Project member helpers manage `user`, `service_account`, and `automation` principal role records; with trusted headers and project RBAC enforcement explicitly enabled, owner/operator members can authorize sandbox creation, template validation launches, active runtime operations, and artifact writes, while owner members can update project launch/quota policies and create/delete project credential-reference records. Product audit events list recent successful API mutations for operator visibility, but they are not yet a strong transactional audit log or auth identity model. `policy.denied` events expose typed metadata for the current denial operations including `sandbox.launch`, `template.validation`, `project.policy.update`, `project.quota_policy.update`, `project.credential.create`, `project.credential.delete`, runtime operations, execution task operations, `artifact.write`, `artifact.content.workspace.read`, `artifact.content.capture`, and `artifact.content.upload`, including starter RBAC denial fields when applicable. Project launch policy currently gates sandbox launches by image prefix, ServiceAccount name, and template secret reference names; lifecycle `ttlSeconds` is enforced by the reconciler; project credential records store only Kubernetes Secret references and metadata. Credential list/get routes remain read visibility and do not expose secret values. Runtime resource inventory lists mbox-managed runtime resources as reported by the runtime auditor and includes a live summary by kind, namespace, label-derived owner, label-derived project, and best-effort SandboxClaim Pod/PVC observation for operator triage; inventory and orphan audit helpers can be scoped by namespace, runtime owner project label, kind, or a combination of those filters. Summary workload fields roll up observed Pods, container readiness, restarts, requests, limits, and storage capacity for the filtered inventory. `summary.byProject` is computed after the same filters and only counts resources with runtime owner project labels. Observation fields expose current Pod phase, readiness, restart count, summed requests/limits, and PVC state. Neither layer is metrics-server utilization, quota, billing, RBAC, or capacity reservation. Runtime orphan audit compares that inventory with product records, and cleanup deletes only one currently reported orphan after the caller supplies the matching reason and confirmation string. This slice does not mount credentials, replace full RBAC, or add automatic orphan cleanup.
 
+`runTemplateValidation(templateId, options)` is an SDK convenience over existing routes, not a server-side workflow or CI engine. It calls `createTemplateValidationRun()`, waits for the validation sandbox to reach `running` with a `runtimeRef`, creates one execution task from `task.command`, waits for its terminal task record, then writes a template validation decision as `passed` only when the task succeeds. Put validation-run metadata in `validationMetadata` and task metadata in `task.metadata`; use `timeoutMs` and `intervalMs` for SDK-side polling and `task.timeoutSeconds` for the server-side task runtime limit. The result contains `validation`, `sandbox`, optional `task`, `decision`, `decisionStatus`, and `status`. If sandbox readiness or task execution fails, the helper best-effort records a failed decision and throws `MboxTemplateValidationRunError` with the partial result on `error.result`. If the task reaches an unsuccessful terminal status, `requireSuccess: true` makes the helper throw after recording the failed decision; without it, the failed result is returned for caller-controlled handling.
+Audit list helpers accept `reason` as a `metadata.reason` filter alongside `requestId`, `operation`, `since`, and `until`, mainly for narrowing `policy.denied` events during operator investigation.
 Task commands are array-form commands. Use an explicit shell such as `["sh", "-lc", "..."]` when shell parsing is required. By default, `waitForTask()` returns any terminal task status; pass `requireSuccess: true` to throw `MboxTaskStatusError` for `failed`, `canceled`, or `timed_out` while keeping the final task on `error.task`.
 Task watch streams newline-delimited JSON events from the API and resolves after the terminal `done` event. Workspace artifact content reads require a running sandbox and a `workspace://` file reference unless the artifact has retained content. `captureArtifactContent` retains small workspace-file bytes server-side, while `uploadArtifactContent` stores client-provided bytes through the same retained-content backend. Both paths return size, sha256, source URI, and storage-provider metadata.
 Use `waitForSandbox(sandbox.id, { status: "running", requireRuntimeRef: true })` before calling runtime routes from scripts that just launched or started a sandbox. It polls the product sandbox record, returns the final sandbox on success, throws `MboxSandboxStatusError` if the sandbox reaches `failed` or `deleted` while waiting for another status, and throws `MboxSandboxRuntimeRefError` if the requested status is reached but `runtimeRef` is still absent when the wait times out.
@@ -240,6 +272,6 @@ Use this when SDK wrappers or public routes change:
 npm run check:openapi -- http://127.0.0.1:18080
 ```
 
-The command fetches `/v1/openapi.json` from the API base URL and verifies every route-backed SDK helper in `SDK_ROUTE_CONTRACT` has a matching OpenAPI path, method, SDK-used query parameter declarations, route auth metadata, focused request body shape, and focused response shape. Auth checks cover the bearer security scheme, explicit public operations, private bearer operations, and `401` responses. Request checks cover JSON schema refs and binary upload media types. Response checks cover direct schema refs, list item refs, NDJSON task-event streams, binary responses, and no-content delete routes. It also checks the starter `SDK_SCHEMA_CONTRACT` for required fields and properties that the SDK types already rely on. It can also read a saved OpenAPI JSON file.
+The command fetches `/v1/openapi.json` from the API base URL and verifies every route-backed SDK helper in `SDK_ROUTE_CONTRACT` has a matching OpenAPI path, method, SDK-used query parameter declarations, route auth metadata, focused request body shape, and focused response shape. It also checks reverse route coverage: ordinary published OpenAPI operations must have SDK route contract entries. The intentional non-helper exceptions are the terminal WebSocket upgrade route and preview proxy pass-through route, which are not ordinary JSON SDK helpers. Auth checks cover the bearer security scheme, explicit public operations, private bearer operations, and `401` responses. Request checks cover JSON schema refs and binary upload media types. Response checks cover direct schema refs, list item refs, NDJSON task-event streams, binary responses, and no-content delete routes. It also checks the starter `SDK_SCHEMA_CONTRACT` for required fields and properties that the SDK types already rely on. It can also read a saved OpenAPI JSON file.
 
 When the target API requires `MBOX_API_TOKEN`, set `MBOX_TOKEN` or `MBOX_API_TOKEN` for this command so it can fetch the private OpenAPI route.

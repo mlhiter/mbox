@@ -5,6 +5,7 @@ import {
   MboxCompatibilityError,
   MboxSandboxRuntimeRefError,
   MboxSandboxStatusError,
+  MboxTemplateValidationRunError,
   MboxTaskStatusError,
   OpenAPIAlignmentError,
   assertOpenAPIAlignment,
@@ -24,7 +25,25 @@ const compatibleInfo = {
     storageProvider: "postgres",
     maxBytes: 8388608,
   },
-  capabilities: ["sandboxes", "execution-tasks", "task-events", "artifact-client-upload"],
+  trustedPrincipalHeaders: {
+    enabled: false,
+    principalHeader: "X-Mbox-Principal",
+    principalTypeHeader: "X-Mbox-Principal-Type",
+  },
+  projectRbac: {
+    enforcementEnabled: false,
+    enforcedActions: [],
+  },
+  capabilities: [
+    "sandboxes",
+    "caller-info",
+    "trusted-principal-headers",
+    "project-authorization-preflight",
+    "project-rbac-enforcement",
+    "execution-tasks",
+    "task-events",
+    "artifact-client-upload",
+  ],
   compatibility: {
     minimumCliApiVersion: "v1alpha1",
     minimumSdkApiVersion: "v1alpha1",
@@ -143,6 +162,51 @@ const authenticatedClient = new MboxClient({
 })
 assert.equal((await authenticatedClient.info()).authenticationRequired, false)
 
+const callerClient = new MboxClient({
+  baseUrl: "http://caller.example.test",
+  token: "secret",
+  fetch: async (url, init) => {
+    assert.equal(new URL(url).pathname, "/v1/auth/caller")
+    assert.equal(new Headers(init?.headers).get("authorization"), "Bearer secret")
+    return jsonResponse({
+      authenticated: true,
+      authenticationRequired: true,
+      mode: "shared_token",
+      principalType: "shared_token",
+      principal: "shared-token",
+      rbacTrusted: false,
+      projectRolesEnforced: false,
+      notes: ["shared token accepted"],
+    })
+  },
+})
+const callerInfo = await callerClient.caller()
+assert.equal(callerInfo.mode, "shared_token")
+assert.equal(callerInfo.rbacTrusted, false)
+assert.equal(callerInfo.projectRolesEnforced, false)
+
+const trustedCallerClient = new MboxClient({
+  baseUrl: "http://trusted-caller.example.test",
+  fetch: async (url) => {
+    assert.equal(new URL(url).pathname, "/v1/auth/caller")
+    return jsonResponse({
+      authenticated: true,
+      authenticationRequired: false,
+      mode: "trusted_header",
+      principalType: "automation",
+      principal: "ci-bot",
+      rbacTrusted: true,
+      projectRolesEnforced: false,
+      notes: ["trusted principal headers accepted"],
+    })
+  },
+})
+const trustedCaller = await trustedCallerClient.caller()
+assert.equal(trustedCaller.mode, "trusted_header")
+assert.equal(trustedCaller.principalType, "automation")
+assert.equal(trustedCaller.rbacTrusted, true)
+assert.equal(trustedCaller.projectRolesEnforced, false)
+
 const envClient = createMboxClientFromEnv(
   {
     MBOX_API_URL: "http://env.example.test/",
@@ -204,7 +268,7 @@ const runtimeFilterClient = new MboxClient({
       return jsonResponse({
         adapter: "agent-sandbox",
         checkedAt: "2026-01-01T00:00:00Z",
-        summary: { total: 0, byKind: [], byNamespace: [], byOwner: [], workload: emptyWorkloadSummary() },
+        summary: { total: 0, byKind: [], byNamespace: [], byOwner: [], byProject: [], workload: emptyWorkloadSummary() },
         items: [],
       })
     }
@@ -236,6 +300,91 @@ assert.equal(runtimeFilterCalls[1].pathname, "/v1/runtime/orphans")
 assert.equal(runtimeFilterCalls[1].searchParams.get("namespace"), "mbox-smoke")
 assert.equal(runtimeFilterCalls[1].searchParams.get("projectId"), "project-1")
 assert.equal(runtimeFilterCalls[1].searchParams.get("kind"), "SandboxClaim")
+
+const memberCalls = []
+const memberClient = new MboxClient({
+  baseUrl: "http://members.example.test",
+  fetch: async (url, init) => {
+    const parsed = new URL(url)
+    memberCalls.push(`${init?.method ?? "GET"} ${parsed.pathname}`)
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined
+    switch (`${init?.method ?? "GET"} ${parsed.pathname}`) {
+      case "GET /v1/projects/project-1/members":
+        return jsonResponse({ items: [{ id: "member-1", projectId: "project-1", principalType: "user", principal: "alice@example.com", role: "operator" }] })
+      case "GET /v1/projects/project-1/authorization":
+        assert.ok(["sandbox.launch", "policy.manage"].includes(parsed.searchParams.get("action")))
+        if (parsed.searchParams.get("action") === "policy.manage") {
+          return jsonResponse({
+            projectId: "project-1",
+            action: "policy.manage",
+            allowed: false,
+            enforced: true,
+            evaluation: "denied",
+            requiredRoles: ["owner"],
+            caller: {
+              authenticated: true,
+              authenticationRequired: false,
+              mode: "trusted_header",
+              principalType: "automation",
+              principal: "sdk-bot",
+              rbacTrusted: true,
+              projectRolesEnforced: true,
+              notes: [],
+            },
+            memberCount: 1,
+            availableActions: ["project.view", "sandbox.launch", "policy.manage"],
+            notes: ["caller matches a project member, but the role is insufficient for this action"],
+          })
+        }
+        return jsonResponse({
+          projectId: "project-1",
+          action: "sandbox.launch",
+          allowed: false,
+          enforced: false,
+          evaluation: "not_enforceable",
+          requiredRoles: ["owner", "operator"],
+          caller: {
+            authenticated: false,
+            authenticationRequired: false,
+            mode: "anonymous",
+            principalType: "anonymous",
+            principal: "anonymous",
+            rbacTrusted: false,
+            projectRolesEnforced: false,
+            notes: [],
+          },
+          memberCount: 1,
+          availableActions: ["project.view", "sandbox.launch"],
+          notes: ["route-level project RBAC is not enforced yet"],
+        })
+      case "POST /v1/projects/project-1/members":
+        assert.equal(body.principalType, "automation")
+        assert.equal(body.principal, "sdk-bot")
+        assert.equal(body.role, "viewer")
+        return jsonResponse({ id: "member-2", projectId: "project-1", ...body }, 201)
+      case "GET /v1/members/member-1":
+        return jsonResponse({ id: "member-1", projectId: "project-1", principalType: "user", principal: "alice@example.com", role: "operator" })
+      case "DELETE /v1/members/member-1":
+        return new Response(null, { status: 204 })
+      default:
+        throw new Error(`unexpected member request ${init?.method ?? "GET"} ${parsed.pathname}`)
+    }
+  },
+})
+assert.equal((await memberClient.listProjectMembers("project-1")).items[0].principal, "alice@example.com")
+assert.equal((await memberClient.getProjectAuthorization("project-1", { action: "sandbox.launch" })).evaluation, "not_enforceable")
+assert.equal((await memberClient.getProjectAuthorization("project-1", { action: "policy.manage" })).enforced, true)
+assert.equal((await memberClient.createProjectMember("project-1", { principalType: "automation", principal: "sdk-bot", role: "viewer" })).role, "viewer")
+assert.equal((await memberClient.getProjectMember("member-1")).role, "operator")
+await memberClient.deleteProjectMember("member-1")
+assert.deepEqual(memberCalls, [
+  "GET /v1/projects/project-1/members",
+  "GET /v1/projects/project-1/authorization",
+  "GET /v1/projects/project-1/authorization",
+  "POST /v1/projects/project-1/members",
+  "GET /v1/members/member-1",
+  "DELETE /v1/members/member-1",
+])
 
 const failedTask = {
   id: "task-failed",
@@ -388,6 +537,230 @@ await assert.rejects(
     error.sandbox.id === "sandbox-running",
 )
 
+let validationTaskPolls = 0
+const validationCalls = []
+const templateValidationClient = new MboxClient({
+  baseUrl: "http://validation.example.test",
+  fetch: async (url, init) => {
+    const parsed = new URL(url)
+    validationCalls.push(`${init?.method ?? "GET"} ${parsed.pathname}`)
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined
+    switch (`${init?.method ?? "GET"} ${parsed.pathname}`) {
+      case "POST /v1/templates/template-1/validation-runs":
+        assert.equal(new Headers(init?.headers).get("x-mbox-principal"), "validation-bot")
+        assert.equal(body.projectId, "project-1")
+        assert.equal(body.metadata.source, "sdk-smoke")
+        return jsonResponse({
+          template: { id: "template-1", name: "Template" },
+          sandbox: { id: "sandbox-1", status: "pending" },
+        }, 201)
+      case "GET /v1/sandboxes/sandbox-1":
+        return jsonResponse({
+          id: "sandbox-1",
+          projectId: "project-1",
+          name: "Validation",
+          slug: "validation",
+          namespace: "mbox-smoke",
+          serviceAccountName: "mbox-sandbox",
+          status: "running",
+          runtimeRef: {
+            adapter: "agent-sandbox",
+            kind: "SandboxClaim",
+            namespace: "mbox-smoke",
+            name: "claim-1",
+          },
+        })
+      case "POST /v1/sandboxes/sandbox-1/tasks":
+        assert.equal(new Headers(init?.headers).get("x-mbox-principal"), "validation-bot")
+        assert.deepEqual(body.command, ["sh", "-lc", "echo ok"])
+        assert.equal(body.timeoutSeconds, 30)
+        assert.equal(body.metadata.source, "sdk-smoke")
+        return jsonResponse({ id: "task-1", status: "queued" }, 201)
+      case "GET /v1/tasks/task-1":
+        validationTaskPolls += 1
+        if (validationTaskPolls === 1) {
+          return jsonResponse({ id: "task-1", status: "running" })
+        }
+        return jsonResponse({
+          id: "task-1",
+          projectId: "project-1",
+          sandboxId: "sandbox-1",
+          command: ["sh", "-lc", "echo ok"],
+          timeoutSeconds: 30,
+          status: "succeeded",
+          stdout: "ok",
+          stderr: "",
+          outputTruncated: false,
+        })
+      case "POST /v1/templates/template-1/validation-runs/sandbox-1/decision":
+        assert.equal(new Headers(init?.headers).get("x-mbox-principal"), "validation-bot")
+        assert.equal(body.status, "passed")
+        return jsonResponse({
+          template: { id: "template-1", metadata: { validationStatus: "passed" } },
+          sandbox: { id: "sandbox-1", metadata: { validationResult: "passed" } },
+        })
+      default:
+        throw new Error(`unexpected validation request ${init?.method ?? "GET"} ${parsed.pathname}`)
+    }
+  },
+})
+const validationResult = await templateValidationClient.runTemplateValidation("template-1", {
+  projectId: "project-1",
+  validationMetadata: { source: "sdk-smoke" },
+  task: {
+    command: ["sh", "-lc", "echo ok"],
+    timeoutSeconds: 30,
+    metadata: { source: "sdk-smoke" },
+  },
+  intervalMs: 1,
+  timeoutMs: 1000,
+  requireSuccess: true,
+  headers: {
+    "X-Mbox-Principal": "validation-bot",
+    "X-Mbox-Principal-Type": "automation",
+  },
+})
+assert.equal(validationResult.status, "passed")
+assert.equal(validationResult.decisionStatus, "passed")
+assert.equal(validationResult.task.status, "succeeded")
+assert.deepEqual(validationCalls, [
+  "POST /v1/templates/template-1/validation-runs",
+  "GET /v1/sandboxes/sandbox-1",
+  "POST /v1/sandboxes/sandbox-1/tasks",
+  "GET /v1/tasks/task-1",
+  "GET /v1/tasks/task-1",
+  "POST /v1/templates/template-1/validation-runs/sandbox-1/decision",
+])
+
+const failedValidationResultClient = new MboxClient({
+  baseUrl: "http://validation.example.test",
+  fetch: async (url, init) => {
+    const parsed = new URL(url)
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined
+    switch (`${init?.method ?? "GET"} ${parsed.pathname}`) {
+      case "POST /v1/templates/template-1/validation-runs":
+        return jsonResponse({
+          template: { id: "template-1", name: "Template" },
+          sandbox: { id: "sandbox-1", status: "pending" },
+        }, 201)
+      case "GET /v1/sandboxes/sandbox-1":
+        return jsonResponse({
+          id: "sandbox-1",
+          projectId: "project-1",
+          name: "Validation",
+          slug: "validation",
+          namespace: "mbox-smoke",
+          serviceAccountName: "mbox-sandbox",
+          status: "running",
+          runtimeRef: {
+            adapter: "agent-sandbox",
+            kind: "SandboxClaim",
+            namespace: "mbox-smoke",
+            name: "claim-1",
+          },
+        })
+      case "POST /v1/sandboxes/sandbox-1/tasks":
+        return jsonResponse({ id: "task-1", status: "queued" }, 201)
+      case "GET /v1/tasks/task-1":
+        return jsonResponse({
+          id: "task-1",
+          projectId: "project-1",
+          sandboxId: "sandbox-1",
+          command: ["sh", "-lc", "exit 7"],
+          timeoutSeconds: 30,
+          status: "failed",
+          stdout: "",
+          stderr: "failed",
+          outputTruncated: false,
+          exitCode: 7,
+        })
+      case "POST /v1/templates/template-1/validation-runs/sandbox-1/decision":
+        assert.equal(body.status, "failed")
+        return jsonResponse({
+          template: { id: "template-1", metadata: { validationStatus: "failed" } },
+          sandbox: { id: "sandbox-1", metadata: { validationResult: "failed" } },
+        })
+      default:
+        throw new Error(`unexpected failed validation result request ${init?.method ?? "GET"} ${parsed.pathname}`)
+    }
+  },
+})
+const failedValidationResult = await failedValidationResultClient.runTemplateValidation("template-1", {
+  task: { command: ["sh", "-lc", "exit 7"], timeoutSeconds: 30 },
+  intervalMs: 1,
+  timeoutMs: 1000,
+})
+assert.equal(failedValidationResult.status, "failed")
+assert.equal(failedValidationResult.task.status, "failed")
+
+const failedValidationClient = new MboxClient({
+  baseUrl: "http://validation.example.test",
+  fetch: async (url, init) => {
+    const parsed = new URL(url)
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined
+    switch (`${init?.method ?? "GET"} ${parsed.pathname}`) {
+      case "POST /v1/templates/template-1/validation-runs":
+        return jsonResponse({
+          template: { id: "template-1", name: "Template" },
+          sandbox: { id: "sandbox-1", status: "pending" },
+        }, 201)
+      case "GET /v1/sandboxes/sandbox-1":
+        return jsonResponse({
+          id: "sandbox-1",
+          projectId: "project-1",
+          name: "Validation",
+          slug: "validation",
+          namespace: "mbox-smoke",
+          serviceAccountName: "mbox-sandbox",
+          status: "running",
+          runtimeRef: {
+            adapter: "agent-sandbox",
+            kind: "SandboxClaim",
+            namespace: "mbox-smoke",
+            name: "claim-1",
+          },
+        })
+      case "POST /v1/sandboxes/sandbox-1/tasks":
+        return jsonResponse({ id: "task-1", status: "queued" }, 201)
+      case "GET /v1/tasks/task-1":
+        return jsonResponse({
+          id: "task-1",
+          projectId: "project-1",
+          sandboxId: "sandbox-1",
+          command: ["sh", "-lc", "exit 7"],
+          timeoutSeconds: 30,
+          status: "failed",
+          stdout: "",
+          stderr: "failed",
+          outputTruncated: false,
+          exitCode: 7,
+        })
+      case "POST /v1/templates/template-1/validation-runs/sandbox-1/decision":
+        assert.equal(body.status, "failed")
+        return jsonResponse({
+          template: { id: "template-1", metadata: { validationStatus: "failed" } },
+          sandbox: { id: "sandbox-1", metadata: { validationResult: "failed" } },
+        })
+      default:
+        throw new Error(`unexpected failed validation request ${init?.method ?? "GET"} ${parsed.pathname}`)
+    }
+  },
+})
+await assert.rejects(
+  () =>
+    failedValidationClient.runTemplateValidation("template-1", {
+      task: { command: ["sh", "-lc", "exit 7"], timeoutSeconds: 30 },
+      intervalMs: 1,
+      timeoutMs: 1000,
+      requireSuccess: true,
+    }),
+  (error) =>
+    error instanceof MboxTemplateValidationRunError &&
+    error.result.status === "failed" &&
+    error.result.task.status === "failed" &&
+    error.cause instanceof MboxTaskStatusError,
+)
+
 assert.equal(assertOpenAPIAlignment(buildOpenAPI()).ok, true)
 assert.throws(
   () => {
@@ -399,6 +772,24 @@ assert.throws(
     error instanceof OpenAPIAlignmentError &&
     error.result.missing.some((issue) => issue.reason === "response-schema-mismatch"),
 )
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.paths["/v1/projects/{projectID}/published-only"] = {
+      get: op(jsonRef("Project")),
+    }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-sdk-route-coverage" &&
+        issue.method === "GET" &&
+        issue.path === "/v1/projects/{projectID}/published-only",
+    ),
+)
+assert.equal(assertOpenAPIAlignment(buildOpenAPIWithIntentionalSDKExceptions()).ok, true)
 
 console.log("SDK smoke passed")
 
@@ -409,9 +800,9 @@ function jsonFetch(payload) {
   }
 }
 
-function jsonResponse(payload) {
+function jsonResponse(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
-    status: 200,
+    status,
     headers: { "content-type": "application/json" },
   })
 }
@@ -432,6 +823,7 @@ function buildOpenAPI() {
   const paths = {
     "/healthz": { get: op(jsonRef("Health"), { auth: "none" }) },
     "/v1/info": { get: op(jsonRef("APIInfo"), { auth: "none" }) },
+    "/v1/auth/caller": { get: op(jsonRef("CallerInfo")) },
     "/v1/openapi.json": { get: op({ type: "object" }) },
     "/v1/runtime/resources": {
       get: op(jsonRef("RuntimeResourceList"), { parameters: [queryParam("namespace"), queryParam("projectId"), queryParam("kind")] }),
@@ -466,6 +858,13 @@ function buildOpenAPI() {
       get: op(jsonRef("ProjectQuotaPolicy")),
       put: op(jsonRef("ProjectQuotaPolicy"), { request: jsonRef("ProjectQuotaPolicyUpsert") }),
     },
+    "/v1/projects/{projectID}/authorization": {
+      get: op(jsonRef("ProjectAuthorizationDecision"), { parameters: [queryParam("action")] }),
+    },
+    "/v1/projects/{projectID}/members": {
+      get: op(listSchema("ProjectMember")),
+      post: op(jsonRef("ProjectMember"), { status: "201", request: jsonRef("ProjectMemberCreate") }),
+    },
     "/v1/projects/{projectID}/credentials": {
       get: op(listSchema("ProjectCredential")),
       post: op(jsonRef("ProjectCredential"), { status: "201", request: jsonRef("ProjectCredentialCreate") }),
@@ -475,6 +874,10 @@ function buildOpenAPI() {
       get: op(listSchema("AuditEvent"), {
         parameters: auditParams(false),
       }),
+    },
+    "/v1/members/{memberID}": {
+      get: op(jsonRef("ProjectMember")),
+      delete: noContentOp(),
     },
     "/v1/credentials/{credentialID}": {
       get: op(jsonRef("ProjectCredential")),
@@ -560,6 +963,23 @@ function buildOpenAPI() {
       schemas: schemaComponents(),
     },
   }
+}
+
+function buildOpenAPIWithIntentionalSDKExceptions() {
+  const document = buildOpenAPI()
+  document.paths["/v1/sandboxes/{sandboxID}/ports/{port}/proxy/"] = {
+    get: op(binarySchema()),
+  }
+  document.paths["/v1/sandboxes/{sandboxID}/terminal"] = {
+    get: {
+      security: [{ bearerAuth: [] }],
+      responses: {
+        101: { description: "WebSocket upgrade" },
+        401: unauthorizedResponse(),
+      },
+    },
+  }
+  return document
 }
 
 function op(responseSchema, options = {}) {
@@ -649,6 +1069,7 @@ function auditParams(includeProject) {
     "source",
     "requestId",
     "operation",
+    "reason",
     "since",
     "until",
     "limit",
@@ -661,6 +1082,9 @@ function schemaComponents() {
     "Health",
     "Error",
     "APIInfo",
+    "TrustedPrincipalHeaderInfo",
+    "ProjectRBACInfo",
+    "CallerInfo",
     "RuntimeResourceList",
     "RuntimeOrphanAudit",
     "RuntimeOrphanCleanupRequest",
@@ -673,6 +1097,8 @@ function schemaComponents() {
     "ProjectPolicyUpsert",
     "ProjectQuotaPolicy",
     "ProjectQuotaPolicyUpsert",
+    "ProjectMember",
+    "ProjectMemberCreate",
     "ProjectCredential",
     "ProjectCredentialCreate",
     "EnvironmentTemplate",
@@ -701,7 +1127,7 @@ function schemaComponents() {
   }
   Object.assign(schemas, {
     RuntimeResourceList: objectSchema(["adapter", "checkedAt", "summary", "items"]),
-    RuntimeResourceSummary: objectSchema(["total", "byKind", "byNamespace", "byOwner", "workload"]),
+    RuntimeResourceSummary: objectSchema(["total", "byKind", "byNamespace", "byOwner", "byProject", "workload"]),
     RuntimeResourceCount: objectSchema(["name", "count"]),
     RuntimeWorkloadSummary: objectSchema([
       "observedResources",
@@ -841,6 +1267,52 @@ function schemaComponents() {
       "storageRequests",
     ]),
     ProjectCredentialUsage: objectSchema(["total", "git", "registry", "kubernetes", "ssh", "generic"]),
+    APIInfo: objectSchema([
+      "name",
+      "apiVersion",
+      "serverVersion",
+      "runtimeController",
+      "runtimeAccess",
+      "artifactContent",
+      "trustedPrincipalHeaders",
+      "projectRbac",
+      "capabilities",
+      "compatibility",
+      "authenticationRequired",
+    ]),
+    TrustedPrincipalHeaderInfo: objectSchema(["enabled"], ["principalHeader", "principalTypeHeader"]),
+    ProjectRBACInfo: objectSchema(["enforcementEnabled", "enforcedActions"]),
+    ProjectMember: objectSchema(["id", "projectId", "principalType", "principal", "role"], [
+      "metadata",
+      "createdAt",
+      "updatedAt",
+    ]),
+    ProjectMemberCreate: objectSchema(["principalType", "principal", "role"], ["metadata"]),
+    ProjectAuthorizationDecision: objectSchema(
+      [
+        "projectId",
+        "action",
+        "allowed",
+        "enforced",
+        "evaluation",
+        "requiredRoles",
+        "caller",
+        "memberCount",
+        "availableActions",
+        "notes",
+      ],
+      ["matchedMember"],
+    ),
+    CallerInfo: objectSchema([
+      "authenticated",
+      "authenticationRequired",
+      "mode",
+      "principalType",
+      "principal",
+      "rbacTrusted",
+      "projectRolesEnforced",
+      "notes",
+    ]),
     PolicyDeniedAuditMetadata: objectSchema(["operation", "reason"], [
       "requestId",
       "templateId",
@@ -848,8 +1320,19 @@ function schemaComponents() {
       "image",
       "serviceAccountName",
       "sandboxId",
+      "authorizationAction",
+      "callerMode",
+      "callerPrincipalType",
+      "callerPrincipal",
       "artifactKind",
       "incomingBytes",
+      "policyKind",
+      "enforcement",
+      "maxActiveSandboxes",
+      "maxRetainedArtifactBytes",
+      "type",
+      "target",
+      "secretRef",
     ]),
   })
   schemas.AuditEvent = objectSchema(["id", "action", "resourceType", "createdAt"], [

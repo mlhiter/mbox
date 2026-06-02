@@ -107,8 +107,10 @@ export function App() {
   const initialRoute = currentRoute()
   const [activeView, setActiveView] = useState<WorkspaceView>(initialRoute.view)
   const [routeSandboxId, setRouteSandboxId] = useState<string | null>(initialRoute.sandboxId || null)
+  const [runtimeProjectFilter, setRuntimeProjectFilter] = useState("")
   const {
     apiState,
+    callerInfo,
     counts,
     createProject,
     createSandbox,
@@ -119,6 +121,8 @@ export function App() {
     loadAll,
     loading,
     projectCredentials,
+    projectAuthorizations,
+    projectMembers,
     projectAuditEvents,
     projectPolicies,
     projectQuotaPolicies,
@@ -141,6 +145,7 @@ export function App() {
   } = useMboxData()
 
   const activeCopy = workspaceCopy[activeView]
+  const runtimeResourceFilters = runtimeProjectFilter ? { projectId: runtimeProjectFilter } : {}
   const activeCount = useMemo(() => {
     if (activeView === "projects") {
       return projects.length
@@ -157,6 +162,15 @@ export function App() {
   useEffect(() => {
     void loadAll()
   }, [loadAll])
+
+  useEffect(() => {
+    if (runtimeProjectFilter && !projects.some((project) => project.id === runtimeProjectFilter)) {
+      setRuntimeProjectFilter("")
+      void refreshRuntimeResources().catch(() => {
+        // The hook records the unavailable inventory state for the Runtime view.
+      })
+    }
+  }, [projects, refreshRuntimeResources, runtimeProjectFilter])
 
   useEffect(() => {
     if (initialRoute.view === "sandbox-detail" && initialRoute.sandboxId) {
@@ -234,6 +248,16 @@ export function App() {
     openSandboxWorkspace(sandbox.id)
   }
 
+  async function changeRuntimeProjectFilter(projectID: string) {
+    setRuntimeProjectFilter(projectID)
+    const filters = projectID ? { projectId: projectID } : {}
+    try {
+      await refreshRuntimeResources(filters)
+    } catch {
+      // The hook records the unavailable inventory state for the Runtime view.
+    }
+  }
+
   const detailSandboxId =
     activeView === "sandbox-detail"
       ? selectedSandbox?.id || (selection?.kind === "sandbox" ? selection.id : routeSandboxId || undefined)
@@ -243,6 +267,7 @@ export function App() {
     <AppShell
       activeView={activeView}
       apiState={apiState}
+      callerInfo={callerInfo}
       projects={projects}
       templates={templates}
       sandboxes={sandboxes}
@@ -256,6 +281,8 @@ export function App() {
       projectPolicies={projectPolicies}
       projectQuotaPolicies={projectQuotaPolicies}
       projectCredentials={projectCredentials}
+      projectAuthorizations={projectAuthorizations}
+      projectMembers={projectMembers}
       projectUsage={projectUsage}
       onRefreshProjectAuditEvents={refreshProjectAuditEvents}
     >
@@ -294,7 +321,7 @@ export function App() {
             </div>
             <div className="topbar-actions">
               <span>{activeCount} records</span>
-              <Button onClick={() => void loadAll()}>
+              <Button onClick={() => void loadAll(activeView === "runtime" ? runtimeResourceFilters : {})}>
                 <RefreshCw data-icon="inline-start" />
                 Refresh
               </Button>
@@ -355,9 +382,12 @@ export function App() {
             {activeView === "runtime" ? (
               <RuntimeInventory
                 inventory={runtimeResources}
+                projects={projects}
+                selectedProjectId={runtimeProjectFilter}
                 loading={loading}
                 error={runtimeResourcesError}
-                onRefresh={refreshRuntimeResources}
+                onProjectChange={changeRuntimeProjectFilter}
+                onRefresh={() => refreshRuntimeResources(runtimeResourceFilters)}
               />
             ) : null}
           </div>

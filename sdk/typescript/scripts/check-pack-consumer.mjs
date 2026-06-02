@@ -52,7 +52,14 @@ const result = checkSDKCompatibility({
     storageProvider: "s3",
     maxBytes: 8388608,
   },
-  capabilities: ["sandboxes", "execution-tasks"],
+  trustedPrincipalHeaders: {
+    enabled: false,
+  },
+  projectRbac: {
+    enforcementEnabled: false,
+    enforcedActions: [],
+  },
+  capabilities: ["sandboxes", "caller-info", "project-authorization-preflight", "project-rbac-enforcement", "execution-tasks"],
   compatibility: {
     minimumCliApiVersion: "v1alpha1",
     minimumSdkApiVersion: "v1alpha1",

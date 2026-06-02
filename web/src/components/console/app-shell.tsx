@@ -6,8 +6,11 @@ import { cn } from "@/lib/utils"
 import type {
   APIStatus,
   AuditEvent,
+  CallerInfo,
   Project,
+  ProjectAuthorizationDecision,
   ProjectCredential,
+  ProjectMember,
   ProjectPolicy,
   ProjectQuotaPolicy,
   ProjectUsage,
@@ -20,6 +23,7 @@ import type {
 export function AppShell({
   activeView,
   apiState,
+  callerInfo,
   children,
   showDetailPane = true,
   onViewChange,
@@ -29,6 +33,8 @@ export function AppShell({
   projects,
   projectAuditEvents,
   projectCredentials,
+  projectAuthorizations,
+  projectMembers,
   projectPolicies,
   projectQuotaPolicies,
   projectUsage,
@@ -39,6 +45,7 @@ export function AppShell({
 }: {
   activeView: WorkspaceView
   apiState: APIStatus
+  callerInfo: CallerInfo | null
   children: ReactNode
   showDetailPane?: boolean
   onViewChange: (view: WorkspaceView) => void
@@ -52,6 +59,7 @@ export function AppShell({
       source?: string
       requestId?: string
       operation?: string
+      reason?: string
       since?: string
       until?: string
     },
@@ -59,6 +67,8 @@ export function AppShell({
   projects: Project[]
   projectAuditEvents: Record<string, AuditEvent[]>
   projectCredentials: Record<string, ProjectCredential[]>
+  projectAuthorizations: Record<string, ProjectAuthorizationDecision[]>
+  projectMembers: Record<string, ProjectMember[]>
   projectPolicies: Record<string, ProjectPolicy>
   projectQuotaPolicies: Record<string, ProjectQuotaPolicy>
   projectUsage: Record<string, ProjectUsage>
@@ -70,7 +80,7 @@ export function AppShell({
   return (
     <>
       <div className={cn("shell", !showDetailPane && "shell-no-detail")}>
-        <Rail activeView={activeView} apiState={apiState} onViewChange={onViewChange} />
+        <Rail activeView={activeView} apiState={apiState} callerInfo={callerInfo} onViewChange={onViewChange} />
         <main className="workspace">{children}</main>
         {showDetailPane ? (
           <DetailPane
@@ -78,6 +88,8 @@ export function AppShell({
             projects={projects}
             projectAuditEvents={projectAuditEvents}
             projectCredentials={projectCredentials}
+            projectAuthorizations={projectAuthorizations}
+            projectMembers={projectMembers}
             projectPolicies={projectPolicies}
             projectQuotaPolicies={projectQuotaPolicies}
             projectUsage={projectUsage}

@@ -26,6 +26,15 @@ type apiInfo struct {
 		StorageProvider        string `json:"storageProvider"`
 		MaxBytes               int64  `json:"maxBytes"`
 	} `json:"artifactContent"`
+	TrustedPrincipalHeaders struct {
+		Enabled             bool   `json:"enabled"`
+		PrincipalHeader     string `json:"principalHeader,omitempty"`
+		PrincipalTypeHeader string `json:"principalTypeHeader,omitempty"`
+	} `json:"trustedPrincipalHeaders"`
+	ProjectRBAC struct {
+		EnforcementEnabled bool     `json:"enforcementEnabled"`
+		EnforcedActions    []string `json:"enforcedActions"`
+	} `json:"projectRbac"`
 	Capabilities  []string `json:"capabilities"`
 	Compatibility struct {
 		MinimumCLIAPIVersion string `json:"minimumCliApiVersion"`

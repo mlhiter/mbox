@@ -19,12 +19,40 @@ export type APIInfo = {
   runtimeController: RuntimeCapability
   runtimeAccess: RuntimeCapability
   artifactContent: ArtifactContentCapability
+  trustedPrincipalHeaders: TrustedPrincipalHeaderInfo
+  projectRbac: ProjectRBACInfo
   capabilities: string[]
   compatibility: {
     minimumCliApiVersion: string
     minimumSdkApiVersion: string
   }
   authenticationRequired: boolean
+}
+
+export type TrustedPrincipalHeaderInfo = {
+  enabled: boolean
+  principalHeader?: string
+  principalTypeHeader?: string
+}
+
+export type ProjectRBACInfo = {
+  enforcementEnabled: boolean
+  enforcedActions: ProjectAuthorizationAction[]
+}
+
+export type CallerAuthMode = "anonymous" | "shared_token" | "trusted_header"
+
+export type CallerPrincipalType = "anonymous" | "shared_token" | ProjectMemberPrincipalType
+
+export type CallerInfo = {
+  authenticated: boolean
+  authenticationRequired: boolean
+  mode: CallerAuthMode
+  principalType: CallerPrincipalType
+  principal: string
+  rbacTrusted: boolean
+  projectRolesEnforced: boolean
+  notes: string[]
 }
 
 export type ClientKind = "cli" | "sdk"
@@ -127,6 +155,7 @@ export type ManagedResourceSummary = {
   byKind: ManagedResourceCount[]
   byNamespace: ManagedResourceCount[]
   byOwner: ManagedResourceCount[]
+  byProject: ManagedResourceCount[]
   workload: ManagedWorkloadSummary
 }
 
@@ -374,6 +403,58 @@ export type ProjectCredentialCreate = {
   metadata?: JSONObject
 }
 
+export type ProjectMemberPrincipalType = "user" | "service_account" | "automation"
+
+export type ProjectMemberRole = "owner" | "operator" | "viewer"
+
+export type ProjectMember = {
+  id: string
+  projectId: string
+  principalType: ProjectMemberPrincipalType
+  principal: string
+  role: ProjectMemberRole
+  metadata?: JSONObject
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type ProjectMemberCreate = {
+  principalType: ProjectMemberPrincipalType
+  principal: string
+  role: ProjectMemberRole
+  metadata?: JSONObject
+}
+
+export type ProjectAuthorizationAction =
+  | "project.view"
+  | "project.manage"
+  | "sandbox.launch"
+  | "runtime.operate"
+  | "artifact.write"
+  | "policy.manage"
+  | "credential.manage"
+  | "member.manage"
+
+export type ProjectAuthorizationEvaluation = "allowed" | "denied" | "not_enforceable"
+
+export type ProjectAuthorizationDecision = {
+  projectId: string
+  action: ProjectAuthorizationAction
+  allowed: boolean
+  enforced: boolean
+  evaluation: ProjectAuthorizationEvaluation
+  requiredRoles: ProjectMemberRole[]
+  caller: CallerInfo
+  matchedMember?: ProjectMember
+  memberCount: number
+  availableActions: ProjectAuthorizationAction[]
+  notes: string[]
+}
+
+export type ProjectAuthorizationOptions = RequestOptions & {
+  action?: ProjectAuthorizationAction
+}
+
 export type ResourceUsageValue = {
   value: string
   count: number
@@ -467,6 +548,8 @@ export type KnownAuditEventAction =
   | "project.deleted"
   | "project.policy.updated"
   | "project.quota_policy.updated"
+  | "project.member.created"
+  | "project.member.deleted"
   | "project.credential.created"
   | "project.credential.deleted"
   | "template.created"
@@ -492,8 +575,25 @@ export type KnownAuditEventAction =
 export type PolicyDeniedOperation =
   | "sandbox.launch"
   | "template.validation"
+  | "project.policy.update"
+  | "project.quota_policy.update"
+  | "runtime.resolve"
+  | "runtime.logs"
+  | "runtime.events"
+  | "runtime.ports"
+  | "runtime.preview.proxy"
+  | "runtime.terminal"
+  | "runtime.session.create"
+  | "runtime.session.end"
+  | "execution.task.create"
+  | "execution.task.cancel"
+  | "execution.task.events"
+  | "artifact.write"
+  | "artifact.content.workspace.read"
   | "artifact.content.capture"
   | "artifact.content.upload"
+  | "project.credential.create"
+  | "project.credential.delete"
 
 export type PolicyDeniedAuditMetadata = JSONObject & {
   operation: PolicyDeniedOperation
@@ -504,8 +604,19 @@ export type PolicyDeniedAuditMetadata = JSONObject & {
   image?: string
   serviceAccountName?: string
   sandboxId?: string
+  authorizationAction?: ProjectAuthorizationAction
+  callerMode?: CallerAuthMode
+  callerPrincipalType?: CallerPrincipalType
+  callerPrincipal?: string
   artifactKind?: string
   incomingBytes?: number
+  policyKind?: string
+  enforcement?: string
+  maxActiveSandboxes?: number
+  maxRetainedArtifactBytes?: number
+  type?: string
+  target?: string
+  secretRef?: string
 }
 
 export type AuditEvent = {
@@ -530,6 +641,7 @@ export type AuditEventListOptions = RequestOptions & {
   source?: string
   requestId?: string
   operation?: PolicyDeniedOperation | (string & {})
+  reason?: string
   since?: string
   until?: string
   limit?: number
@@ -582,13 +694,38 @@ export type TemplateValidationRunCreate = {
   metadata?: JSONObject
 }
 
+export type TemplateValidationDecisionStatus = "passed" | "failed"
+
 export type TemplateValidationRunDecision = {
-  status: "passed" | "failed"
+  status: TemplateValidationDecisionStatus
 }
 
 export type TemplateValidationRun = {
   template: EnvironmentTemplate
   sandbox: Sandbox
+}
+
+export type TemplateValidationTaskRunOptions = {
+  command: string[]
+  timeoutSeconds?: number
+  metadata?: JSONObject
+}
+
+export type RunTemplateValidationOptions = Omit<TemplateValidationRunCreate, "metadata"> & {
+  validationMetadata?: JSONObject
+  task: TemplateValidationTaskRunOptions
+  intervalMs?: number
+  timeoutMs?: number
+  requireSuccess?: boolean
+} & RequestOptions
+
+export type TemplateValidationRunResult = {
+  validation: TemplateValidationRun
+  sandbox: Sandbox
+  task?: ExecutionTask
+  decision: TemplateValidationRun
+  decisionStatus: TemplateValidationDecisionStatus
+  status: TemplateValidationDecisionStatus
 }
 
 export type BoundaryCheck = {
@@ -915,6 +1052,18 @@ export class MboxSandboxRuntimeRefError extends Error {
   }
 }
 
+export class MboxTemplateValidationRunError extends Error {
+  readonly result: TemplateValidationRunResult
+  readonly cause: unknown
+
+  constructor(result: TemplateValidationRunResult, cause: unknown) {
+    super(`template validation run failed with status ${result.status}`)
+    this.name = "MboxTemplateValidationRunError"
+    this.result = result
+    this.cause = cause
+  }
+}
+
 const TERMINAL_TASK_STATUSES = new Set<ExecutionTaskStatus>([
   "succeeded",
   "failed",
@@ -963,6 +1112,10 @@ export class MboxClient {
 
   info(options?: RequestOptions) {
     return this.request<APIInfo>("/v1/info", options)
+  }
+
+  caller(options?: RequestOptions) {
+    return this.request<CallerInfo>("/v1/auth/caller", options)
   }
 
   async checkCompatibility(options: CompatibilityCheckOptions = {}) {
@@ -1035,15 +1188,24 @@ export class MboxClient {
     return this.request<ProjectUsage>(`/v1/projects/${encodeURIComponent(projectId)}/usage`, options)
   }
 
+  getProjectAuthorization(projectId: string, options: ProjectAuthorizationOptions = {}) {
+    const { action, ...requestOptions } = options
+    const query = queryString({ action })
+    return this.request<ProjectAuthorizationDecision>(
+      `/v1/projects/${encodeURIComponent(projectId)}/authorization${query}`,
+      requestOptions,
+    )
+  }
+
   listAuditEvents(options: AuditEventListOptions = {}) {
-    const { projectId, action, resourceType, resourceId, actor, source, requestId, operation, since, until, limit, ...requestOptions } = options
-    const query = auditEventQuery({ projectId, action, resourceType, resourceId, actor, source, requestId, operation, since, until, limit })
+    const { projectId, action, resourceType, resourceId, actor, source, requestId, operation, reason, since, until, limit, ...requestOptions } = options
+    const query = auditEventQuery({ projectId, action, resourceType, resourceId, actor, source, requestId, operation, reason, since, until, limit })
     return this.request<ListResponse<AuditEvent>>(`/v1/audit-events${query}`, requestOptions)
   }
 
   listProjectAuditEvents(projectId: string, options: Omit<AuditEventListOptions, "projectId"> = {}) {
-    const { action, resourceType, resourceId, actor, source, requestId, operation, since, until, limit, ...requestOptions } = options
-    const query = auditEventQuery({ action, resourceType, resourceId, actor, source, requestId, operation, since, until, limit })
+    const { action, resourceType, resourceId, actor, source, requestId, operation, reason, since, until, limit, ...requestOptions } = options
+    const query = auditEventQuery({ action, resourceType, resourceId, actor, source, requestId, operation, reason, since, until, limit })
     return this.request<ListResponse<AuditEvent>>(
       `/v1/projects/${encodeURIComponent(projectId)}/audit-events${query}`,
       requestOptions,
@@ -1071,6 +1233,32 @@ export class MboxClient {
       ...options,
       method: "PUT",
       body: payload,
+    })
+  }
+
+  listProjectMembers(projectId: string, options?: RequestOptions) {
+    return this.request<ListResponse<ProjectMember>>(
+      `/v1/projects/${encodeURIComponent(projectId)}/members`,
+      options,
+    )
+  }
+
+  createProjectMember(projectId: string, payload: ProjectMemberCreate, options?: RequestOptions) {
+    return this.request<ProjectMember>(`/v1/projects/${encodeURIComponent(projectId)}/members`, {
+      ...options,
+      method: "POST",
+      body: payload,
+    })
+  }
+
+  getProjectMember(memberId: string, options?: RequestOptions) {
+    return this.request<ProjectMember>(`/v1/members/${encodeURIComponent(memberId)}`, options)
+  }
+
+  deleteProjectMember(memberId: string, options?: RequestOptions) {
+    return this.request<void>(`/v1/members/${encodeURIComponent(memberId)}`, {
+      ...options,
+      method: "DELETE",
     })
   }
 
@@ -1169,6 +1357,83 @@ export class MboxClient {
         body: payload,
       },
     )
+  }
+
+  async runTemplateValidation(templateId: string, options: RunTemplateValidationOptions) {
+    const requestOptions = requestOptionsFrom(options)
+    const validation = await this.createTemplateValidationRun(
+      templateId,
+      {
+        projectId: options.projectId,
+        name: options.name,
+        metadata: options.validationMetadata,
+      },
+      requestOptions,
+    )
+    const sandboxId = validation.sandbox.id
+    let sandbox: Sandbox | undefined
+    let task: ExecutionTask | undefined
+    try {
+      sandbox = await this.waitForSandbox(sandboxId, {
+        status: "running",
+        requireRuntimeRef: true,
+        intervalMs: options.intervalMs,
+        timeoutMs: options.timeoutMs,
+        signal: requestOptions.signal,
+      })
+      const createdTask = await this.createExecutionTask(
+        sandboxId,
+        {
+          command: options.task.command,
+          timeoutSeconds: options.task.timeoutSeconds,
+          metadata: options.task.metadata,
+        },
+        requestOptions,
+      )
+      task = await this.waitForTask(createdTask.id, {
+        intervalMs: options.intervalMs,
+        timeoutMs: options.timeoutMs,
+        requireSuccess: false,
+        signal: requestOptions.signal,
+      })
+    } catch (error) {
+      const decision = await this.decideTemplateValidationRun(
+        templateId,
+        sandboxId,
+        { status: "failed" },
+        requestOptions,
+      )
+      const result: TemplateValidationRunResult = {
+        validation,
+        sandbox: sandbox ?? validation.sandbox,
+        task,
+        decision,
+        decisionStatus: "failed",
+        status: "failed",
+      }
+      throw new MboxTemplateValidationRunError(result, error)
+    }
+
+    const decisionStatus: TemplateValidationDecisionStatus =
+      task.status === "succeeded" ? "passed" : "failed"
+    const decision = await this.decideTemplateValidationRun(
+      templateId,
+      sandboxId,
+      { status: decisionStatus },
+      requestOptions,
+    )
+    const result: TemplateValidationRunResult = {
+      validation,
+      sandbox,
+      task,
+      decision,
+      decisionStatus,
+      status: decisionStatus,
+    }
+    if (options.requireSuccess && task.status !== "succeeded") {
+      throw new MboxTemplateValidationRunError(result, new MboxTaskStatusError(task))
+    }
+    return result
   }
 
   listSandboxes(projectId?: string, options?: RequestOptions) {
@@ -1483,6 +1748,13 @@ function mergeHeaders(target: Headers, headers?: HeadersInit) {
   new Headers(headers).forEach((value, key) => target.set(key, value))
 }
 
+function requestOptionsFrom(options: RequestOptions): RequestOptions {
+  return {
+    signal: options.signal,
+    headers: options.headers,
+  }
+}
+
 function clientHeaders(options: MboxClientOptions) {
   const headers = new Headers(options.headers)
   const token = options.token?.trim()
@@ -1520,6 +1792,7 @@ function auditEventQuery(options: {
   source?: string
   requestId?: string
   operation?: string
+  reason?: string
   since?: string
   until?: string
   limit?: number
@@ -1548,6 +1821,9 @@ function auditEventQuery(options: {
   }
   if (options.operation) {
     params.set("operation", options.operation)
+  }
+  if (options.reason) {
+    params.set("reason", options.reason)
   }
   if (options.since) {
     params.set("since", options.since)
@@ -1696,8 +1972,25 @@ function isPolicyDeniedOperation(value: unknown): value is PolicyDeniedOperation
   return (
     value === "sandbox.launch" ||
     value === "template.validation" ||
+    value === "project.policy.update" ||
+    value === "project.quota_policy.update" ||
+    value === "runtime.resolve" ||
+    value === "runtime.logs" ||
+    value === "runtime.events" ||
+    value === "runtime.ports" ||
+    value === "runtime.preview.proxy" ||
+    value === "runtime.terminal" ||
+    value === "runtime.session.create" ||
+    value === "runtime.session.end" ||
+    value === "execution.task.create" ||
+    value === "execution.task.cancel" ||
+    value === "execution.task.events" ||
+    value === "artifact.write" ||
+    value === "artifact.content.workspace.read" ||
     value === "artifact.content.capture" ||
-    value === "artifact.content.upload"
+    value === "artifact.content.upload" ||
+    value === "project.credential.create" ||
+    value === "project.credential.delete"
   )
 }
 

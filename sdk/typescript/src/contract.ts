@@ -57,6 +57,7 @@ export type SDKOpenAPIAlignmentIssue = {
     | "response-schema-mismatch"
     | "response-list-item-mismatch"
     | "response-binary-mismatch"
+    | "missing-sdk-route-coverage"
     | "missing-schema"
     | "missing-schema-required"
     | "missing-schema-property"
@@ -84,11 +85,28 @@ export type SDKOpenAPIAlignmentResult = {
   checkedAuth: number
   checkedRequests: number
   checkedResponses: number
+  checkedPublishedOperations: number
+  ignoredPublishedOperations: number
   checkedSchemas: number
   checkedSchemaRequired: number
   checkedSchemaProperties: number
   missing: SDKOpenAPIAlignmentIssue[]
 }
+
+const OPENAPI_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const satisfies readonly SDKRouteMethod[]
+
+const SDK_ROUTE_COVERAGE_EXCEPTIONS = [
+  {
+    method: "GET",
+    path: "/v1/sandboxes/{sandboxID}/ports/{port}/proxy/",
+    reason: "preview proxy is a browser/streaming pass-through route, not an ordinary SDK helper",
+  },
+  {
+    method: "GET",
+    path: "/v1/sandboxes/{sandboxID}/terminal",
+    reason: "terminal is a WebSocket upgrade route consumed by browser/CLI terminal clients",
+  },
+] as const satisfies ReadonlyArray<{ method: SDKRouteMethod; path: string; reason: string }>
 
 const noContentResponse = { status: "204", noContent: true } as const satisfies SDKRouteResponseContract
 
@@ -123,6 +141,7 @@ function binaryRequest(): SDKRouteRequestContract {
 export const SDK_ROUTE_CONTRACT = [
   { sdk: "health", method: "GET", path: "/healthz", auth: "none", response: jsonResponse("Health") },
   { sdk: "info", method: "GET", path: "/v1/info", auth: "none", response: jsonResponse("APIInfo") },
+  { sdk: "caller", method: "GET", path: "/v1/auth/caller", response: jsonResponse("CallerInfo") },
   { sdk: "openAPI", method: "GET", path: "/v1/openapi.json" },
   {
     sdk: "listRuntimeResources",
@@ -149,7 +168,7 @@ export const SDK_ROUTE_CONTRACT = [
     sdk: "listAuditEvents",
     method: "GET",
     path: "/v1/audit-events",
-    query: ["projectId", "action", "resourceType", "resourceId", "actor", "source", "requestId", "operation", "since", "until", "limit"],
+    query: ["projectId", "action", "resourceType", "resourceId", "actor", "source", "requestId", "operation", "reason", "since", "until", "limit"],
     response: listResponse("AuditEvent"),
   },
   { sdk: "listProjects", method: "GET", path: "/v1/projects", response: listResponse("Project") },
@@ -169,6 +188,13 @@ export const SDK_ROUTE_CONTRACT = [
     response: jsonResponse("Project"),
   },
   { sdk: "deleteProject", method: "DELETE", path: "/v1/projects/{projectID}", response: noContentResponse },
+  {
+    sdk: "getProjectAuthorization",
+    method: "GET",
+    path: "/v1/projects/{projectID}/authorization",
+    query: ["action"],
+    response: jsonResponse("ProjectAuthorizationDecision"),
+  },
   {
     sdk: "getProjectPolicy",
     method: "GET",
@@ -196,6 +222,31 @@ export const SDK_ROUTE_CONTRACT = [
     response: jsonResponse("ProjectQuotaPolicy"),
   },
   {
+    sdk: "listProjectMembers",
+    method: "GET",
+    path: "/v1/projects/{projectID}/members",
+    response: listResponse("ProjectMember"),
+  },
+  {
+    sdk: "createProjectMember",
+    method: "POST",
+    path: "/v1/projects/{projectID}/members",
+    request: jsonRequest("ProjectMemberCreate"),
+    response: createdResponse("ProjectMember"),
+  },
+  {
+    sdk: "getProjectMember",
+    method: "GET",
+    path: "/v1/members/{memberID}",
+    response: jsonResponse("ProjectMember"),
+  },
+  {
+    sdk: "deleteProjectMember",
+    method: "DELETE",
+    path: "/v1/members/{memberID}",
+    response: noContentResponse,
+  },
+  {
     sdk: "listProjectCredentials",
     method: "GET",
     path: "/v1/projects/{projectID}/credentials",
@@ -218,7 +269,7 @@ export const SDK_ROUTE_CONTRACT = [
     sdk: "listProjectAuditEvents",
     method: "GET",
     path: "/v1/projects/{projectID}/audit-events",
-    query: ["action", "resourceType", "resourceId", "actor", "source", "requestId", "operation", "since", "until", "limit"],
+    query: ["action", "resourceType", "resourceId", "actor", "source", "requestId", "operation", "reason", "since", "until", "limit"],
     response: listResponse("AuditEvent"),
   },
   {
@@ -454,8 +505,8 @@ export const SDK_SCHEMA_CONTRACT = [
   },
   {
     schema: "RuntimeResourceSummary",
-    required: ["total", "byKind", "byNamespace", "byOwner", "workload"],
-    properties: ["total", "byKind", "byNamespace", "byOwner", "workload"],
+    required: ["total", "byKind", "byNamespace", "byOwner", "byProject", "workload"],
+    properties: ["total", "byKind", "byNamespace", "byOwner", "byProject", "workload"],
   },
   {
     schema: "RuntimeResourceCount",
@@ -608,6 +659,106 @@ export const SDK_SCHEMA_CONTRACT = [
     ],
   },
   {
+    schema: "ProjectMember",
+    required: ["id", "projectId", "principalType", "principal", "role"],
+    properties: ["id", "projectId", "principalType", "principal", "role", "metadata", "createdAt", "updatedAt"],
+  },
+  {
+    schema: "ProjectMemberCreate",
+    required: ["principalType", "principal", "role"],
+    properties: ["principalType", "principal", "role", "metadata"],
+  },
+  {
+    schema: "APIInfo",
+    required: [
+      "name",
+      "apiVersion",
+      "serverVersion",
+      "runtimeController",
+      "runtimeAccess",
+      "artifactContent",
+      "trustedPrincipalHeaders",
+      "projectRbac",
+      "capabilities",
+      "compatibility",
+      "authenticationRequired",
+    ],
+    properties: [
+      "name",
+      "apiVersion",
+      "serverVersion",
+      "runtimeController",
+      "runtimeAccess",
+      "artifactContent",
+      "trustedPrincipalHeaders",
+      "projectRbac",
+      "capabilities",
+      "compatibility",
+      "authenticationRequired",
+    ],
+  },
+  {
+    schema: "TrustedPrincipalHeaderInfo",
+    required: ["enabled"],
+    properties: ["enabled", "principalHeader", "principalTypeHeader"],
+  },
+  {
+    schema: "ProjectRBACInfo",
+    required: ["enforcementEnabled", "enforcedActions"],
+    properties: ["enforcementEnabled", "enforcedActions"],
+  },
+  {
+    schema: "ProjectAuthorizationDecision",
+    required: [
+      "projectId",
+      "action",
+      "allowed",
+      "enforced",
+      "evaluation",
+      "requiredRoles",
+      "caller",
+      "memberCount",
+      "availableActions",
+      "notes",
+    ],
+    properties: [
+      "projectId",
+      "action",
+      "allowed",
+      "enforced",
+      "evaluation",
+      "requiredRoles",
+      "caller",
+      "matchedMember",
+      "memberCount",
+      "availableActions",
+      "notes",
+    ],
+  },
+  {
+    schema: "CallerInfo",
+    required: [
+      "authenticated",
+      "authenticationRequired",
+      "mode",
+      "principalType",
+      "principal",
+      "rbacTrusted",
+      "projectRolesEnforced",
+      "notes",
+    ],
+    properties: [
+      "authenticated",
+      "authenticationRequired",
+      "mode",
+      "principalType",
+      "principal",
+      "rbacTrusted",
+      "projectRolesEnforced",
+      "notes",
+    ],
+  },
+  {
     schema: "ProjectSandboxUsage",
     required: [
       "total",
@@ -693,8 +844,15 @@ export const SDK_SCHEMA_CONTRACT = [
       "image",
       "serviceAccountName",
       "sandboxId",
+      "authorizationAction",
+      "callerMode",
+      "callerPrincipalType",
+      "callerPrincipal",
       "artifactKind",
       "incomingBytes",
+      "type",
+      "target",
+      "secretRef",
     ],
   },
 ] as const satisfies readonly SDKSchemaContractEntry[]
@@ -721,8 +879,22 @@ export function checkOpenAPIAlignment(
   let checkedAuth = 0
   let checkedRequests = 0
   let checkedResponses = 0
+  let checkedPublishedOperations = 0
+  let ignoredPublishedOperations = 0
   let checkedSchemaRequired = 0
   let checkedSchemaProperties = 0
+  const routeCoverage = sdkRouteCoverage(routes)
+
+  for (const operation of openAPIOperations(paths)) {
+    if (isSDKRouteCoverageException(operation)) {
+      ignoredPublishedOperations += 1
+      continue
+    }
+    checkedPublishedOperations += 1
+    if (!routeCoverage.has(routeKey(operation))) {
+      missing.push({ reason: "missing-sdk-route-coverage", method: operation.method, path: operation.path })
+    }
+  }
 
   for (const route of routes) {
     const pathItem = paths[route.path]
@@ -786,6 +958,8 @@ export function checkOpenAPIAlignment(
     checkedAuth,
     checkedRequests,
     checkedResponses,
+    checkedPublishedOperations,
+    ignoredPublishedOperations,
     checkedSchemas: schemas.length,
     checkedSchemaRequired,
     checkedSchemaProperties,
@@ -815,7 +989,7 @@ export async function fetchAndAssertOpenAPIAlignment(
 
 function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
   if (result.ok) {
-    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, and ${result.checkedSchemas} SDK schema contracts`
+    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, and ${result.checkedSchemas} SDK schema contracts`
   }
   const preview = result.missing
     .slice(0, 10)
@@ -823,6 +997,9 @@ function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
       if (issue.schema) {
         const property = issue.property ? `:${issue.property}` : ""
         return `${issue.schema} (${issue.reason}${property})`
+      }
+      if (issue.reason === "missing-sdk-route-coverage") {
+        return `OpenAPI operation ${issue.method} ${issue.path} (${issue.reason})`
       }
       if (issue.responseStatus || issue.mediaType || issue.expectedSchema) {
         const parts = [
@@ -849,7 +1026,7 @@ function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
     })
     .join("; ")
   const suffix = result.missing.length > 10 ? `; +${result.missing.length - 10} more` : ""
-  return `OpenAPI is missing ${result.missing.length} of ${result.checked} SDK route entries: ${preview}${suffix}`
+  return `OpenAPI/SDK alignment has ${result.missing.length} issue(s) across ${result.checked} SDK route entries and ${result.checkedPublishedOperations} published route operations: ${preview}${suffix}`
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -866,6 +1043,33 @@ function queryParameterNames(operation: Record<string, unknown>) {
     names.add(parameter.name)
   }
   return names
+}
+
+function sdkRouteCoverage(routes: readonly SDKRouteContractEntry[]) {
+  return new Set(routes.map((route) => routeKey(route)))
+}
+
+function openAPIOperations(paths: Record<string, unknown>) {
+  const operations: Array<{ method: SDKRouteMethod; path: string }> = []
+  for (const [path, pathItem] of Object.entries(paths)) {
+    if (!isRecord(pathItem)) {
+      continue
+    }
+    for (const method of OPENAPI_METHODS) {
+      if (isRecord(pathItem[method.toLowerCase()])) {
+        operations.push({ method, path })
+      }
+    }
+  }
+  return operations
+}
+
+function routeKey(route: { method: SDKRouteMethod; path: string }) {
+  return `${route.method} ${route.path}`
+}
+
+function isSDKRouteCoverageException(route: { method: SDKRouteMethod; path: string }) {
+  return SDK_ROUTE_COVERAGE_EXCEPTIONS.some((exception) => exception.method === route.method && exception.path === route.path)
 }
 
 function checkRouteAuth(

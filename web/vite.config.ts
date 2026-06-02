@@ -6,8 +6,15 @@ import { defineConfig } from "vite";
 const apiTarget = process.env.MBOX_API_PROXY_TARGET || "http://127.0.0.1:18080";
 const apiToken = process.env.MBOX_TOKEN || process.env.MBOX_API_TOKEN || "";
 const webPort = Number(process.env.MBOX_WEB_PORT || "5174");
+const trustedPrincipal = process.env.MBOX_TRUSTED_PRINCIPAL || "";
+const trustedPrincipalType = process.env.MBOX_TRUSTED_PRINCIPAL_TYPE || "";
 
-const authHeaders = apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined;
+const proxyHeaders = {
+  ...(apiToken ? { authorization: `Bearer ${apiToken}` } : {}),
+  ...(trustedPrincipal ? { "x-mbox-principal": trustedPrincipal } : {}),
+  ...(trustedPrincipalType ? { "x-mbox-principal-type": trustedPrincipalType } : {}),
+};
+const configuredProxyHeaders = Object.keys(proxyHeaders).length > 0 ? proxyHeaders : undefined;
 
 export default defineConfig({
   base: "./",
@@ -23,13 +30,13 @@ export default defineConfig({
       "/healthz": {
         target: apiTarget,
         changeOrigin: true,
-        headers: authHeaders,
+        headers: configuredProxyHeaders,
       },
       "/v1": {
         target: apiTarget,
         changeOrigin: true,
         ws: true,
-        headers: authHeaders,
+        headers: configuredProxyHeaders,
       },
     },
   },

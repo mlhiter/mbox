@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -100,6 +101,13 @@ func (a *App) runCommand(ctx context.Context, client *Client, config globalConfi
 		return a.get(ctx, client, "/healthz")
 	case "info":
 		return a.get(ctx, client, "/v1/info")
+	case "auth":
+		return a.runAuth(ctx, client, args[1:])
+	case "caller":
+		if len(args) != 1 {
+			return usageError("usage: mbox caller")
+		}
+		return a.get(ctx, client, "/v1/auth/caller")
 	case "compat":
 		return a.runCompat(ctx, client, args[1:])
 	case "openapi":
@@ -122,6 +130,8 @@ func (a *App) runCommand(ctx context.Context, client *Client, config globalConfi
 		return a.runArtifact(ctx, client, args[1:])
 	case "credential", "credentials":
 		return a.runCredential(ctx, client, args[1:])
+	case "member", "members":
+		return a.runMember(ctx, client, args[1:])
 	case "logs":
 		if len(args) != 2 {
 			return usageError("usage: mbox logs <sandbox-id>")
@@ -145,21 +155,26 @@ func (a *App) usage() {
 Commands:
   health
   info
+  auth caller
+  caller
   compat [--client-api-version VERSION] [--require-capability CAPABILITY]
   context current|list|check
   context set NAME --api-url URL [--token TOKEN|--token-env ENV] [--audit-actor ACTOR] [--audit-source SOURCE] [--current]
   context use NAME
   context remove NAME
   openapi
-  runtime resources [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary]
+  runtime resources [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary|--summary-table]
   runtime orphans [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND]
   runtime cleanup-orphan --adapter ADAPTER --kind KIND --namespace NAMESPACE --name NAME --reason REASON --confirm delete-orphan-runtime-resource
-  audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--since RFC3339] [--until RFC3339] [--limit N]
+  audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N]
   projects list
   projects create --name NAME --namespace NAMESPACE [--slug SLUG]
   projects get <project-id>
   projects usage <project-id>
-  projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--since RFC3339] [--until RFC3339] [--limit N]
+  projects authorization <project-id> [--action ACTION]
+  projects members <project-id>
+  projects add-member <project-id> --principal PRINCIPAL --role owner|operator|viewer [--principal-type user|service_account|automation]
+  projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N]
   projects policy <project-id>
   projects set-policy <project-id> --enforcement disabled|enforced [--allowed-image-prefix PREFIX] [--allowed-service-account NAME] [--allowed-secret-ref NAME]
   projects quota-policy <project-id>
@@ -195,6 +210,7 @@ Commands:
   artifacts get|capture|content <artifact-id>
   artifacts upload <artifact-id> (--file PATH|--stdin) [--content-type TYPE]
   credentials get|delete <credential-id>
+  members get|delete <member-id>
   logs <sandbox-id>
   ports <sandbox-id>
   terminal <sandbox-id> [--shell sh|bash]
@@ -235,6 +251,21 @@ func (a *App) runCompat(ctx context.Context, client *Client, args []string) erro
 	return nil
 }
 
+func (a *App) runAuth(ctx context.Context, client *Client, args []string) error {
+	if len(args) == 0 {
+		return usageError("usage: mbox auth caller")
+	}
+	switch args[0] {
+	case "caller":
+		if len(args) != 1 {
+			return usageError("usage: mbox auth caller")
+		}
+		return a.get(ctx, client, "/v1/auth/caller")
+	default:
+		return usageError("usage: mbox auth caller")
+	}
+}
+
 func (a *App) runRuntime(ctx context.Context, client *Client, args []string) error {
 	if len(args) == 0 {
 		return usageError("usage: mbox runtime resources|orphans|cleanup-orphan")
@@ -247,11 +278,15 @@ func (a *App) runRuntime(ctx context.Context, client *Client, args []string) err
 		projectID := fs.String("project-id", "", "")
 		kind := fs.String("kind", "", "")
 		summaryOnly := fs.Bool("summary", false, "")
+		summaryTable := fs.Bool("summary-table", false, "")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 0 {
-			return usageError("usage: mbox runtime resources [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary]")
+			return usageError("usage: mbox runtime resources [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary|--summary-table]")
+		}
+		if *summaryOnly && *summaryTable {
+			return usageError("mbox runtime resources accepts only one of --summary or --summary-table")
 		}
 		path := "/v1/runtime/resources"
 		values := url.Values{}
@@ -277,6 +312,22 @@ func (a *App) runRuntime(ctx context.Context, client *Client, args []string) err
 				return fmt.Errorf("runtime resources response did not include summary")
 			}
 			return WriteJSON(a.streams.Stdout, summary)
+		}
+		if *summaryTable {
+			var response struct {
+				Summary json.RawMessage `json:"summary"`
+			}
+			if err := client.JSON(ctx, http.MethodGet, path, nil, &response); err != nil {
+				return err
+			}
+			if len(response.Summary) == 0 || strings.TrimSpace(string(response.Summary)) == "null" {
+				return fmt.Errorf("runtime resources response did not include summary")
+			}
+			var summary runtimeResourceSummaryTable
+			if err := json.Unmarshal(response.Summary, &summary); err != nil {
+				return fmt.Errorf("runtime resources summary was not readable: %w", err)
+			}
+			return writeRuntimeResourceSummaryTable(a.streams.Stdout, summary)
 		}
 		return a.get(ctx, client, path)
 	case "orphan", "orphans":
@@ -339,6 +390,184 @@ func (a *App) runRuntime(ctx context.Context, client *Client, args []string) err
 	}
 }
 
+type runtimeResourceSummaryTable struct {
+	Total       int                         `json:"total"`
+	ByKind      []runtimeResourceCountTable `json:"byKind"`
+	ByNamespace []runtimeResourceCountTable `json:"byNamespace"`
+	ByOwner     []runtimeResourceCountTable `json:"byOwner"`
+	ByProject   []runtimeResourceCountTable `json:"byProject"`
+	Workload    runtimeWorkloadSummaryTable `json:"workload"`
+}
+
+type runtimeResourceCountTable struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+type runtimeWorkloadSummaryTable struct {
+	ObservedResources int                          `json:"observedResources"`
+	DesiredPods       int64                        `json:"desiredPods"`
+	ObservedPods      int                          `json:"observedPods"`
+	RunningPods       int                          `json:"runningPods"`
+	ContainersReady   int                          `json:"containersReady"`
+	ContainersTotal   int                          `json:"containersTotal"`
+	RestartCount      int32                        `json:"restartCount"`
+	Requests          map[string]string            `json:"requests"`
+	Limits            map[string]string            `json:"limits"`
+	StorageCapacity   string                       `json:"storageCapacity"`
+	QuantityIssues    []runtimeQuantityIssueTable  `json:"quantityIssues"`
+	Storage           []runtimeStorageSummaryTable `json:"storage"`
+}
+
+type runtimeQuantityIssueTable struct {
+	Resource string `json:"resource"`
+	Field    string `json:"field"`
+	Value    string `json:"value"`
+	Reason   string `json:"reason"`
+}
+
+type runtimeStorageSummaryTable struct {
+	Phase    string `json:"phase"`
+	Count    int    `json:"count"`
+	Capacity string `json:"capacity"`
+}
+
+func writeRuntimeResourceSummaryTable(w io.Writer, summary runtimeResourceSummaryTable) error {
+	out := bufio.NewWriter(w)
+	if _, err := fmt.Fprintln(out, "RUNTIME RESOURCES SUMMARY"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "TOTAL\t%d\n", summary.Total); err != nil {
+		return err
+	}
+	if err := writeRuntimeResourceCountSection(out, "BY KIND", summary.ByKind); err != nil {
+		return err
+	}
+	if err := writeRuntimeResourceCountSection(out, "BY NAMESPACE", summary.ByNamespace); err != nil {
+		return err
+	}
+	if err := writeRuntimeResourceCountSection(out, "BY PROJECT", summary.ByProject); err != nil {
+		return err
+	}
+	if err := writeRuntimeResourceCountSection(out, "BY OWNER", summary.ByOwner); err != nil {
+		return err
+	}
+	if err := writeRuntimeWorkloadSummary(out, summary.Workload); err != nil {
+		return err
+	}
+	return out.Flush()
+}
+
+func writeRuntimeResourceCountSection(w io.Writer, title string, counts []runtimeResourceCountTable) error {
+	if _, err := fmt.Fprintf(w, "\n%s\n", title); err != nil {
+		return err
+	}
+	if len(counts) == 0 {
+		_, err := fmt.Fprintln(w, "  (none)")
+		return err
+	}
+	items := append([]runtimeResourceCountTable(nil), counts...)
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Name < items[j].Name
+	})
+	for _, item := range items {
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			name = "(empty)"
+		}
+		if _, err := fmt.Fprintf(w, "  %s\t%d\n", name, item.Count); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeRuntimeWorkloadSummary(w io.Writer, workload runtimeWorkloadSummaryTable) error {
+	if _, err := fmt.Fprintln(w, "\nWORKLOAD"); err != nil {
+		return err
+	}
+	lines := []struct {
+		label string
+		value any
+	}{
+		{"observedResources", workload.ObservedResources},
+		{"desiredPods", workload.DesiredPods},
+		{"observedPods", workload.ObservedPods},
+		{"runningPods", workload.RunningPods},
+		{"containersReady", fmt.Sprintf("%d/%d", workload.ContainersReady, workload.ContainersTotal)},
+		{"restartCount", workload.RestartCount},
+	}
+	for _, line := range lines {
+		if _, err := fmt.Fprintf(w, "  %s\t%v\n", line.label, line.value); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(w, "  requests\t%s\n", formatRuntimeSummaryStringMap(workload.Requests)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  limits\t%s\n", formatRuntimeSummaryStringMap(workload.Limits)); err != nil {
+		return err
+	}
+	if strings.TrimSpace(workload.StorageCapacity) != "" {
+		if _, err := fmt.Fprintf(w, "  storageCapacity\t%s\n", strings.TrimSpace(workload.StorageCapacity)); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(w, "  storage\t%s\n", formatRuntimeStorageSummaries(workload.Storage)); err != nil {
+		return err
+	}
+	if len(workload.QuantityIssues) > 0 {
+		if _, err := fmt.Fprintf(w, "  quantityIssues\t%d\n", len(workload.QuantityIssues)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func formatRuntimeSummaryStringMap(values map[string]string) string {
+	if len(values) == 0 {
+		return "(none)"
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		if strings.TrimSpace(key) != "" {
+			keys = append(keys, strings.TrimSpace(key))
+		}
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+strings.TrimSpace(values[key]))
+	}
+	if len(parts) == 0 {
+		return "(none)"
+	}
+	return strings.Join(parts, " ")
+}
+
+func formatRuntimeStorageSummaries(values []runtimeStorageSummaryTable) string {
+	if len(values) == 0 {
+		return "(none)"
+	}
+	items := append([]runtimeStorageSummaryTable(nil), values...)
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Phase < items[j].Phase
+	})
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		phase := strings.TrimSpace(item.Phase)
+		if phase == "" {
+			phase = "Unknown"
+		}
+		part := fmt.Sprintf("%s=%d", phase, item.Count)
+		if strings.TrimSpace(item.Capacity) != "" {
+			part += "(" + strings.TrimSpace(item.Capacity) + ")"
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, " ")
+}
+
 func (a *App) runAuditEvents(ctx context.Context, client *Client, args []string, projectID string) error {
 	fs := flag.NewFlagSet("audit-events", flag.ContinueOnError)
 	fs.SetOutput(a.streams.Stderr)
@@ -350,6 +579,7 @@ func (a *App) runAuditEvents(ctx context.Context, client *Client, args []string,
 	source := fs.String("source", "", "")
 	filterRequestID := fs.String("filter-request-id", "", "")
 	operation := fs.String("operation", "", "")
+	reason := fs.String("reason", "", "")
 	since := fs.String("since", "", "")
 	until := fs.String("until", "", "")
 	limit := fs.Int("limit", 0, "")
@@ -358,9 +588,9 @@ func (a *App) runAuditEvents(ctx context.Context, client *Client, args []string,
 	}
 	if fs.NArg() != 0 {
 		if projectID != "" {
-			return usageError("usage: mbox projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--since RFC3339] [--until RFC3339] [--limit N]")
+			return usageError("usage: mbox projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N]")
 		}
-		return usageError("usage: mbox audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--since RFC3339] [--until RFC3339] [--limit N]")
+		return usageError("usage: mbox audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N]")
 	}
 	path := "/v1/audit-events"
 	values := url.Values{}
@@ -387,6 +617,9 @@ func (a *App) runAuditEvents(ctx context.Context, client *Client, args []string,
 	}
 	if strings.TrimSpace(*operation) != "" {
 		values.Set("operation", strings.TrimSpace(*operation))
+	}
+	if strings.TrimSpace(*reason) != "" {
+		values.Set("reason", strings.TrimSpace(*reason))
 	}
 	if strings.TrimSpace(*since) != "" {
 		values.Set("since", strings.TrimSpace(*since))
@@ -601,7 +834,7 @@ func (f *stringListFlag) Set(value string) error {
 
 func (a *App) runProject(ctx context.Context, client *Client, args []string) error {
 	if len(args) == 0 {
-		return usageError("usage: mbox projects list|create|get|usage|audit-events|policy|set-policy|quota-policy|set-quota-policy|credentials|add-credential|delete")
+		return usageError("usage: mbox projects list|create|get|usage|authorization|members|add-member|audit-events|policy|set-policy|quota-policy|set-quota-policy|credentials|add-credential|delete")
 	}
 	switch args[0] {
 	case "list":
@@ -616,9 +849,59 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 			return usageError("usage: mbox projects usage <project-id>")
 		}
 		return a.get(ctx, client, "/v1/projects/"+url.PathEscape(args[1])+"/usage")
+	case "authorization", "authz":
+		if len(args) < 2 {
+			return usageError("usage: mbox projects authorization <project-id> [--action ACTION]")
+		}
+		fs := flag.NewFlagSet("projects authorization", flag.ContinueOnError)
+		fs.SetOutput(a.streams.Stderr)
+		action := fs.String("action", "", "")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return usageError("usage: mbox projects authorization <project-id> [--action ACTION]")
+		}
+		path := "/v1/projects/" + url.PathEscape(args[1]) + "/authorization"
+		if strings.TrimSpace(*action) != "" {
+			values := url.Values{}
+			values.Set("action", strings.TrimSpace(*action))
+			path += "?" + values.Encode()
+		}
+		return a.get(ctx, client, path)
+	case "members":
+		if len(args) != 2 {
+			return usageError("usage: mbox projects members <project-id>")
+		}
+		return a.get(ctx, client, "/v1/projects/"+url.PathEscape(args[1])+"/members")
+	case "add-member":
+		if len(args) < 2 {
+			return usageError("usage: mbox projects add-member <project-id> --principal PRINCIPAL --role owner|operator|viewer [--principal-type user|service_account|automation]")
+		}
+		projectID := args[1]
+		fs := flag.NewFlagSet("projects add-member", flag.ContinueOnError)
+		fs.SetOutput(a.streams.Stderr)
+		principalType := fs.String("principal-type", "user", "")
+		principal := fs.String("principal", "", "")
+		role := fs.String("role", "", "")
+		metadata := fs.String("metadata", "", "")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		rawMetadata, err := parseMetadataFlag(fs, *metadata)
+		if err != nil {
+			return err
+		}
+		payload := map[string]any{
+			"principalType": *principalType,
+			"principal":     *principal,
+			"role":          *role,
+		}
+		SetRaw(payload, "metadata", rawMetadata)
+		return a.post(ctx, client, "/v1/projects/"+url.PathEscape(projectID)+"/members", payload)
 	case "audit-events":
 		if len(args) < 2 {
-			return usageError("usage: mbox projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--since RFC3339] [--until RFC3339] [--limit N]")
+			return usageError("usage: mbox projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N]")
 		}
 		return a.runAuditEvents(ctx, client, args[2:], args[1])
 	case "policy":
@@ -756,7 +1039,7 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 		SetRaw(payload, "metadata", rawMetadata)
 		return a.post(ctx, client, "/v1/projects", payload)
 	default:
-		return usageError("usage: mbox projects list|create|get|usage|audit-events|policy|set-policy|quota-policy|set-quota-policy|credentials|add-credential|delete")
+		return usageError("usage: mbox projects list|create|get|usage|authorization|members|add-member|audit-events|policy|set-policy|quota-policy|set-quota-policy|credentials|add-credential|delete")
 	}
 }
 
@@ -1741,6 +2024,26 @@ func (a *App) runCredential(ctx context.Context, client *Client, args []string) 
 		return a.delete(ctx, client, "/v1/credentials/"+url.PathEscape(args[1]))
 	default:
 		return usageError("usage: mbox credentials get|delete <credential-id>")
+	}
+}
+
+func (a *App) runMember(ctx context.Context, client *Client, args []string) error {
+	if len(args) == 0 {
+		return usageError("usage: mbox members get|delete <member-id>")
+	}
+	switch args[0] {
+	case "get":
+		if len(args) != 2 {
+			return usageError("usage: mbox members get <member-id>")
+		}
+		return a.get(ctx, client, "/v1/members/"+url.PathEscape(args[1]))
+	case "delete":
+		if len(args) != 2 {
+			return usageError("usage: mbox members delete <member-id>")
+		}
+		return a.delete(ctx, client, "/v1/members/"+url.PathEscape(args[1]))
+	default:
+		return usageError("usage: mbox members get|delete <member-id>")
 	}
 }
 

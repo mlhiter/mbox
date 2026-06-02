@@ -8,6 +8,7 @@ MBOX_REQUEST_ID="${MBOX_REQUEST_ID:-cli-smoke-request}"
 CLI=(go run ./cmd/mbox --api-url "$MBOX_API_URL" --request-id "$MBOX_REQUEST_ID" --audit-actor cli-smoke --audit-source mbox-cli)
 api_pid=""
 auth_api_pid=""
+trusted_api_pid=""
 started_api=false
 
 cleanup() {
@@ -24,6 +25,9 @@ cleanup() {
 	if [[ -n "${credential_id:-}" ]]; then
 		"${CLI[@]}" credentials delete "$credential_id" >/dev/null 2>&1 || true
 	fi
+	if [[ -n "${member_id:-}" ]]; then
+		"${CLI[@]}" members delete "$member_id" >/dev/null 2>&1 || true
+	fi
 	if [[ -n "${project_id:-}" ]]; then
 		"${CLI[@]}" projects delete "$project_id" >/dev/null 2>&1 || true
 	elif [[ -n "${template_id:-}" ]]; then
@@ -34,6 +38,9 @@ cleanup() {
 	fi
 	if [[ -n "$auth_api_pid" ]]; then
 		kill "$auth_api_pid" >/dev/null 2>&1 || true
+	fi
+	if [[ -n "$trusted_api_pid" ]]; then
+		kill "$trusted_api_pid" >/dev/null 2>&1 || true
 	fi
 	exit "$exit_code"
 }
@@ -87,6 +94,27 @@ if [[ "$started_api" == "true" ]]; then
 		exit 1
 	fi
 	grep -F "missing or invalid bearer token" /tmp/mbox-cli-auth-required.out >/dev/null
+	if go run ./cmd/mbox --api-url "$auth_url" auth caller >/tmp/mbox-cli-caller-auth-required.out 2>&1; then
+		echo "expected caller handshake to reject requests without MBOX_TOKEN" >&2
+		exit 1
+	fi
+	grep -F "missing or invalid bearer token" /tmp/mbox-cli-caller-auth-required.out >/dev/null
+	MBOX_TOKEN="cli-smoke-token" go run ./cmd/mbox --api-url "$auth_url" auth caller |
+		jq -e '.authenticated == true and .authenticationRequired == true and .mode == "shared_token" and .principalType == "shared_token" and .rbacTrusted == false and .projectRolesEnforced == false' >/dev/null
+	MBOX_TOKEN="cli-smoke-token" go run ./cmd/mbox --api-url "$auth_url" caller |
+		jq -e '.mode == "shared_token" and .principal == "shared-token"' >/dev/null
+	trusted_addr="127.0.0.1:18082"
+	trusted_url="http://$trusted_addr"
+	MBOX_RUNTIME_CONTROLLER_ENABLED=false MBOX_RUNTIME_ACCESS_ENABLED=false MBOX_LISTEN_ADDR="$trusted_addr" MBOX_TRUSTED_PRINCIPAL_HEADERS_ENABLED=true DATABASE_URL="$DATABASE_URL" go run ./cmd/mbox-server &
+	trusted_api_pid="$!"
+	wait_auth_api "$trusted_url"
+	curl -fsS \
+		-H 'X-Mbox-Principal-Type: automation' \
+		-H 'X-Mbox-Principal: cli-smoke-bot' \
+		"$trusted_url/v1/auth/caller" |
+		jq -e '.mode == "trusted_header" and .principalType == "automation" and .principal == "cli-smoke-bot" and .rbacTrusted == true and .projectRolesEnforced == false' >/dev/null
+	kill "$trusted_api_pid" >/dev/null 2>&1 || true
+	trusted_api_pid=""
 	MBOX_TOKEN="cli-smoke-token" go run ./cmd/mbox --api-url "$auth_url" projects list | jq -e '.items | type == "array"' >/dev/null
 	context_config="$(mktemp)"
 	jq -n --arg url "$auth_url" '{
@@ -133,12 +161,20 @@ echo "Checking API info manifest with CLI"
 	.apiVersion == "v1alpha1" and
 	.runtimeController.enabled == false and
 	.runtimeAccess.enabled == false and
-	.artifactContent.retainedContentEnabled == true and
-	.artifactContent.storageProvider == "postgres" and
-	(.capabilities | index("sandboxes")) and
-	(.capabilities | index("openapi")) and
-	(.capabilities | index("project-usage")) and
-	(.capabilities | index("project-quota-policies")) and
+		.artifactContent.retainedContentEnabled == true and
+		.artifactContent.storageProvider == "postgres" and
+		.trustedPrincipalHeaders.enabled == false and
+		.projectRbac.enforcementEnabled == false and
+		(.projectRbac.enforcedActions | length == 0) and
+		(.capabilities | index("sandboxes")) and
+		(.capabilities | index("openapi")) and
+		(.capabilities | index("caller-info")) and
+		(.capabilities | index("trusted-principal-headers")) and
+		(.capabilities | index("project-usage")) and
+		(.capabilities | index("project-authorization-preflight")) and
+		(.capabilities | index("project-rbac-enforcement")) and
+		(.capabilities | index("project-quota-policies")) and
+	(.capabilities | index("project-members")) and
 	(.capabilities | index("artifact-client-upload")) and
 	(.capabilities | index("runtime-orphan-audit")) and
 	(.capabilities | index("runtime-orphan-cleanup"))
@@ -166,9 +202,19 @@ echo "Checking API info manifest with CLI"
 	(.paths["/v1/audit-events"].get.parameters | map(.name) | index("X-Mbox-Request-ID")) and
 	(.paths["/v1/audit-events"].get.parameters | map(.name) | index("requestId")) and
 	(.paths["/v1/audit-events"].get.parameters | map(.name) | index("operation")) and
+	(.paths["/v1/audit-events"].get.parameters | map(.name) | index("reason")) and
 	(.paths["/v1/audit-events"].get.parameters | map(.name) | index("since")) and
 	(.paths["/v1/audit-events"].get.parameters | map(.name) | index("until")) and
 	.paths["/v1/runtime/resources"] and
+	.paths["/v1/auth/caller"] and
+	(.paths["/v1/auth/caller"].get.security[0].bearerAuth | type == "array") and
+	.components.schemas.APIInfo and
+	.components.schemas.TrustedPrincipalHeaderInfo and
+	.components.schemas.ProjectRBACInfo and
+	.components.schemas.CallerInfo and
+	.paths["/v1/projects/{projectID}/authorization"] and
+	(.paths["/v1/projects/{projectID}/authorization"].get.parameters | map(.name) | index("action")) and
+	.components.schemas.ProjectAuthorizationDecision and
 	(.paths["/v1/runtime/resources"].get.parameters | map(.name) | index("projectId")) and
 	(.paths["/v1/runtime/resources"].get.parameters | map(.name) | index("kind")) and
 	(.paths["/v1/runtime/orphans"].get.parameters | map(.name) | index("projectId")) and
@@ -181,10 +227,15 @@ echo "Checking API info manifest with CLI"
 	.components.schemas.RuntimeResourceOwner and
 	.components.schemas.RuntimeResourceObservation and
 	.components.schemas.RuntimeStorage and
+	.paths["/v1/projects/{projectID}/members"] and
+	.paths["/v1/members/{memberID}"] and
+	.components.schemas.ProjectMember and
+	.components.schemas.ProjectMemberCreate and
 	.paths["/v1/projects/{projectID}/quota-policy"] and
 	.paths["/v1/tasks/{taskID}/events"] and
 	.components.schemas.ProjectQuotaPolicy
 ' >/dev/null
+"${CLI[@]}" auth caller | jq -e '.authenticated == false and .authenticationRequired == false and .mode == "anonymous" and .principalType == "anonymous" and .rbacTrusted == false and .projectRolesEnforced == false' >/dev/null
 if "${CLI[@]}" runtime resources >/tmp/mbox-cli-runtime-resources.out 2>&1; then
 	echo "expected runtime resources to require a configured runtime auditor" >&2
 	exit 1
@@ -255,6 +306,18 @@ credential_id="$(jq -r '.id' <<<"$credential_json")"
 "${CLI[@]}" projects credentials "$project_id" | jq -e --arg id "$credential_id" '.items[] | select(.id == $id and .secretRef.name == "cli-smoke-git-token")' >/dev/null
 "${CLI[@]}" credentials get "$credential_id" | jq -e --arg id "$credential_id" '.id == $id and .type == "git"' >/dev/null
 
+echo "Registering project member role record with CLI"
+member_json="$("${CLI[@]}" projects add-member "$project_id" \
+	--principal-type automation \
+	--principal "cli-smoke-bot-$suffix" \
+	--role operator \
+	--metadata '{"source":"cli-smoke"}')"
+member_id="$(jq -r '.id' <<<"$member_json")"
+"${CLI[@]}" projects members "$project_id" | jq -e --arg id "$member_id" '.items[] | select(.id == $id and .principalType == "automation" and .role == "operator")' >/dev/null
+"${CLI[@]}" members get "$member_id" | jq -e --arg id "$member_id" --arg principal "cli-smoke-bot-$suffix" '.id == $id and .principal == $principal' >/dev/null
+"${CLI[@]}" projects authorization "$project_id" --action sandbox.launch |
+	jq -e '.action == "sandbox.launch" and .allowed == false and .enforced == false and .evaluation == "not_enforceable" and (.requiredRoles | index("owner")) and (.requiredRoles | index("operator")) and .caller.rbacTrusted == false and .memberCount == 1' >/dev/null
+
 echo "Checking policy denial path"
 denied_template_json="$("${CLI[@]}" templates create \
 	--project-id "$project_id" \
@@ -298,8 +361,9 @@ sandbox_id="$(jq -r '.id' <<<"$sandbox_json")"
 "${CLI[@]}" sandboxes get "$sandbox_id" | jq -e --arg id "$sandbox_id" '.id == $id and .status == "pending"' >/dev/null
 "${CLI[@]}" projects usage "$project_id" | jq -e '.sandboxes.active == 1 and .sandboxes.pending == 1 and .templates.projectScoped == 1 and .credentials.total == 1 and .artifacts.total == 0' >/dev/null
 "${CLI[@]}" projects audit-events "$project_id" --action sandbox.created --resource-type sandbox --actor cli-smoke --source mbox-cli --filter-request-id "$MBOX_REQUEST_ID" --limit 10 | jq -e --arg requestId "$MBOX_REQUEST_ID" '.items[] | select(.action == "sandbox.created" and .resourceType == "sandbox" and .actor == "cli-smoke" and .source == "mbox-cli" and .metadata.requestId == $requestId)' >/dev/null
-"${CLI[@]}" projects audit-events "$project_id" --action policy.denied --resource-type sandbox --operation sandbox.launch --actor cli-smoke --source mbox-cli --filter-request-id "$MBOX_REQUEST_ID" --limit 10 | jq -e --arg requestId "$MBOX_REQUEST_ID" '.items[] | select(.action == "policy.denied" and .resourceType == "sandbox" and .actor == "cli-smoke" and .source == "mbox-cli" and .metadata.requestId == $requestId and .metadata.operation == "sandbox.launch")' >/dev/null
+"${CLI[@]}" projects audit-events "$project_id" --action policy.denied --resource-type sandbox --operation sandbox.launch --reason "active sandbox quota exceeded" --actor cli-smoke --source mbox-cli --filter-request-id "$MBOX_REQUEST_ID" --limit 10 | jq -e --arg requestId "$MBOX_REQUEST_ID" '.items[] | select(.action == "policy.denied" and .resourceType == "sandbox" and .actor == "cli-smoke" and .source == "mbox-cli" and .metadata.requestId == $requestId and .metadata.operation == "sandbox.launch" and .metadata.reason == "active sandbox quota exceeded")' >/dev/null
 "${CLI[@]}" audit-events --project-id "$project_id" --action project.credential.created --resource-type project-credential --actor cli-smoke --source mbox-cli --limit 10 | jq -e '.items[] | select(.action == "project.credential.created" and .resourceType == "project-credential" and .actor == "cli-smoke" and .source == "mbox-cli")' >/dev/null
+"${CLI[@]}" audit-events --project-id "$project_id" --action project.member.created --resource-type project-member --actor cli-smoke --source mbox-cli --limit 10 | jq -e --arg id "$member_id" '.items[] | select(.action == "project.member.created" and .resourceType == "project-member" and .resourceId == $id and .actor == "cli-smoke" and .source == "mbox-cli")' >/dev/null
 "${CLI[@]}" templates boundary "$template_id" --project-id "$project_id" | jq -e '.serviceAccountTokenAutomount == false and .secretProjection == "none" and .credentialProjection == "references-recorded-not-mounted" and .policyEnforcement == "enforced" and (.checks[] | select(.id == "launch-policy" and .status == "pass")) and (.checks[] | select(.id == "credential-refs" and .status == "warn"))' >/dev/null
 "${CLI[@]}" sandboxes boundary "$sandbox_id" | jq -e --arg id "$sandbox_id" '.sandboxId == $id and .serviceAccountTokenAutomount == false and .credentialProjection == "references-recorded-not-mounted" and .policyEnforcement == "enforced"' >/dev/null
 
@@ -332,6 +396,10 @@ echo "Deleting project and template"
 if [[ -n "${credential_id:-}" ]]; then
 	"${CLI[@]}" credentials delete "$credential_id" >/dev/null
 	credential_id=""
+fi
+if [[ -n "${member_id:-}" ]]; then
+	"${CLI[@]}" members delete "$member_id" >/dev/null
+	member_id=""
 fi
 if [[ -n "${sandbox_id:-}" ]]; then
 	"${CLI[@]}" sandboxes delete "$sandbox_id" >/dev/null

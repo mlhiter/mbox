@@ -7,6 +7,8 @@ const sandboxId =
   process.env.MBOX_SDK_RUNTIME_SANDBOX_ID ??
   process.env.MBOX_SANDBOX_ID ??
   process.argv[2]
+const templateValidationTemplateId = process.env.MBOX_SDK_RUNTIME_TEMPLATE_ID
+const templateValidationProjectId = process.env.MBOX_SDK_RUNTIME_PROJECT_ID
 const expectedBackend =
   process.env.MBOX_EXPECTED_ARTIFACT_CONTENT_BACKEND ??
   process.env.MBOX_ARTIFACT_CONTENT_BACKEND
@@ -47,6 +49,12 @@ try {
   assert.equal(info.runtimeAccess.enabled, true)
   assert.equal(info.runtimeAccess.adapter, "agent-sandbox")
   assert.equal(info.artifactContent.retainedContentEnabled, true)
+  assert.ok(info.capabilities.includes("caller-info"))
+  assert.ok(info.capabilities.includes("project-rbac-enforcement"))
+  assert.equal(info.projectRbac.enforcementEnabled, false)
+  const caller = await client.caller()
+  assert.equal(caller.rbacTrusted, false)
+  assert.equal(caller.projectRolesEnforced, false)
   if (expectedBackend) {
     assert.equal(info.artifactContent.storageProvider, expectedBackend)
   }
@@ -99,6 +107,33 @@ try {
   assert.equal(contentResponse.headers.get("x-mbox-artifact-retained"), "true")
   assert.equal(await contentResponse.text(), marker)
 
+  if (templateValidationTemplateId) {
+    const validationMarker = `sdk-template-validation-ok:${Date.now()}`
+    const validation = await client.runTemplateValidation(
+      templateValidationTemplateId,
+      {
+        projectId: templateValidationProjectId,
+        validationMetadata: { smoke: "sdk-runtime-template-validation" },
+        task: {
+          command: ["sh", "-lc", `printf '${validationMarker}'`],
+          timeoutSeconds: taskTimeoutSeconds,
+          metadata: { smoke: "sdk-runtime-template-validation" },
+        },
+        intervalMs: 500,
+        timeoutMs: waitTimeoutMs,
+        requireSuccess: true,
+      },
+    )
+    assert.equal(validation.status, "passed")
+    assert.equal(validation.decisionStatus, "passed")
+    assert.equal(validation.sandbox.status, "running")
+    assert.ok(validation.sandbox.runtimeRef?.name, "validation sandbox must have a runtimeRef")
+    assert.equal(validation.task?.status, "succeeded")
+    assert.ok(validation.task?.stdout?.includes(validationMarker))
+    await client.deleteSandbox(validation.sandbox.id)
+    await waitForSandboxCleanup(client, validation.sandbox.id, waitTimeoutMs)
+  }
+
   console.log(`SDK runtime smoke passed against ${baseUrl} for sandbox ${sandboxId}`)
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))
@@ -117,4 +152,29 @@ function parsePositiveInteger(value, fallback) {
     throw new Error(`expected positive integer, got ${value}`)
   }
   return parsed
+}
+
+async function waitForSandboxCleanup(client, sandboxId, timeoutMs) {
+  const started = Date.now()
+  for (;;) {
+    try {
+      const sandbox = await client.getSandbox(sandboxId)
+      if (!sandbox.runtimeRef?.name) {
+        return
+      }
+    } catch (error) {
+      if (error instanceof MboxAPIError && error.status === 404) {
+        return
+      }
+      throw error
+    }
+    if (Date.now() - started >= timeoutMs) {
+      throw new Error(`timed out waiting for validation sandbox ${sandboxId} cleanup`)
+    }
+    await sleep(500)
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }

@@ -75,17 +75,23 @@ type contextArtifactInfo struct {
 	MaxBytes               int64  `json:"maxBytes"`
 }
 
+type contextProjectRBACInfo struct {
+	EnforcementEnabled bool     `json:"enforcementEnabled"`
+	EnforcedActions    []string `json:"enforcedActions"`
+}
+
 type contextInfoCheck struct {
-	OK                     bool                 `json:"ok"`
-	Name                   string               `json:"name,omitempty"`
-	Version                string               `json:"apiVersion,omitempty"`
-	ServerVersion          string               `json:"serverVersion,omitempty"`
-	RuntimeController      *contextRuntimeInfo  `json:"runtimeController,omitempty"`
-	RuntimeAccess          *contextRuntimeInfo  `json:"runtimeAccess,omitempty"`
-	ArtifactContent        *contextArtifactInfo `json:"artifactContent,omitempty"`
-	AuthenticationRequired *bool                `json:"authenticationRequired,omitempty"`
-	Message                string               `json:"message,omitempty"`
-	Capabilities           []string             `json:"capabilities,omitempty"`
+	OK                     bool                    `json:"ok"`
+	Name                   string                  `json:"name,omitempty"`
+	Version                string                  `json:"apiVersion,omitempty"`
+	ServerVersion          string                  `json:"serverVersion,omitempty"`
+	RuntimeController      *contextRuntimeInfo     `json:"runtimeController,omitempty"`
+	RuntimeAccess          *contextRuntimeInfo     `json:"runtimeAccess,omitempty"`
+	ArtifactContent        *contextArtifactInfo    `json:"artifactContent,omitempty"`
+	ProjectRBAC            *contextProjectRBACInfo `json:"projectRbac,omitempty"`
+	AuthenticationRequired *bool                   `json:"authenticationRequired,omitempty"`
+	Message                string                  `json:"message,omitempty"`
+	Capabilities           []string                `json:"capabilities,omitempty"`
 }
 
 type contextCheckResult struct {
@@ -292,6 +298,10 @@ func contextInfoFromAPIInfo(info apiInfo) contextInfoCheck {
 			RetainedContentEnabled: info.ArtifactContent.RetainedContentEnabled,
 			StorageProvider:        info.ArtifactContent.StorageProvider,
 			MaxBytes:               info.ArtifactContent.MaxBytes,
+		},
+		ProjectRBAC: &contextProjectRBACInfo{
+			EnforcementEnabled: info.ProjectRBAC.EnforcementEnabled,
+			EnforcedActions:    info.ProjectRBAC.EnforcedActions,
 		},
 		AuthenticationRequired: &authenticationRequired,
 		Capabilities:           info.Capabilities,
