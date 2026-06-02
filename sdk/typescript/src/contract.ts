@@ -994,6 +994,30 @@ export const SDK_SCHEMA_CONTRACT = [
     properties: ["target", "items"],
   },
   {
+    schema: "RuntimeSession",
+    required: ["id", "projectId", "sandboxId", "type", "status", "startedAt"],
+    properties: [
+      "id",
+      "projectId",
+      "sandboxId",
+      "type",
+      "status",
+      "client",
+      "userAgent",
+      "runtimeRef",
+      "metadata",
+      "startedAt",
+      "endedAt",
+      "createdAt",
+      "updatedAt",
+    ],
+  },
+  {
+    schema: "RuntimeSessionCreate",
+    required: ["type"],
+    properties: ["type", "client", "metadata"],
+  },
+  {
     schema: "AuditEvent",
     required: ["id", "action", "resourceType", "createdAt"],
     properties: [

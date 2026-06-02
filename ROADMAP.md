@@ -261,6 +261,7 @@ Current status:
 - Done: SDK/OpenAPI project credential-reference schema guard now covers `ProjectCredential`, `ProjectCredentialCreate`, and `SecretRef` fields for reference-only credential clients.
 - Done: SDK/OpenAPI template-library schema guard now covers template response/create/update/port fields and catches immutable-field drift in update schemas.
 - Done: SDK/OpenAPI sandbox and preview schema guard now covers `RuntimeRef`, `SandboxPort`, `Sandbox`, `SandboxCreate`, `SandboxUpdate`, `PreviewPort`, and `PreviewPortsResult`, including immutable sandbox update-field drift.
+- Done: SDK/OpenAPI runtime session schema guard now covers runtime session response/create fields for SDK session-history clients.
 - Remaining: broader route-level user/project RBAC enforcement beyond the current disabled-by-default `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage` starters, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
 
 ## Phase 4: Upper-layer Workflow Integrations
@@ -399,6 +400,7 @@ First slice status:
 66. Done: SDK/OpenAPI project credential-reference schema guard covers reference-only credential fields and `SecretRef` without implying secret-value storage or runtime mounting.
 67. Done: SDK/OpenAPI template-library schema guard covers template response/create/update/port fields and rejects immutable `projectId`/`slug` drift on update schemas.
 68. Done: SDK/OpenAPI sandbox and preview schema guard covers sandbox response/create/update, runtime reference, declared sandbox ports, and preview port result fields, including immutable `projectId`/`templateId`/`slug` drift on sandbox update schemas.
-69. Next: a narrow member management gate after bootstrap/UX is clearer, remaining audit ergonomics, or the next generated-client/schema alignment slice.
+69. Done: SDK/OpenAPI runtime session schema guard covers session response/create fields such as `type`, `status`, `startedAt`, client labels, runtime reference, and metadata.
+70. Next: a narrow member management gate after bootstrap/UX is clearer, remaining audit ergonomics, or the next generated-client/schema alignment slice.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

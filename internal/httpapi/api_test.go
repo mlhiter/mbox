@@ -334,7 +334,7 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected schemas object, got %#v", components["schemas"])
 	}
-	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "SecretRef", "ProjectCredential", "ProjectCredentialCreate", "TemplatePort", "EnvironmentTemplate", "TemplateCreate", "TemplateUpdate", "RuntimeRef", "SandboxPort", "Sandbox", "SandboxCreate", "SandboxUpdate", "PreviewPort", "PreviewPortsResult", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "ExecutionTask", "Artifact", "Error"} {
+	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "SecretRef", "ProjectCredential", "ProjectCredentialCreate", "TemplatePort", "EnvironmentTemplate", "TemplateCreate", "TemplateUpdate", "RuntimeRef", "SandboxPort", "Sandbox", "SandboxCreate", "SandboxUpdate", "PreviewPort", "PreviewPortsResult", "RuntimeSession", "RuntimeSessionCreate", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "ExecutionTask", "Artifact", "Error"} {
 		if _, ok := schemas[name]; !ok {
 			t.Fatalf("expected schema %s in OpenAPI components", name)
 		}
@@ -451,6 +451,43 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(previewPortRequired, "protocol") ||
 		!anySliceContainsString(previewPortRequired, "available") {
 		t.Fatalf("expected PreviewPort declared port required fields, got %#v", previewPort["required"])
+	}
+	runtimeSession, ok := schemas["RuntimeSession"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected RuntimeSession schema in %#v", schemas["RuntimeSession"])
+	}
+	runtimeSessionRequired, ok := runtimeSession["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(runtimeSessionRequired, "id") ||
+		!anySliceContainsString(runtimeSessionRequired, "projectId") ||
+		!anySliceContainsString(runtimeSessionRequired, "sandboxId") ||
+		!anySliceContainsString(runtimeSessionRequired, "type") ||
+		!anySliceContainsString(runtimeSessionRequired, "status") ||
+		!anySliceContainsString(runtimeSessionRequired, "startedAt") {
+		t.Fatalf("expected RuntimeSession identity/state required fields, got %#v", runtimeSession["required"])
+	}
+	runtimeSessionProperties, ok := runtimeSession["properties"].(map[string]any)
+	if !ok ||
+		runtimeSessionProperties["client"] == nil ||
+		runtimeSessionProperties["userAgent"] == nil ||
+		runtimeSessionProperties["runtimeRef"] == nil ||
+		runtimeSessionProperties["metadata"] == nil ||
+		runtimeSessionProperties["endedAt"] == nil {
+		t.Fatalf("expected RuntimeSession client/runtime metadata properties, got %#v", runtimeSession["properties"])
+	}
+	runtimeSessionCreate, ok := schemas["RuntimeSessionCreate"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected RuntimeSessionCreate schema in %#v", schemas["RuntimeSessionCreate"])
+	}
+	runtimeSessionCreateRequired, ok := runtimeSessionCreate["required"].([]any)
+	if !ok || !anySliceContainsString(runtimeSessionCreateRequired, "type") {
+		t.Fatalf("expected RuntimeSessionCreate type required field, got %#v", runtimeSessionCreate["required"])
+	}
+	runtimeSessionCreateProperties, ok := runtimeSessionCreate["properties"].(map[string]any)
+	if !ok ||
+		runtimeSessionCreateProperties["client"] == nil ||
+		runtimeSessionCreateProperties["metadata"] == nil {
+		t.Fatalf("expected RuntimeSessionCreate client/metadata properties, got %#v", runtimeSessionCreate["properties"])
 	}
 	apiInfo, ok := schemas["APIInfo"].(map[string]any)
 	if !ok {

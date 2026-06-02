@@ -892,6 +892,38 @@ assert.throws(
         issue.reason === "unexpected-schema-property" &&
         issue.schema === "SandboxUpdate" &&
         issue.property === "slug",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeSession.required = broken.components.schemas.RuntimeSession.required.filter(
+      (name) => name !== "startedAt",
+    )
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-required" &&
+        issue.schema === "RuntimeSession" &&
+        issue.property === "startedAt",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeSessionCreate.required = []
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-required" &&
+        issue.schema === "RuntimeSessionCreate" &&
+        issue.property === "type",
     ),
 )
 assert.equal(assertOpenAPIAlignment(buildOpenAPIWithIntentionalSDKExceptions()).ok, true)
@@ -1473,6 +1505,26 @@ function schemaComponents() {
       "message",
     ]),
     PreviewPortsResult: objectSchema(["target", "items"]),
+    RuntimeSession: objectSchema([
+      "id",
+      "projectId",
+      "sandboxId",
+      "type",
+      "status",
+      "startedAt",
+    ], [
+      "client",
+      "userAgent",
+      "runtimeRef",
+      "metadata",
+      "endedAt",
+      "createdAt",
+      "updatedAt",
+    ]),
+    RuntimeSessionCreate: objectSchema(["type"], [
+      "client",
+      "metadata",
+    ]),
     APIInfo: objectSchema([
       "name",
       "apiVersion",
