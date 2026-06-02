@@ -1070,6 +1070,149 @@
   white-space: nowrap;
 }
 
+.runtime-project-attribution {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  background: oklch(0.988 0.005 82);
+  padding: 13px 18px 15px;
+}
+
+.runtime-project-attribution-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.runtime-project-attribution-head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.runtime-project-attribution-head span,
+.runtime-project-attribution p {
+  color: var(--muted-copy);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.runtime-project-attribution-head strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.runtime-project-attribution-head button,
+.runtime-project-attribution-list button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+}
+
+.runtime-project-attribution-head button {
+  flex: 0 0 auto;
+  min-width: 58px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.runtime-project-attribution-head button:hover:not(:disabled),
+.runtime-project-attribution-list button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--paper-hover);
+}
+
+.runtime-project-attribution-head button.active,
+.runtime-project-attribution-list button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.runtime-project-attribution-head button:disabled,
+.runtime-project-attribution-list button:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.runtime-project-attribution-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.runtime-project-attribution-list button {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  min-height: 58px;
+  overflow: hidden;
+  padding: 9px 10px 11px;
+  text-align: left;
+}
+
+.runtime-project-attribution-list button span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.runtime-project-attribution-list button strong {
+  min-width: 0;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-project-attribution-list button code {
+  color: var(--muted-copy);
+  font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas,
+    monospace;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.runtime-project-attribution-list button em {
+  align-self: start;
+  color: inherit;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.runtime-project-attribution-list button i {
+  grid-column: 1 / -1;
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.runtime-project-attribution-list button i::before {
+  display: block;
+  width: var(--runtime-project-share);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  content: "";
+}
+
 .runtime-inventory-resource,
 .runtime-inventory-owner,
 .runtime-inventory-observation {

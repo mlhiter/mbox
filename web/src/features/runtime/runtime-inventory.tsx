@@ -1,4 +1,5 @@
 import { RefreshCw } from "lucide-react"
+import type { CSSProperties } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -47,6 +48,7 @@ export function RuntimeInventory({
   const checkedAt = inventory?.checkedAt ? formatTimestamp(inventory.checkedAt) : "Not checked"
   const adapter = inventory?.adapter || "runtime auditor"
   const projectRollup = projectRollupLabel(summary?.byProject, projects)
+  const projectAttribution = projectAttributionRows(summary?.byProject, projects)
   const selectedProject = selectedProjectId ? projects.find((project) => project.id === selectedProjectId) : undefined
   const scopeValue = selectedProjectId ? selectedProject?.name || "Unknown project" : "All projects"
   const scopeDetail = selectedProjectId ? `project/${shortID(selectedProjectId)}` : "all owner labels"
@@ -90,6 +92,44 @@ export function RuntimeInventory({
         <SummaryCell label="Pods" value={podSummaryValue(workload)} detail={podSummaryDetail(workload)} />
         <SummaryCell label="Requests" value={requestSummaryValue(workload)} detail={storageSummaryDetail(workload)} mono />
         <SummaryCell label="Checked" value={checkedAt} detail="latest inventory" mono />
+      </div>
+      <div className="runtime-project-attribution" aria-label="Runtime project attribution">
+        <div className="runtime-project-attribution-head">
+          <div>
+            <span>Project attribution</span>
+            <strong>{projectRollup.value} labeled projects</strong>
+          </div>
+          <button
+            type="button"
+            className={!selectedProjectId ? "active" : undefined}
+            onClick={() => onProjectChange("")}
+            disabled={loading || !selectedProjectId}
+          >
+            All
+          </button>
+        </div>
+        {projectAttribution.length === 0 ? (
+          <p>No runtime owner project labels in this result.</p>
+        ) : (
+          <div className="runtime-project-attribution-list">
+            {projectAttribution.map((project) => (
+              <button
+                type="button"
+                key={project.id}
+                className={selectedProjectId === project.id ? "active" : undefined}
+                onClick={() => onProjectChange(project.id)}
+                disabled={loading}
+              >
+                <span>
+                  <strong>{project.name}</strong>
+                  <code>{project.shortID}</code>
+                </span>
+                <em>{project.count}</em>
+                <i style={{ "--runtime-project-share": `${project.share}%` } as CSSProperties} />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <Table className="resource-table runtime-inventory-table">
         <TableHeader>
@@ -274,6 +314,27 @@ function projectRollupLabel(
     value: `${items.length}`,
     detail: `${total} resources · top ${project?.name || shortID(top.name)} (${top.count})`,
   }
+}
+
+function projectAttributionRows(
+  byProject: Array<{ name: string; count: number }> | undefined,
+  projects: Project[],
+) {
+  const items = byProject || []
+  const total = items.reduce((sum, item) => sum + item.count, 0)
+  return [...items]
+    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
+    .map((item) => {
+      const project = projects.find((candidate) => candidate.id === item.name)
+      const share = total > 0 ? Math.max(3, Math.round((item.count / total) * 100)) : 0
+      return {
+        id: item.name,
+        name: project?.name || `Project ${shortID(item.name)}`,
+        shortID: shortID(item.name),
+        count: item.count,
+        share,
+      }
+    })
 }
 
 function shortID(value: string) {
