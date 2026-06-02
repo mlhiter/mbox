@@ -988,6 +988,38 @@ assert.throws(
         issue.reason === "missing-schema-required" &&
         issue.schema === "ArtifactContent" &&
         issue.property === "storageProvider",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.Project.required = broken.components.schemas.Project.required.filter(
+      (name) => name !== "defaultNamespace",
+    )
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-required" &&
+        issue.schema === "Project" &&
+        issue.property === "defaultNamespace",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectUpdate.properties.slug = { type: "string" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "unexpected-schema-property" &&
+        issue.schema === "ProjectUpdate" &&
+        issue.property === "slug",
     ),
 )
 assert.equal(assertOpenAPIAlignment(buildOpenAPIWithIntentionalSDKExceptions()).ok, true)
@@ -1436,6 +1468,25 @@ function schemaComponents() {
     ManagedResourceRef: objectSchema(["adapter", "kind", "namespace", "name"]),
     RuntimeOrphanCleanupRequest: objectSchema(["resource", "reason", "confirm", "deleteOrphan"]),
     RuntimeOrphanCleanupResult: objectSchema(["deleted", "resource", "reason", "message"]),
+    Project: objectSchema(["id", "name", "slug", "defaultNamespace"], [
+      "repositoryUrl",
+      "defaultTemplateId",
+      "metadata",
+      "createdAt",
+      "updatedAt",
+    ]),
+    ProjectCreate: objectSchema(["name", "defaultNamespace"], [
+      "slug",
+      "repositoryUrl",
+      "metadata",
+    ]),
+    ProjectUpdate: objectSchema([], [
+      "name",
+      "repositoryUrl",
+      "defaultNamespace",
+      "defaultTemplateId",
+      "metadata",
+    ]),
     ProjectUsage: objectSchema([
       "projectId",
       "generatedAt",

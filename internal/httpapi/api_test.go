@@ -376,6 +376,59 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok || templateUpdateProperties["projectId"] != nil || templateUpdateProperties["slug"] != nil {
 		t.Fatalf("expected TemplateUpdate to omit projectId/slug update fields, got %#v", templateUpdateSchema["properties"])
 	}
+	projectSchema, ok := schemas["Project"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Project schema in %#v", schemas["Project"])
+	}
+	projectRequired, ok := projectSchema["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(projectRequired, "id") ||
+		!anySliceContainsString(projectRequired, "name") ||
+		!anySliceContainsString(projectRequired, "slug") ||
+		!anySliceContainsString(projectRequired, "defaultNamespace") {
+		t.Fatalf("expected Project identity/defaultNamespace required fields, got %#v", projectSchema["required"])
+	}
+	projectProperties, ok := projectSchema["properties"].(map[string]any)
+	if !ok ||
+		projectProperties["repositoryUrl"] == nil ||
+		projectProperties["defaultTemplateId"] == nil ||
+		projectProperties["metadata"] == nil ||
+		projectProperties["createdAt"] == nil ||
+		projectProperties["updatedAt"] == nil {
+		t.Fatalf("expected Project optional metadata/template/timestamp properties, got %#v", projectSchema["properties"])
+	}
+	projectCreate, ok := schemas["ProjectCreate"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ProjectCreate schema in %#v", schemas["ProjectCreate"])
+	}
+	projectCreateRequired, ok := projectCreate["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(projectCreateRequired, "name") ||
+		!anySliceContainsString(projectCreateRequired, "defaultNamespace") {
+		t.Fatalf("expected ProjectCreate name/defaultNamespace required fields, got %#v", projectCreate["required"])
+	}
+	projectCreateProperties, ok := projectCreate["properties"].(map[string]any)
+	if !ok ||
+		projectCreateProperties["slug"] == nil ||
+		projectCreateProperties["repositoryUrl"] == nil ||
+		projectCreateProperties["metadata"] == nil {
+		t.Fatalf("expected ProjectCreate slug/repository/metadata properties, got %#v", projectCreate["properties"])
+	}
+	projectUpdate, ok := schemas["ProjectUpdate"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ProjectUpdate schema in %#v", schemas["ProjectUpdate"])
+	}
+	projectUpdateProperties, ok := projectUpdate["properties"].(map[string]any)
+	if !ok ||
+		projectUpdateProperties["name"] == nil ||
+		projectUpdateProperties["repositoryUrl"] == nil ||
+		projectUpdateProperties["defaultNamespace"] == nil ||
+		projectUpdateProperties["defaultTemplateId"] == nil ||
+		projectUpdateProperties["metadata"] == nil ||
+		projectUpdateProperties["id"] != nil ||
+		projectUpdateProperties["slug"] != nil {
+		t.Fatalf("expected ProjectUpdate mutable fields and immutable-field omissions, got %#v", projectUpdate["properties"])
+	}
 	sandboxSchema, ok := schemas["Sandbox"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected Sandbox schema in %#v", schemas["Sandbox"])

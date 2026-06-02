@@ -702,6 +702,31 @@ export const SDK_SCHEMA_CONTRACT = [
     ],
   },
   {
+    schema: "Project",
+    required: ["id", "name", "slug", "defaultNamespace"],
+    properties: [
+      "id",
+      "name",
+      "slug",
+      "repositoryUrl",
+      "defaultNamespace",
+      "defaultTemplateId",
+      "metadata",
+      "createdAt",
+      "updatedAt",
+    ],
+  },
+  {
+    schema: "ProjectCreate",
+    required: ["name", "defaultNamespace"],
+    properties: ["name", "slug", "repositoryUrl", "defaultNamespace", "metadata"],
+  },
+  {
+    schema: "ProjectUpdate",
+    properties: ["name", "repositoryUrl", "defaultNamespace", "defaultTemplateId", "metadata"],
+    absentProperties: ["id", "slug"],
+  },
+  {
     schema: "ProjectPolicy",
     required: ["projectId", "enforcement"],
     properties: [
