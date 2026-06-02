@@ -126,6 +126,15 @@ const projectPolicyEnforcementValues = ["disabled", "enforced"] as const
 const projectMemberPrincipalTypeValues = ["user", "service_account", "automation"] as const
 const projectMemberRoleValues = ["owner", "operator", "viewer"] as const
 const projectCredentialTypeValues = ["git", "registry", "kubernetes", "ssh", "generic"] as const
+const sandboxStatusValues = ["pending", "running", "stopped", "failed", "deleted"] as const
+const executionTaskStatusValues = ["queued", "running", "succeeded", "failed", "canceled", "timed_out"] as const
+const executionTaskEventTypeValues = ["snapshot", "status", "output", "done"] as const
+const executionTaskEventStreamValues = ["stdout", "stderr"] as const
+const runtimeSessionTypeValues = ["terminal", "ide", "notebook", "browser", "command", "custom"] as const
+const runtimeSessionStatusValues = ["active", "ended", "failed"] as const
+const artifactKindValues = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"] as const
+const artifactStorageProviderValues = ["postgres", "filesystem", "s3"] as const
+const templateValidationDecisionStatusValues = ["passed", "failed"] as const
 
 function jsonResponse(schema: string, status = "200"): SDKRouteResponseContract {
   return { status, schema }
@@ -614,6 +623,10 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "ExecutionTaskEvent",
     required: ["type", "createdAt"],
     properties: ["type", "task", "stream", "data", "offset", "createdAt"],
+    enumProperties: [
+      { property: "type", values: executionTaskEventTypeValues },
+      { property: "stream", values: executionTaskEventStreamValues },
+    ],
   },
   {
     schema: "ExecutionTask",
@@ -649,6 +662,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "createdAt",
       "updatedAt",
     ],
+    enumProperties: [{ property: "status", values: executionTaskStatusValues }],
   },
   {
     schema: "ExecutionTaskCreate",
@@ -1057,6 +1071,21 @@ export const SDK_SCHEMA_CONTRACT = [
     absentProperties: ["projectId", "slug"],
   },
   {
+    schema: "TemplateValidationRunCreate",
+    properties: ["projectId", "name", "metadata"],
+  },
+  {
+    schema: "TemplateValidationRunDecision",
+    required: ["status"],
+    properties: ["status"],
+    enumProperties: [{ property: "status", values: templateValidationDecisionStatusValues }],
+  },
+  {
+    schema: "TemplateValidationRun",
+    required: ["template", "sandbox"],
+    properties: ["template", "sandbox"],
+  },
+  {
     schema: "RuntimeRef",
     required: ["kind", "namespace", "name"],
     properties: ["adapter", "kind", "namespace", "name"],
@@ -1085,6 +1114,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "updatedAt",
       "deletedAt",
     ],
+    enumProperties: [{ property: "status", values: sandboxStatusValues }],
   },
   {
     schema: "SandboxCreate",
@@ -1095,6 +1125,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "SandboxUpdate",
     properties: ["name", "status", "namespace", "serviceAccountName", "runtimeRef", "ports", "metadata"],
     absentProperties: ["projectId", "templateId", "slug"],
+    enumProperties: [{ property: "status", values: sandboxStatusValues }],
   },
   {
     schema: "PreviewPort",
@@ -1124,11 +1155,16 @@ export const SDK_SCHEMA_CONTRACT = [
       "createdAt",
       "updatedAt",
     ],
+    enumProperties: [
+      { property: "type", values: runtimeSessionTypeValues },
+      { property: "status", values: runtimeSessionStatusValues },
+    ],
   },
   {
     schema: "RuntimeSessionCreate",
     required: ["type"],
     properties: ["type", "client", "metadata"],
+    enumProperties: [{ property: "type", values: runtimeSessionTypeValues }],
   },
   {
     schema: "Artifact",
@@ -1148,16 +1184,19 @@ export const SDK_SCHEMA_CONTRACT = [
       "createdAt",
       "updatedAt",
     ],
+    enumProperties: [{ property: "kind", values: artifactKindValues }],
   },
   {
     schema: "ArtifactCreate",
     required: ["kind", "name", "uri"],
     properties: ["taskId", "kind", "name", "uri", "contentType", "sizeBytes", "metadata"],
+    enumProperties: [{ property: "kind", values: artifactKindValues }],
   },
   {
     schema: "ArtifactContent",
     required: ["artifactId", "sizeBytes", "sha256", "sourceUri", "storageProvider", "capturedAt"],
     properties: ["artifactId", "contentType", "sizeBytes", "sha256", "sourceUri", "storageProvider", "storageKey", "capturedAt"],
+    enumProperties: [{ property: "storageProvider", values: artifactStorageProviderValues }],
   },
   {
     schema: "AuditEvent",

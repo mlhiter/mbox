@@ -1154,6 +1154,118 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.TemplateValidationRunDecision.properties.status.enum = ["passed"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "TemplateValidationRunDecision" &&
+        issue.property === "status" &&
+        issue.enumValue === "failed",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.Sandbox.properties.status.enum = ["pending", "running", "failed", "deleted"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "Sandbox" &&
+        issue.property === "status" &&
+        issue.enumValue === "stopped",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeSessionCreate.properties.type.enum = ["terminal", "ide", "notebook", "browser", "command"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "RuntimeSessionCreate" &&
+        issue.property === "type" &&
+        issue.enumValue === "custom",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ExecutionTask.properties.status.enum = ["queued", "running", "succeeded", "failed", "canceled"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "ExecutionTask" &&
+        issue.property === "status" &&
+        issue.enumValue === "timed_out",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ExecutionTaskEvent.properties.stream.enum = ["stdout"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "ExecutionTaskEvent" &&
+        issue.property === "stream" &&
+        issue.enumValue === "stderr",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ArtifactCreate.properties.kind.enum = ["file", "directory", "log", "report", "image", "link", "other"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "ArtifactCreate" &&
+        issue.property === "kind" &&
+        issue.enumValue === "screenshot",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ArtifactContent.properties.storageProvider.enum = ["postgres", "filesystem"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "ArtifactContent" &&
+        issue.property === "storageProvider" &&
+        issue.enumValue === "s3",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.ProjectUpdate.properties.slug = { type: "string" }
     assertOpenAPIAlignment(broken)
   },
@@ -1749,6 +1861,13 @@ function schemaComponents() {
       "lifecyclePolicy",
       "metadata",
     ]),
+    TemplateValidationRunCreate: objectSchema([], [
+      "projectId",
+      "name",
+      "metadata",
+    ]),
+    TemplateValidationRunDecision: objectSchema(["status"]),
+    TemplateValidationRun: objectSchema(["template", "sandbox"]),
     RuntimeRef: objectSchema(["kind", "namespace", "name"], ["adapter"]),
     SandboxPort: objectSchema(["name", "port", "protocol"], ["previewUrl"]),
     Sandbox: objectSchema([
@@ -1958,6 +2077,18 @@ function schemaComponents() {
   schemas.ProjectMemberCreate.properties.role.enum = ["owner", "operator", "viewer"]
   schemas.ProjectCredential.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
   schemas.ProjectCredentialCreate.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
+  schemas.TemplateValidationRunDecision.properties.status.enum = ["passed", "failed"]
+  schemas.Sandbox.properties.status.enum = ["pending", "running", "stopped", "failed", "deleted"]
+  schemas.SandboxUpdate.properties.status.enum = ["pending", "running", "stopped", "failed", "deleted"]
+  schemas.RuntimeSession.properties.type.enum = ["terminal", "ide", "notebook", "browser", "command", "custom"]
+  schemas.RuntimeSession.properties.status.enum = ["active", "ended", "failed"]
+  schemas.RuntimeSessionCreate.properties.type.enum = ["terminal", "ide", "notebook", "browser", "command", "custom"]
+  schemas.ExecutionTask.properties.status.enum = ["queued", "running", "succeeded", "failed", "canceled", "timed_out"]
+  schemas.ExecutionTaskEvent.properties.type.enum = ["snapshot", "status", "output", "done"]
+  schemas.ExecutionTaskEvent.properties.stream.enum = ["stdout", "stderr"]
+  schemas.Artifact.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]
+  schemas.ArtifactCreate.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]
+  schemas.ArtifactContent.properties.storageProvider.enum = ["postgres", "filesystem", "s3"]
   return schemas
 }
 
