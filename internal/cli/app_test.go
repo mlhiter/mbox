@@ -836,6 +836,125 @@ func TestProjectsAuditEventsUsesProjectAuditEventsRoute(t *testing.T) {
 	}
 }
 
+func TestAuditEventsPolicyDeniedSummaryUsesExistingFilters(t *testing.T) {
+	var method string
+	var uri string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		uri = r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"items": [
+				{
+					"action": "policy.denied",
+					"resourceType": "sandbox",
+					"resourceName": "smoke sandbox",
+					"actor": "cli-smoke",
+					"source": "mbox-cli",
+					"metadata": {"operation": "sandbox.launch", "reason": "active sandbox quota exceeded", "requestId": "cli-smoke-request"},
+					"createdAt": "2026-06-02T03:00:00Z"
+				},
+				{
+					"action": "policy.denied",
+					"resourceType": "sandbox",
+					"resourceName": "quota retry",
+					"actor": "cli-smoke",
+					"source": "mbox-cli",
+					"metadata": {"operation": "sandbox.launch", "reason": "active sandbox quota exceeded"},
+					"createdAt": "2026-06-02T02:30:00Z"
+				},
+				{
+					"action": "sandbox.created",
+					"resourceType": "sandbox",
+					"resourceName": "ignored sandbox",
+					"actor": "cli-smoke",
+					"source": "mbox-cli",
+					"metadata": {"operation": "sandbox.launch", "reason": "active sandbox quota exceeded"},
+					"createdAt": "2026-06-02T04:00:00Z"
+				}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"audit-events",
+		"--project-id", "project-1",
+		"--policy-denied-summary",
+		"--operation", "sandbox.launch",
+		"--reason", "active sandbox quota exceeded",
+		"--actor", "cli-smoke",
+		"--source", "mbox-cli",
+		"--filter-request-id", "cli-smoke-request",
+		"--since", "2026-06-02T00:00:00Z",
+		"--until", "2026-06-02T04:00:00Z",
+		"--limit", "20",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || uri != "/v1/audit-events?action=policy.denied&actor=cli-smoke&limit=20&operation=sandbox.launch&projectId=project-1&reason=active+sandbox+quota+exceeded&requestId=cli-smoke-request&since=2026-06-02T00%3A00%3A00Z&source=mbox-cli&until=2026-06-02T04%3A00%3A00Z" {
+		t.Fatalf("unexpected request %s %s", method, uri)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "POLICY DENIED SUMMARY") ||
+		!strings.Contains(output, "OPERATION\tREASON\tCOUNT\tLATEST\tACTORS\tSOURCES\tRESOURCES") ||
+		!strings.Contains(output, "sandbox.launch\tactive sandbox quota exceeded\t2\t2026-06-02T03:00:00Z\tcli-smoke\tmbox-cli\tquota retry,smoke sandbox") {
+		t.Fatalf("expected grouped policy denial summary, got %q", output)
+	}
+	if strings.Contains(output, `"items"`) || strings.Contains(output, "sandbox.created") || strings.Contains(output, "ignored sandbox") {
+		t.Fatalf("expected human summary output without raw audit JSON, got %q", output)
+	}
+}
+
+func TestProjectsAuditEventsPolicyDeniedSummaryUsesProjectRoute(t *testing.T) {
+	var method string
+	var uri string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		uri = r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"projects", "audit-events", "project-1",
+		"--policy-denied-summary",
+		"--action", "policy.denied",
+		"--operation", "runtime.logs",
+		"--limit", "3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || uri != "/v1/projects/project-1/audit-events?action=policy.denied&limit=3&operation=runtime.logs" {
+		t.Fatalf("unexpected request %s %s", method, uri)
+	}
+	if !strings.Contains(stdout.String(), "POLICY DENIED SUMMARY\n  (none)\n") {
+		t.Fatalf("expected empty policy denial summary, got %q", stdout.String())
+	}
+}
+
+func TestAuditEventsPolicyDeniedSummaryRejectsNonPolicyAction(t *testing.T) {
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", "http://127.0.0.1:1",
+		"audit-events",
+		"--policy-denied-summary",
+		"--action", "sandbox.created",
+	})
+	if err == nil || !strings.Contains(err.Error(), "requires action policy.denied") {
+		t.Fatalf("expected policy denied summary action error, got %v", err)
+	}
+}
+
 func TestProjectsAddCredentialPostsExpectedPayload(t *testing.T) {
 	var method string
 	var path string

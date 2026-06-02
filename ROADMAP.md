@@ -417,6 +417,7 @@ First slice status:
 75. Done: Web project inspector member-management ergonomics can register and remove project member records for the starter RBAC model, refresh member/preflight/audit state after mutations, and keep at least one visible owner from being removed in the UI without adding login, invite, or broader route-level RBAC primitives.
 76. Done: Web Runtime inventory attribution ergonomics render `summary.byProject` as clickable project distribution chips, preserving label-derived read-only runtime triage without turning the view into quota, billing, RBAC, metrics utilization, or capacity reservation.
 77. Done: CLI Runtime inventory attribution ergonomics add `runtime resources --summary-table --resolve-project-names`, resolving known project IDs through `/v1/projects` only for human-readable output while preserving raw JSON and runtime-resource contracts for scripts.
-78. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+78. Done: CLI audit ergonomics add `audit-events --policy-denied-summary` and `projects audit-events --policy-denied-summary`, grouping returned `policy.denied` rows by operation/reason over the existing read-only audit feed filters while preserving JSON output for scripts.
+79. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.
