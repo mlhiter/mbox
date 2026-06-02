@@ -104,10 +104,7 @@ func (a *App) runCommand(ctx context.Context, client *Client, config globalConfi
 	case "auth":
 		return a.runAuth(ctx, client, args[1:])
 	case "caller":
-		if len(args) != 1 {
-			return usageError("usage: mbox caller")
-		}
-		return a.get(ctx, client, "/v1/auth/caller")
+		return a.runCaller(ctx, client, args[1:], "mbox caller")
 	case "compat":
 		return a.runCompat(ctx, client, args[1:])
 	case "openapi":
@@ -155,8 +152,8 @@ func (a *App) usage() {
 Commands:
   health
   info
-  auth caller
-  caller
+  auth caller [--summary]
+  caller [--summary]
   compat [--client-api-version VERSION] [--require-capability CAPABILITY]
   context current|list|check
   context set NAME --api-url URL [--token TOKEN|--token-env ENV] [--audit-actor ACTOR] [--audit-source SOURCE] [--current]
@@ -253,17 +250,34 @@ func (a *App) runCompat(ctx context.Context, client *Client, args []string) erro
 
 func (a *App) runAuth(ctx context.Context, client *Client, args []string) error {
 	if len(args) == 0 {
-		return usageError("usage: mbox auth caller")
+		return usageError("usage: mbox auth caller [--summary]")
 	}
 	switch args[0] {
 	case "caller":
-		if len(args) != 1 {
-			return usageError("usage: mbox auth caller")
-		}
-		return a.get(ctx, client, "/v1/auth/caller")
+		return a.runCaller(ctx, client, args[1:], "mbox auth caller")
 	default:
-		return usageError("usage: mbox auth caller")
+		return usageError("usage: mbox auth caller [--summary]")
 	}
+}
+
+func (a *App) runCaller(ctx context.Context, client *Client, args []string, command string) error {
+	fs := flag.NewFlagSet(command, flag.ContinueOnError)
+	fs.SetOutput(a.streams.Stderr)
+	summary := fs.Bool("summary", false, "")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return usageError("usage: " + command + " [--summary]")
+	}
+	if *summary {
+		var caller callerSummaryInfo
+		if err := client.JSON(ctx, http.MethodGet, "/v1/auth/caller", nil, &caller); err != nil {
+			return err
+		}
+		return writeCallerSummary(a.streams.Stdout, caller)
+	}
+	return a.get(ctx, client, "/v1/auth/caller")
 }
 
 func (a *App) runRuntime(ctx context.Context, client *Client, args []string) error {
@@ -740,6 +754,17 @@ type policyDeniedSummaryRow struct {
 	Resources map[string]bool
 }
 
+type callerSummaryInfo struct {
+	Authenticated          bool     `json:"authenticated"`
+	AuthenticationRequired bool     `json:"authenticationRequired"`
+	Mode                   string   `json:"mode"`
+	PrincipalType          string   `json:"principalType"`
+	Principal              string   `json:"principal"`
+	RBACTrusted            bool     `json:"rbacTrusted"`
+	ProjectRolesEnforced   bool     `json:"projectRolesEnforced"`
+	Notes                  []string `json:"notes"`
+}
+
 type projectAuthorizationSummaryDecision struct {
 	ProjectID        string                             `json:"projectId"`
 	Action           string                             `json:"action"`
@@ -770,6 +795,42 @@ type projectAuthorizationSummaryMember struct {
 	PrincipalType string `json:"principalType"`
 	Principal     string `json:"principal"`
 	Role          string `json:"role"`
+}
+
+func writeCallerSummary(w io.Writer, caller callerSummaryInfo) error {
+	out := bufio.NewWriter(w)
+	if _, err := fmt.Fprintln(out, "CALLER BOUNDARY"); err != nil {
+		return err
+	}
+	rows := [][2]string{
+		{"Caller", projectAuthorizationCallerLabel(projectAuthorizationSummaryCaller(caller))},
+		{"Mode", tableValue(caller.Mode, "unknown")},
+		{"Principal", callerIdentityLabel(caller.PrincipalType, caller.Principal)},
+		{"Authenticated", formatBool(caller.Authenticated)},
+		{"Authentication required", formatBool(caller.AuthenticationRequired)},
+		{"RBAC trusted", formatBool(caller.RBACTrusted)},
+		{"Project roles enforced", formatBool(caller.ProjectRolesEnforced)},
+	}
+	for _, row := range rows {
+		if _, err := fmt.Fprintf(out, "%s\t%s\n", row[0], row[1]); err != nil {
+			return err
+		}
+	}
+	if len(caller.Notes) > 0 {
+		if _, err := fmt.Fprintln(out, "Notes"); err != nil {
+			return err
+		}
+		for _, note := range caller.Notes {
+			note = strings.TrimSpace(note)
+			if note == "" {
+				continue
+			}
+			if _, err := fmt.Fprintf(out, "- %s\n", note); err != nil {
+				return err
+			}
+		}
+	}
+	return out.Flush()
 }
 
 func writeProjectAuthorizationSummary(w io.Writer, decision projectAuthorizationSummaryDecision) error {
@@ -820,14 +881,7 @@ func projectAuthorizationDecisionLabel(decision projectAuthorizationSummaryDecis
 }
 
 func projectAuthorizationCallerLabel(caller projectAuthorizationSummaryCaller) string {
-	identity := strings.TrimSpace(caller.Principal)
-	if identity == "" {
-		identity = "anonymous"
-	}
-	principalType := strings.TrimSpace(caller.PrincipalType)
-	if principalType != "" {
-		identity = principalType + ":" + identity
-	}
+	identity := callerIdentityLabel(caller.PrincipalType, caller.Principal)
 	mode := tableValue(caller.Mode, "unknown-mode")
 	trust := "not trusted"
 	if caller.RBACTrusted {
@@ -845,6 +899,18 @@ func projectAuthorizationCallerLabel(caller projectAuthorizationSummaryCaller) s
 		auth += ", auth required"
 	}
 	return fmt.Sprintf("%s (%s, %s, %s, %s)", identity, mode, auth, trust, enforcement)
+}
+
+func callerIdentityLabel(principalType string, principal string) string {
+	identity := strings.TrimSpace(principal)
+	if identity == "" {
+		identity = "anonymous"
+	}
+	principalType = strings.TrimSpace(principalType)
+	if principalType != "" {
+		identity = principalType + ":" + identity
+	}
+	return identity
 }
 
 func projectAuthorizationMemberLabel(member *projectAuthorizationSummaryMember) string {
@@ -874,6 +940,13 @@ func formatStringList(values []string) string {
 		return "-"
 	}
 	return strings.Join(items, ",")
+}
+
+func formatBool(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }
 
 func writePolicyDeniedSummaryTable(w io.Writer, events []auditEventSummaryItem) error {

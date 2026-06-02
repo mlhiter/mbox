@@ -103,6 +103,59 @@ func TestAuthCallerUsesCallerRoute(t *testing.T) {
 	}
 }
 
+func TestAuthCallerSummaryUsesCallerRoute(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"authenticated": true,
+			"authenticationRequired": true,
+			"mode": "trusted_header",
+			"principalType": "automation",
+			"principal": "nightly-runner",
+			"rbacTrusted": true,
+			"projectRolesEnforced": true,
+			"notes": [
+				"request included trusted principal headers",
+				"project member roles are enforced for sandbox.launch, runtime.operate, artifact.write, policy.manage, credential.manage, and member.manage starter routes only"
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "auth", "caller", "--summary"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Run(context.Background(), []string{"--api-url", server.URL, "caller", "--summary"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(requests, ",") != "GET /v1/auth/caller,GET /v1/auth/caller" {
+		t.Fatalf("unexpected requests: %#v", requests)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"CALLER BOUNDARY",
+		"Caller\tautomation:nightly-runner (trusted_header, authenticated, auth required, rbac trusted, roles enforced)",
+		"Mode\ttrusted_header",
+		"Principal\tautomation:nightly-runner",
+		"Authenticated\ttrue",
+		"Authentication required\ttrue",
+		"RBAC trusted\ttrue",
+		"Project roles enforced\ttrue",
+		"- request included trusted principal headers",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected caller summary to contain %q, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"mode"`) || strings.Contains(output, `"rbacTrusted"`) {
+		t.Fatalf("expected human summary output without raw caller JSON, got %q", output)
+	}
+}
+
 func TestCompatSucceedsForCompatibleInfo(t *testing.T) {
 	var method string
 	var path string
