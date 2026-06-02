@@ -122,6 +122,11 @@ const SDK_ROUTE_COVERAGE_EXCEPTIONS = [
 
 const noContentResponse = { status: "204", noContent: true } as const satisfies SDKRouteResponseContract
 
+const projectPolicyEnforcementValues = ["disabled", "enforced"] as const
+const projectMemberPrincipalTypeValues = ["user", "service_account", "automation"] as const
+const projectMemberRoleValues = ["owner", "operator", "viewer"] as const
+const projectCredentialTypeValues = ["git", "registry", "kubernetes", "ssh", "generic"] as const
+
 function jsonResponse(schema: string, status = "200"): SDKRouteResponseContract {
   return { status, schema }
 }
@@ -747,31 +752,43 @@ export const SDK_SCHEMA_CONTRACT = [
       "createdAt",
       "updatedAt",
     ],
+    enumProperties: [{ property: "enforcement", values: projectPolicyEnforcementValues }],
   },
   {
     schema: "ProjectPolicyUpsert",
     required: ["enforcement"],
     properties: ["enforcement", "allowedImagePrefixes", "allowedServiceAccounts", "allowedSecretRefs"],
+    enumProperties: [{ property: "enforcement", values: projectPolicyEnforcementValues }],
   },
   {
     schema: "ProjectQuotaPolicy",
     required: ["projectId", "enforcement"],
     properties: ["projectId", "enforcement", "maxActiveSandboxes", "maxRetainedArtifactBytes", "createdAt", "updatedAt"],
+    enumProperties: [{ property: "enforcement", values: projectPolicyEnforcementValues }],
   },
   {
     schema: "ProjectQuotaPolicyUpsert",
     required: ["enforcement"],
     properties: ["enforcement", "maxActiveSandboxes", "maxRetainedArtifactBytes"],
+    enumProperties: [{ property: "enforcement", values: projectPolicyEnforcementValues }],
   },
   {
     schema: "ProjectMember",
     required: ["id", "projectId", "principalType", "principal", "role"],
     properties: ["id", "projectId", "principalType", "principal", "role", "metadata", "createdAt", "updatedAt"],
+    enumProperties: [
+      { property: "principalType", values: projectMemberPrincipalTypeValues },
+      { property: "role", values: projectMemberRoleValues },
+    ],
   },
   {
     schema: "ProjectMemberCreate",
     required: ["principalType", "principal", "role"],
     properties: ["principalType", "principal", "role", "metadata"],
+    enumProperties: [
+      { property: "principalType", values: projectMemberPrincipalTypeValues },
+      { property: "role", values: projectMemberRoleValues },
+    ],
   },
   {
     schema: "APIInfo",
@@ -962,11 +979,13 @@ export const SDK_SCHEMA_CONTRACT = [
       "createdAt",
       "updatedAt",
     ],
+    enumProperties: [{ property: "type", values: projectCredentialTypeValues }],
   },
   {
     schema: "ProjectCredentialCreate",
     required: ["name", "type", "secretRef"],
     properties: ["name", "slug", "type", "target", "secretRef", "usage", "metadata"],
+    enumProperties: [{ property: "type", values: projectCredentialTypeValues }],
   },
   {
     schema: "TemplatePort",

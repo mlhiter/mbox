@@ -1085,6 +1085,70 @@ assert.throws(
         issue.schema === "ProjectAuthorizationDecision" &&
         issue.property === "action" &&
         issue.enumValue === "member.manage",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectPolicy.properties.enforcement.enum = ["disabled"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "ProjectPolicy" &&
+        issue.property === "enforcement" &&
+        issue.enumValue === "enforced",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectMemberCreate.properties.principalType.enum = ["user", "service_account"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "ProjectMemberCreate" &&
+        issue.property === "principalType" &&
+        issue.enumValue === "automation",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectMember.properties.role.enum = ["owner", "operator"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "ProjectMember" &&
+        issue.property === "role" &&
+        issue.enumValue === "viewer",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectCredentialCreate.properties.type.enum = ["git", "registry", "ssh", "generic"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "ProjectCredentialCreate" &&
+        issue.property === "type" &&
+        issue.enumValue === "kubernetes",
     ),
 )
 assert.throws(
@@ -1884,6 +1948,16 @@ function schemaComponents() {
     "service_account",
     "automation",
   ]
+  schemas.ProjectPolicy.properties.enforcement.enum = ["disabled", "enforced"]
+  schemas.ProjectPolicyUpsert.properties.enforcement.enum = ["disabled", "enforced"]
+  schemas.ProjectQuotaPolicy.properties.enforcement.enum = ["disabled", "enforced"]
+  schemas.ProjectQuotaPolicyUpsert.properties.enforcement.enum = ["disabled", "enforced"]
+  schemas.ProjectMember.properties.principalType.enum = ["user", "service_account", "automation"]
+  schemas.ProjectMember.properties.role.enum = ["owner", "operator", "viewer"]
+  schemas.ProjectMemberCreate.properties.principalType.enum = ["user", "service_account", "automation"]
+  schemas.ProjectMemberCreate.properties.role.enum = ["owner", "operator", "viewer"]
+  schemas.ProjectCredential.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
+  schemas.ProjectCredentialCreate.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
   return schemas
 }
 
