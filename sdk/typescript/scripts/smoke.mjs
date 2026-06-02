@@ -787,6 +787,21 @@ assert.throws(
         issue.reason === "missing-sdk-route-coverage" &&
         issue.method === "GET" &&
         issue.path === "/v1/projects/{projectID}/published-only",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    delete broken.components.schemas.PolicyDeniedAuditMetadata.properties.policyKind
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-property" &&
+        issue.schema === "PolicyDeniedAuditMetadata" &&
+        issue.property === "policyKind",
     ),
 )
 assert.equal(assertOpenAPIAlignment(buildOpenAPIWithIntentionalSDKExceptions()).ok, true)
