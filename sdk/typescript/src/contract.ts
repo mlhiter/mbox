@@ -944,6 +944,56 @@ export const SDK_SCHEMA_CONTRACT = [
     absentProperties: ["projectId", "slug"],
   },
   {
+    schema: "RuntimeRef",
+    required: ["kind", "namespace", "name"],
+    properties: ["adapter", "kind", "namespace", "name"],
+  },
+  {
+    schema: "SandboxPort",
+    required: ["name", "port", "protocol"],
+    properties: ["name", "port", "protocol", "previewUrl"],
+  },
+  {
+    schema: "Sandbox",
+    required: ["id", "projectId", "name", "slug", "status", "namespace", "serviceAccountName"],
+    properties: [
+      "id",
+      "projectId",
+      "templateId",
+      "name",
+      "slug",
+      "status",
+      "namespace",
+      "serviceAccountName",
+      "runtimeRef",
+      "ports",
+      "metadata",
+      "createdAt",
+      "updatedAt",
+      "deletedAt",
+    ],
+  },
+  {
+    schema: "SandboxCreate",
+    required: ["projectId", "name"],
+    properties: ["projectId", "templateId", "name", "slug", "namespace", "serviceAccountName", "metadata"],
+  },
+  {
+    schema: "SandboxUpdate",
+    properties: ["name", "status", "namespace", "serviceAccountName", "runtimeRef", "ports", "metadata"],
+    absentProperties: ["projectId", "templateId", "slug"],
+  },
+  {
+    schema: "PreviewPort",
+    required: ["name", "port", "protocol", "available"],
+    properties: ["name", "port", "protocol", "previewUrl", "available", "message"],
+  },
+  {
+    schema: "PreviewPortsResult",
+    required: ["target", "items"],
+    properties: ["target", "items"],
+  },
+  {
     schema: "AuditEvent",
     required: ["id", "action", "resourceType", "createdAt"],
     properties: [

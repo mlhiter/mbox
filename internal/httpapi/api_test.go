@@ -334,7 +334,7 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected schemas object, got %#v", components["schemas"])
 	}
-	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "SecretRef", "ProjectCredential", "ProjectCredentialCreate", "TemplatePort", "EnvironmentTemplate", "TemplateCreate", "TemplateUpdate", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "ExecutionTask", "Artifact", "Error"} {
+	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "SecretRef", "ProjectCredential", "ProjectCredentialCreate", "TemplatePort", "EnvironmentTemplate", "TemplateCreate", "TemplateUpdate", "RuntimeRef", "SandboxPort", "Sandbox", "SandboxCreate", "SandboxUpdate", "PreviewPort", "PreviewPortsResult", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "ExecutionTask", "Artifact", "Error"} {
 		if _, ok := schemas[name]; !ok {
 			t.Fatalf("expected schema %s in OpenAPI components", name)
 		}
@@ -375,6 +375,82 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	templateUpdateProperties, ok := templateUpdateSchema["properties"].(map[string]any)
 	if !ok || templateUpdateProperties["projectId"] != nil || templateUpdateProperties["slug"] != nil {
 		t.Fatalf("expected TemplateUpdate to omit projectId/slug update fields, got %#v", templateUpdateSchema["properties"])
+	}
+	sandboxSchema, ok := schemas["Sandbox"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Sandbox schema in %#v", schemas["Sandbox"])
+	}
+	sandboxRequired, ok := sandboxSchema["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(sandboxRequired, "id") ||
+		!anySliceContainsString(sandboxRequired, "projectId") ||
+		!anySliceContainsString(sandboxRequired, "status") ||
+		!anySliceContainsString(sandboxRequired, "namespace") ||
+		!anySliceContainsString(sandboxRequired, "serviceAccountName") {
+		t.Fatalf("expected Sandbox identity/runtime state required fields, got %#v", sandboxSchema["required"])
+	}
+	sandboxRecordProperties, ok := sandboxSchema["properties"].(map[string]any)
+	if !ok ||
+		sandboxRecordProperties["runtimeRef"] == nil ||
+		sandboxRecordProperties["ports"] == nil ||
+		sandboxRecordProperties["metadata"] == nil {
+		t.Fatalf("expected Sandbox runtime and metadata properties, got %#v", sandboxSchema["properties"])
+	}
+	sandboxCreateSchema, ok := schemas["SandboxCreate"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected SandboxCreate schema in %#v", schemas["SandboxCreate"])
+	}
+	sandboxCreateRequired, ok := sandboxCreateSchema["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(sandboxCreateRequired, "projectId") ||
+		!anySliceContainsString(sandboxCreateRequired, "name") {
+		t.Fatalf("expected SandboxCreate projectId/name required fields, got %#v", sandboxCreateSchema["required"])
+	}
+	sandboxUpdateSchema, ok := schemas["SandboxUpdate"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected SandboxUpdate schema in %#v", schemas["SandboxUpdate"])
+	}
+	sandboxUpdateProperties, ok := sandboxUpdateSchema["properties"].(map[string]any)
+	if !ok ||
+		sandboxUpdateProperties["runtimeRef"] == nil ||
+		sandboxUpdateProperties["ports"] == nil ||
+		sandboxUpdateProperties["projectId"] != nil ||
+		sandboxUpdateProperties["templateId"] != nil ||
+		sandboxUpdateProperties["slug"] != nil {
+		t.Fatalf("expected SandboxUpdate mutable runtime fields and immutable-field omissions, got %#v", sandboxUpdateSchema["properties"])
+	}
+	runtimeRefSchema, ok := schemas["RuntimeRef"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected RuntimeRef schema in %#v", schemas["RuntimeRef"])
+	}
+	runtimeRefRequired, ok := runtimeRefSchema["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(runtimeRefRequired, "kind") ||
+		!anySliceContainsString(runtimeRefRequired, "namespace") ||
+		!anySliceContainsString(runtimeRefRequired, "name") {
+		t.Fatalf("expected RuntimeRef runtime identity required fields, got %#v", runtimeRefSchema["required"])
+	}
+	previewPortsResult, ok := schemas["PreviewPortsResult"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected PreviewPortsResult schema in %#v", schemas["PreviewPortsResult"])
+	}
+	previewPortsRequired, ok := previewPortsResult["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(previewPortsRequired, "target") ||
+		!anySliceContainsString(previewPortsRequired, "items") {
+		t.Fatalf("expected PreviewPortsResult target/items required fields, got %#v", previewPortsResult["required"])
+	}
+	previewPort, ok := schemas["PreviewPort"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected PreviewPort schema in %#v", schemas["PreviewPort"])
+	}
+	previewPortRequired, ok := previewPort["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(previewPortRequired, "name") ||
+		!anySliceContainsString(previewPortRequired, "port") ||
+		!anySliceContainsString(previewPortRequired, "protocol") ||
+		!anySliceContainsString(previewPortRequired, "available") {
+		t.Fatalf("expected PreviewPort declared port required fields, got %#v", previewPort["required"])
 	}
 	apiInfo, ok := schemas["APIInfo"].(map[string]any)
 	if !ok {

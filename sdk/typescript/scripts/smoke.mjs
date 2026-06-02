@@ -862,6 +862,36 @@ assert.throws(
         issue.reason === "unexpected-schema-property" &&
         issue.schema === "TemplateUpdate" &&
         issue.property === "projectId",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.Sandbox.required = broken.components.schemas.Sandbox.required.filter((name) => name !== "status")
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-required" &&
+        issue.schema === "Sandbox" &&
+        issue.property === "status",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.SandboxUpdate.properties.slug = { type: "string" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "unexpected-schema-property" &&
+        issue.schema === "SandboxUpdate" &&
+        issue.property === "slug",
     ),
 )
 assert.equal(assertOpenAPIAlignment(buildOpenAPIWithIntentionalSDKExceptions()).ok, true)
@@ -1403,6 +1433,46 @@ function schemaComponents() {
       "lifecyclePolicy",
       "metadata",
     ]),
+    RuntimeRef: objectSchema(["kind", "namespace", "name"], ["adapter"]),
+    SandboxPort: objectSchema(["name", "port", "protocol"], ["previewUrl"]),
+    Sandbox: objectSchema([
+      "id",
+      "projectId",
+      "name",
+      "slug",
+      "status",
+      "namespace",
+      "serviceAccountName",
+    ], [
+      "templateId",
+      "runtimeRef",
+      "ports",
+      "metadata",
+      "createdAt",
+      "updatedAt",
+      "deletedAt",
+    ]),
+    SandboxCreate: objectSchema(["projectId", "name"], [
+      "templateId",
+      "slug",
+      "namespace",
+      "serviceAccountName",
+      "metadata",
+    ]),
+    SandboxUpdate: objectSchema([], [
+      "name",
+      "status",
+      "namespace",
+      "serviceAccountName",
+      "runtimeRef",
+      "ports",
+      "metadata",
+    ]),
+    PreviewPort: objectSchema(["name", "port", "protocol", "available"], [
+      "previewUrl",
+      "message",
+    ]),
+    PreviewPortsResult: objectSchema(["target", "items"]),
     APIInfo: objectSchema([
       "name",
       "apiVersion",
