@@ -334,7 +334,7 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected schemas object, got %#v", components["schemas"])
 	}
-	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "ExecutionTask", "Artifact", "Error"} {
+	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "SecretRef", "ProjectCredential", "ProjectCredentialCreate", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "ExecutionTask", "Artifact", "Error"} {
 		if _, ok := schemas[name]; !ok {
 			t.Fatalf("expected schema %s in OpenAPI components", name)
 		}
@@ -348,6 +348,17 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		if !ok || !anySliceContainsString(required, "projectId") || !anySliceContainsString(required, "enforcement") {
 			t.Fatalf("expected %s projectId/enforcement required fields, got %#v", name, schema["required"])
 		}
+	}
+	credentialSchema, ok := schemas["ProjectCredential"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ProjectCredential schema in %#v", schemas["ProjectCredential"])
+	}
+	credentialRequired, ok := credentialSchema["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(credentialRequired, "id") ||
+		!anySliceContainsString(credentialRequired, "projectId") ||
+		!anySliceContainsString(credentialRequired, "secretRef") {
+		t.Fatalf("expected ProjectCredential identity/secretRef required fields, got %#v", credentialSchema["required"])
 	}
 	apiInfo, ok := schemas["APIInfo"].(map[string]any)
 	if !ok {

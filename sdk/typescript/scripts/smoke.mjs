@@ -819,6 +819,21 @@ assert.throws(
         issue.property === "projectId",
     ),
 )
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    delete broken.components.schemas.ProjectCredential.properties.secretRef
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-property" &&
+        issue.schema === "ProjectCredential" &&
+        issue.property === "secretRef",
+    ),
+)
 assert.equal(assertOpenAPIAlignment(buildOpenAPIWithIntentionalSDKExceptions()).ok, true)
 
 console.log("SDK smoke passed")
@@ -1297,6 +1312,20 @@ function schemaComponents() {
       "storageRequests",
     ]),
     ProjectCredentialUsage: objectSchema(["total", "git", "registry", "kubernetes", "ssh", "generic"]),
+    SecretRef: objectSchema(["name"], ["key"]),
+    ProjectCredential: objectSchema(["id", "projectId", "name", "slug", "type", "secretRef"], [
+      "target",
+      "usage",
+      "metadata",
+      "createdAt",
+      "updatedAt",
+    ]),
+    ProjectCredentialCreate: objectSchema(["name", "type", "secretRef"], [
+      "slug",
+      "target",
+      "usage",
+      "metadata",
+    ]),
     APIInfo: objectSchema([
       "name",
       "apiVersion",

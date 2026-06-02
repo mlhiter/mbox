@@ -845,6 +845,33 @@ export const SDK_SCHEMA_CONTRACT = [
     required: ["total", "git", "registry", "kubernetes", "ssh", "generic"],
   },
   {
+    schema: "SecretRef",
+    required: ["name"],
+    properties: ["name", "key"],
+  },
+  {
+    schema: "ProjectCredential",
+    required: ["id", "projectId", "name", "slug", "type", "secretRef"],
+    properties: [
+      "id",
+      "projectId",
+      "name",
+      "slug",
+      "type",
+      "target",
+      "secretRef",
+      "usage",
+      "metadata",
+      "createdAt",
+      "updatedAt",
+    ],
+  },
+  {
+    schema: "ProjectCredentialCreate",
+    required: ["name", "type", "secretRef"],
+    properties: ["name", "slug", "type", "target", "secretRef", "usage", "metadata"],
+  },
+  {
     schema: "AuditEvent",
     required: ["id", "action", "resourceType", "createdAt"],
     properties: [
