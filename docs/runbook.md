@@ -210,6 +210,7 @@ go run ./cmd/mbox projects quota-policy <project-id>
 go run ./cmd/mbox projects set-quota-policy <project-id> --enforcement enforced --max-active-sandboxes 5 --max-retained-artifact-bytes 1048576
 go run ./cmd/mbox projects authorization <project-id> --action sandbox.launch
 go run ./cmd/mbox projects authorization <project-id> --action member.manage --summary
+go run ./cmd/mbox projects credentials <project-id> --summary
 go run ./cmd/mbox projects add-member <project-id> --principal alice@example.com --role operator
 go run ./cmd/mbox projects members <project-id>
 go run ./cmd/mbox projects members <project-id> --summary
@@ -486,6 +487,7 @@ go run ./cmd/mbox templates boundary "$TEMPLATE_ID" --project-id "$PROJECT_ID"
 go run ./cmd/mbox sandboxes boundary "$SANDBOX_ID"
 go run ./cmd/mbox projects add-credential "$PROJECT_ID" --name "GitHub App" --type git --target "https://github.com/mlhiter/mbox" --secret-ref github-app-token --secret-key token --usage clone
 go run ./cmd/mbox projects credentials "$PROJECT_ID"
+go run ./cmd/mbox projects credentials "$PROJECT_ID" --summary
 ```
 
 Expected result:
@@ -495,7 +497,7 @@ Expected result:
 - The sandbox boundary includes the sandbox ID, namespace, ServiceAccount, and runtime reference when the sandbox has been projected.
 - Project launch policy state appears in template and sandbox boundary summaries. Enforced policy gates sandbox creation and template validation launches by image prefix, ServiceAccount, and declared secret reference names.
 - Project quota policy is visible through API/CLI/SDK/Web project surfaces. Enforced quota currently gates active sandbox creation and retained artifact-byte capture/upload from product records; it is not live Kubernetes capacity, billing, or reservation.
-- Project credential references appear in project inspectors and boundary summaries by type, target, usage, and Kubernetes Secret name/key only. They are not secret values and are not mounted into runtime Pods yet.
+- Project credential references appear in project inspectors and boundary summaries by type, target, usage, and Kubernetes Secret name/key only. Use `projects credentials <project-id> --summary` to render the existing references as type/usage/Secret-reference counts and rows for operator triage. They are not secret values and are not mounted into runtime Pods yet.
 - Secret references are reported as references, not values.
 - Custom network policy is reported as recorded but not yet custom-projected.
 - Template `lifecyclePolicy.ttlSeconds` is reported as `ttl-enforced`; idle cleanup policy is not implemented yet.

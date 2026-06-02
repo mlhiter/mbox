@@ -1230,6 +1230,74 @@ func TestProjectsAddCredentialPostsExpectedPayload(t *testing.T) {
 	}
 }
 
+func TestProjectCredentialsSummaryPrintsReadableReferences(t *testing.T) {
+	var method string
+	var path string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"items": [
+				{
+					"id":"credential-2",
+					"projectId":"project-1",
+					"name":"Registry Pull",
+					"slug":"registry-pull",
+					"type":"registry",
+					"target":"registry.example.com",
+					"secretRef":{"name":"registry-token","key":"password"},
+					"usage":["pull","push"]
+				},
+				{
+					"id":"credential-1",
+					"projectId":"project-1",
+					"name":"GitHub App",
+					"slug":"github-app",
+					"type":"git",
+					"target":"https://github.com/mlhiter/mbox",
+					"secretRef":{"name":"github-app-token","key":"token"},
+					"usage":["clone"]
+				}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"projects", "credentials", "project-1",
+		"--summary",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || path != "/v1/projects/project-1/credentials" {
+		t.Fatalf("unexpected request %s %s", method, path)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"PROJECT CREDENTIAL REFERENCES SUMMARY",
+		"Project\tproject-1",
+		"Total\t2",
+		"Types\tgit=1 registry=1",
+		"Usage\tclone=1 pull=1 push=1",
+		"Secret refs\tgithub-app-token/token=1 registry-token/password=1",
+		"CREDENTIAL REFERENCES",
+		"TYPE\tNAME\tTARGET\tSECRET_REF\tUSAGE\tID",
+		"git\tGitHub App\thttps://github.com/mlhiter/mbox\tgithub-app-token/token\tclone\tcredential-1",
+		"registry\tRegistry Pull\tregistry.example.com\tregistry-token/password\tpull,push\tcredential-2",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in credentials summary output, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"items"`) || strings.Contains(output, `"secretRef"`) {
+		t.Fatalf("expected human-readable credentials summary without raw JSON, got %q", output)
+	}
+}
+
 func TestProjectsAddMemberPostsExpectedPayload(t *testing.T) {
 	var method string
 	var path string

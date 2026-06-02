@@ -176,7 +176,7 @@ Commands:
   projects set-policy <project-id> --enforcement disabled|enforced [--allowed-image-prefix PREFIX] [--allowed-service-account NAME] [--allowed-secret-ref NAME]
   projects quota-policy <project-id>
   projects set-quota-policy <project-id> --enforcement disabled|enforced [--max-active-sandboxes N] [--max-retained-artifact-bytes N]
-  projects credentials <project-id>
+  projects credentials <project-id> [--summary]
   projects add-credential <project-id> --name NAME --type git|registry|kubernetes|ssh|generic --secret-ref NAME [--secret-key KEY]
   projects delete <project-id>
   templates list [--project-id PROJECT]
@@ -1001,6 +1001,26 @@ type projectCredentialUsageSummary struct {
 	Generic    int `json:"generic"`
 }
 
+type projectCredentialListSummary struct {
+	Items []projectCredentialSummaryItem `json:"items"`
+}
+
+type projectCredentialSummaryItem struct {
+	ID        string                  `json:"id"`
+	ProjectID string                  `json:"projectId"`
+	Name      string                  `json:"name"`
+	Slug      string                  `json:"slug"`
+	Type      string                  `json:"type"`
+	Target    string                  `json:"target"`
+	SecretRef projectCredentialSecret `json:"secretRef"`
+	Usage     []string                `json:"usage"`
+}
+
+type projectCredentialSecret struct {
+	Name string `json:"name"`
+	Key  string `json:"key"`
+}
+
 type projectMemberListSummary struct {
 	Items []projectMemberSummaryItem `json:"items"`
 }
@@ -1259,6 +1279,135 @@ func formatResourceUsageValues(values []resourceUsageValue) string {
 		parts = append(parts, fmt.Sprintf("%s=%d", value, item.Count))
 	}
 	return strings.Join(parts, " ")
+}
+
+func writeProjectCredentialsSummary(w io.Writer, projectID string, credentials projectCredentialListSummary) error {
+	out := bufio.NewWriter(w)
+	if _, err := fmt.Fprintln(out, "PROJECT CREDENTIAL REFERENCES SUMMARY"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Project\t%s\n", tableValue(projectID, "unknown")); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Total\t%d\n", len(credentials.Items)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Types\t%s\n", formatNamedCounts(projectCredentialTypeCounts(credentials.Items))); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Usage\t%s\n", formatNamedCounts(projectCredentialUsageCounts(credentials.Items))); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Secret refs\t%s\n", formatNamedCounts(projectCredentialSecretRefCounts(credentials.Items))); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, "\nCREDENTIAL REFERENCES"); err != nil {
+		return err
+	}
+	if len(credentials.Items) == 0 {
+		if _, err := fmt.Fprintln(out, "  (none)"); err != nil {
+			return err
+		}
+		return out.Flush()
+	}
+	items := append([]projectCredentialSummaryItem(nil), credentials.Items...)
+	sort.Slice(items, func(i, j int) bool {
+		left := projectCredentialSortKey(items[i])
+		right := projectCredentialSortKey(items[j])
+		if left == right {
+			return strings.TrimSpace(items[i].ID) < strings.TrimSpace(items[j].ID)
+		}
+		return left < right
+	})
+	if _, err := fmt.Fprintln(out, "TYPE\tNAME\tTARGET\tSECRET_REF\tUSAGE\tID"); err != nil {
+		return err
+	}
+	for _, item := range items {
+		if _, err := fmt.Fprintf(out, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			tableValue(item.Type, "unknown"),
+			tableValue(item.Name, tableValue(item.Slug, "unknown")),
+			tableValue(item.Target, "-"),
+			projectCredentialSecretRefLabel(item.SecretRef),
+			formatStringList(cleanStringList(item.Usage)),
+			tableValue(item.ID, "-"),
+		); err != nil {
+			return err
+		}
+	}
+	return out.Flush()
+}
+
+func projectCredentialTypeCounts(items []projectCredentialSummaryItem) []runtimeResourceCountTable {
+	counts := map[string]int{}
+	for _, item := range items {
+		credentialType := strings.TrimSpace(item.Type)
+		if credentialType == "" {
+			credentialType = "unknown"
+		}
+		counts[credentialType]++
+	}
+	return projectMemberCounts(counts)
+}
+
+func projectCredentialUsageCounts(items []projectCredentialSummaryItem) []runtimeResourceCountTable {
+	counts := map[string]int{}
+	for _, item := range items {
+		for _, usage := range item.Usage {
+			usage = strings.TrimSpace(usage)
+			if usage == "" {
+				continue
+			}
+			counts[usage]++
+		}
+	}
+	return projectMemberCounts(counts)
+}
+
+func projectCredentialSecretRefCounts(items []projectCredentialSummaryItem) []runtimeResourceCountTable {
+	counts := map[string]int{}
+	for _, item := range items {
+		label := projectCredentialSecretRefLabel(item.SecretRef)
+		if label == "-" {
+			label = "missing"
+		}
+		counts[label]++
+	}
+	return projectMemberCounts(counts)
+}
+
+func projectCredentialSortKey(item projectCredentialSummaryItem) string {
+	return strings.Join([]string{
+		strings.TrimSpace(item.Type),
+		strings.TrimSpace(item.Name),
+		strings.TrimSpace(item.Slug),
+	}, "/")
+}
+
+func projectCredentialSecretRefLabel(secret projectCredentialSecret) string {
+	name := strings.TrimSpace(secret.Name)
+	key := strings.TrimSpace(secret.Key)
+	if name == "" && key == "" {
+		return "-"
+	}
+	if key == "" {
+		return name
+	}
+	if name == "" {
+		return "key:" + key
+	}
+	return name + "/" + key
+}
+
+func cleanStringList(values []string) []string {
+	cleaned := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			cleaned = append(cleaned, value)
+		}
+	}
+	sort.Strings(cleaned)
+	return cleaned
 }
 
 func writeProjectMembersSummary(w io.Writer, projectID string, members projectMemberListSummary) error {
@@ -2012,10 +2161,27 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 		}
 		return WriteJSON(a.streams.Stdout, out)
 	case "credentials":
-		if len(args) != 2 {
-			return usageError("usage: mbox projects credentials <project-id>")
+		if len(args) < 2 {
+			return usageError("usage: mbox projects credentials <project-id> [--summary]")
 		}
-		return a.get(ctx, client, "/v1/projects/"+url.PathEscape(args[1])+"/credentials")
+		fs := flag.NewFlagSet("projects credentials", flag.ContinueOnError)
+		fs.SetOutput(a.streams.Stderr)
+		summary := fs.Bool("summary", false, "")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return usageError("usage: mbox projects credentials <project-id> [--summary]")
+		}
+		path := "/v1/projects/" + url.PathEscape(args[1]) + "/credentials"
+		if *summary {
+			var credentials projectCredentialListSummary
+			if err := client.JSON(ctx, http.MethodGet, path, nil, &credentials); err != nil {
+				return err
+			}
+			return writeProjectCredentialsSummary(a.streams.Stdout, args[1], credentials)
+		}
+		return a.get(ctx, client, path)
 	case "add-credential":
 		if len(args) < 2 {
 			return usageError("usage: mbox projects add-credential <project-id> --name NAME --type TYPE --secret-ref NAME")
