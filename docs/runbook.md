@@ -212,6 +212,7 @@ go run ./cmd/mbox projects authorization <project-id> --action sandbox.launch
 go run ./cmd/mbox projects authorization <project-id> --action member.manage --summary
 go run ./cmd/mbox projects add-member <project-id> --principal alice@example.com --role operator
 go run ./cmd/mbox projects members <project-id>
+go run ./cmd/mbox projects members <project-id> --summary
 go run ./cmd/mbox members get <member-id>
 go run ./cmd/mbox members delete <member-id>
 go run ./cmd/mbox auth caller
@@ -220,7 +221,7 @@ go run ./cmd/mbox audit-events --project-id <project-id> --action sandbox.create
 go run ./cmd/mbox sandboxes list
 ```
 
-Project member commands manage product records for `user`, `service_account`, or `automation` principals with `owner`, `operator`, or `viewer` roles. They are starter RBAC records; the current API does not treat shared bearer tokens, member rows alone, or audit labels as trusted identity. When project RBAC enforcement and trusted principal headers are both enabled, creating a project seeds the trusted caller as owner for that new project; later member create/delete routes require `member.manage` and an owner project member.
+Project member commands manage product records for `user`, `service_account`, or `automation` principals with `owner`, `operator`, or `viewer` roles. Add `projects members <project-id> --summary` to render the existing role registry as role/principal-type counts plus member rows for operator triage while keeping default JSON for scripts. These are starter RBAC records; the current API does not treat shared bearer tokens, member rows alone, or audit labels as trusted identity. When project RBAC enforcement and trusted principal headers are both enabled, creating a project seeds the trusted caller as owner for that new project; later member create/delete routes require `member.manage` and an owner project member.
 
 `projects usage <project-id>` returns the read-only product-record usage JSON for one project. Add `--summary` when a human operator wants a compact text view of sandbox/session/task/artifact/template/credential counts plus active/running declared sandbox request totals. These request totals come from saved templates joined to product records; they are not metrics-server utilization, billing, quota reservation, or live cluster capacity.
 

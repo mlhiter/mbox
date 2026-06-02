@@ -169,7 +169,7 @@ Commands:
   projects get <project-id>
   projects usage <project-id> [--summary]
   projects authorization <project-id> [--action ACTION] [--summary]
-  projects members <project-id>
+  projects members <project-id> [--summary]
   projects add-member <project-id> --principal PRINCIPAL --role owner|operator|viewer [--principal-type user|service_account|automation]
   projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--policy-denied-summary]
   projects policy <project-id>
@@ -1001,6 +1001,18 @@ type projectCredentialUsageSummary struct {
 	Generic    int `json:"generic"`
 }
 
+type projectMemberListSummary struct {
+	Items []projectMemberSummaryItem `json:"items"`
+}
+
+type projectMemberSummaryItem struct {
+	ID            string `json:"id"`
+	ProjectID     string `json:"projectId"`
+	PrincipalType string `json:"principalType"`
+	Principal     string `json:"principal"`
+	Role          string `json:"role"`
+}
+
 type callerSummaryInfo struct {
 	Authenticated          bool     `json:"authenticated"`
 	AuthenticationRequired bool     `json:"authenticationRequired"`
@@ -1247,6 +1259,97 @@ func formatResourceUsageValues(values []resourceUsageValue) string {
 		parts = append(parts, fmt.Sprintf("%s=%d", value, item.Count))
 	}
 	return strings.Join(parts, " ")
+}
+
+func writeProjectMembersSummary(w io.Writer, projectID string, members projectMemberListSummary) error {
+	out := bufio.NewWriter(w)
+	if _, err := fmt.Fprintln(out, "PROJECT MEMBERS SUMMARY"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Project\t%s\n", tableValue(projectID, "unknown")); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Total\t%d\n", len(members.Items)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Roles\t%s\n", formatNamedCounts(projectMemberRoleCounts(members.Items))); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Principal types\t%s\n", formatNamedCounts(projectMemberPrincipalTypeCounts(members.Items))); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, "\nMEMBERS"); err != nil {
+		return err
+	}
+	if len(members.Items) == 0 {
+		if _, err := fmt.Fprintln(out, "  (none)"); err != nil {
+			return err
+		}
+		return out.Flush()
+	}
+	items := append([]projectMemberSummaryItem(nil), members.Items...)
+	sort.Slice(items, func(i, j int) bool {
+		left := projectMemberSortKey(items[i])
+		right := projectMemberSortKey(items[j])
+		if left == right {
+			return strings.TrimSpace(items[i].ID) < strings.TrimSpace(items[j].ID)
+		}
+		return left < right
+	})
+	if _, err := fmt.Fprintln(out, "ROLE\tPRINCIPAL\tTYPE\tID"); err != nil {
+		return err
+	}
+	for _, item := range items {
+		if _, err := fmt.Fprintf(out, "%s\t%s\t%s\t%s\n",
+			tableValue(item.Role, "unknown"),
+			tableValue(item.Principal, "unknown"),
+			tableValue(item.PrincipalType, "unknown"),
+			tableValue(item.ID, "-"),
+		); err != nil {
+			return err
+		}
+	}
+	return out.Flush()
+}
+
+func projectMemberRoleCounts(items []projectMemberSummaryItem) []runtimeResourceCountTable {
+	counts := map[string]int{}
+	for _, item := range items {
+		role := strings.TrimSpace(item.Role)
+		if role == "" {
+			role = "unknown"
+		}
+		counts[role]++
+	}
+	return projectMemberCounts(counts)
+}
+
+func projectMemberPrincipalTypeCounts(items []projectMemberSummaryItem) []runtimeResourceCountTable {
+	counts := map[string]int{}
+	for _, item := range items {
+		principalType := strings.TrimSpace(item.PrincipalType)
+		if principalType == "" {
+			principalType = "unknown"
+		}
+		counts[principalType]++
+	}
+	return projectMemberCounts(counts)
+}
+
+func projectMemberCounts(counts map[string]int) []runtimeResourceCountTable {
+	result := make([]runtimeResourceCountTable, 0, len(counts))
+	for name, count := range counts {
+		result = append(result, runtimeResourceCountTable{Name: name, Count: count})
+	}
+	return result
+}
+
+func projectMemberSortKey(item projectMemberSummaryItem) string {
+	return strings.Join([]string{
+		strings.TrimSpace(item.Role),
+		strings.TrimSpace(item.PrincipalType),
+		strings.TrimSpace(item.Principal),
+	}, "/")
 }
 
 func writeCallerSummary(w io.Writer, caller callerSummaryInfo) error {
@@ -1792,10 +1895,27 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 		}
 		return a.get(ctx, client, path)
 	case "members":
-		if len(args) != 2 {
-			return usageError("usage: mbox projects members <project-id>")
+		if len(args) < 2 {
+			return usageError("usage: mbox projects members <project-id> [--summary]")
 		}
-		return a.get(ctx, client, "/v1/projects/"+url.PathEscape(args[1])+"/members")
+		fs := flag.NewFlagSet("projects members", flag.ContinueOnError)
+		fs.SetOutput(a.streams.Stderr)
+		summary := fs.Bool("summary", false, "")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return usageError("usage: mbox projects members <project-id> [--summary]")
+		}
+		path := "/v1/projects/" + url.PathEscape(args[1]) + "/members"
+		if *summary {
+			var members projectMemberListSummary
+			if err := client.JSON(ctx, http.MethodGet, path, nil, &members); err != nil {
+				return err
+			}
+			return writeProjectMembersSummary(a.streams.Stdout, args[1], members)
+		}
+		return a.get(ctx, client, path)
 	case "add-member":
 		if len(args) < 2 {
 			return usageError("usage: mbox projects add-member <project-id> --principal PRINCIPAL --role owner|operator|viewer [--principal-type user|service_account|automation]")

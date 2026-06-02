@@ -1302,6 +1302,57 @@ func TestProjectMembersListAndMemberGetDeleteUseMemberRoutes(t *testing.T) {
 	}
 }
 
+func TestProjectMembersSummaryPrintsReadableRoleRegistry(t *testing.T) {
+	var method string
+	var path string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"items": [
+				{"id":"member-2","projectId":"project-1","principalType":"automation","principal":"nightly-runner","role":"operator"},
+				{"id":"member-1","projectId":"project-1","principalType":"user","principal":"alice@example.com","role":"owner"},
+				{"id":"member-3","projectId":"project-1","principalType":"service_account","principal":"reader","role":"viewer"}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"projects", "members", "project-1",
+		"--summary",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || path != "/v1/projects/project-1/members" {
+		t.Fatalf("unexpected request %s %s", method, path)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"PROJECT MEMBERS SUMMARY",
+		"Project\tproject-1",
+		"Total\t3",
+		"Roles\toperator=1 owner=1 viewer=1",
+		"Principal types\tautomation=1 service_account=1 user=1",
+		"MEMBERS",
+		"ROLE\tPRINCIPAL\tTYPE\tID",
+		"operator\tnightly-runner\tautomation\tmember-2",
+		"owner\talice@example.com\tuser\tmember-1",
+		"viewer\treader\tservice_account\tmember-3",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in members summary output, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"items"`) || strings.Contains(output, `"principalType"`) {
+		t.Fatalf("expected human-readable members summary without raw JSON, got %q", output)
+	}
+}
+
 func TestProjectAuthorizationUsesPreflightRoute(t *testing.T) {
 	var method string
 	var path string
