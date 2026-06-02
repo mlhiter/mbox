@@ -203,6 +203,7 @@ go run ./cmd/mbox --api-url http://127.0.0.1:18080 health
 go run ./cmd/mbox --api-url http://127.0.0.1:18080 openapi | jq '.openapi, .info.title'
 go run ./cmd/mbox projects list
 go run ./cmd/mbox projects usage <project-id>
+go run ./cmd/mbox projects usage <project-id> --summary
 go run ./cmd/mbox projects audit-events <project-id> --action policy.denied --operation sandbox.launch --reason "active sandbox quota exceeded" --actor cli-smoke --source mbox-cli --filter-request-id cli-smoke-request --since 2026-05-30T00:00:00Z --until 2026-05-30T01:00:00Z
 go run ./cmd/mbox projects audit-events <project-id> --policy-denied-summary --operation sandbox.launch --since 2026-05-30T00:00:00Z --until 2026-05-30T01:00:00Z
 go run ./cmd/mbox projects quota-policy <project-id>
@@ -220,6 +221,8 @@ go run ./cmd/mbox sandboxes list
 ```
 
 Project member commands manage product records for `user`, `service_account`, or `automation` principals with `owner`, `operator`, or `viewer` roles. They are starter RBAC records; the current API does not treat shared bearer tokens, member rows alone, or audit labels as trusted identity. When project RBAC enforcement and trusted principal headers are both enabled, creating a project seeds the trusted caller as owner for that new project; later member create/delete routes require `member.manage` and an owner project member.
+
+`projects usage <project-id>` returns the read-only product-record usage JSON for one project. Add `--summary` when a human operator wants a compact text view of sandbox/session/task/artifact/template/credential counts plus active/running declared sandbox request totals. These request totals come from saved templates joined to product records; they are not metrics-server utilization, billing, quota reservation, or live cluster capacity.
 
 `projects authorization <project-id> --action sandbox.launch` is RBAC preflight. It returns the roles required for the action, the current caller boundary, member count, and action-level `enforced` state. Add `--summary` to render the same response as a compact operator decision view while keeping the default JSON output for scripts. When trusted principal headers are explicitly enabled, the same route can return allowed or denied decisions by matching the trusted caller to project member records. With `MBOX_PROJECT_RBAC_ENFORCEMENT_ENABLED=true`, `sandbox.launch` is route-enforced for `POST /v1/sandboxes` and template validation launches, `runtime.operate` is route-enforced for active runtime target/log/event/preview/terminal/session/task/workspace-content paths, `artifact.write` is route-enforced for artifact reference creation, workspace artifact capture, and client artifact-content upload, `policy.manage` is route-enforced for project launch/quota policy updates, `credential.manage` is route-enforced for project credential-reference create/delete routes, and `member.manage` is route-enforced for member create/delete routes. Other actions remain preflight-only.
 

@@ -291,6 +291,7 @@ go run ./cmd/mbox --api-url http://127.0.0.1:18080 info
 go run ./cmd/mbox context current
 go run ./cmd/mbox projects list
 go run ./cmd/mbox projects usage <project-id>
+go run ./cmd/mbox projects usage <project-id> --summary
 go run ./cmd/mbox sandboxes create --project-id <project-id> --template-id <template-id> --name "Demo Sandbox"
 go run ./cmd/mbox tasks create <sandbox-id> --arg sh --arg -lc --arg 'pwd && echo ok'
 go run ./cmd/mbox tasks run <sandbox-id> --require-success -- sh -lc 'pwd && echo ok'

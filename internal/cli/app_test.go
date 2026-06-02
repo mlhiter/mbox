@@ -892,6 +892,102 @@ func TestProjectsUsageUsesUsageRoute(t *testing.T) {
 	}
 }
 
+func TestProjectsUsageSummaryPrintsReadableUsage(t *testing.T) {
+	var method string
+	var path string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"projectId":"project-1",
+			"generatedAt":"2026-06-02T09:00:00Z",
+			"sandboxes":{
+				"total":4,
+				"active":3,
+				"pending":1,
+				"running":2,
+				"stopped":0,
+				"failed":0,
+				"deleted":1,
+				"cleanupPending":1,
+				"activeRequests":{
+					"count":3,
+					"cpu":{"total":"1500m","declared":3,"missing":0,"invalid":0},
+					"memory":{"total":"3Gi","declared":3,"missing":0,"invalid":0},
+					"storage":{"total":"6Gi","declared":2,"missing":1,"invalid":0}
+				},
+				"runningRequests":{
+					"count":2,
+					"cpu":{"total":"1000m","declared":2,"missing":0,"invalid":0},
+					"memory":{"total":"2Gi","declared":2,"missing":0,"invalid":0},
+					"storage":{"total":"4Gi","declared":2,"missing":0,"invalid":0}
+				}
+			},
+			"runtimeSessions":{"total":3,"active":1,"ended":2,"failed":0,"terminal":1,"custom":2},
+			"executionTasks":{"total":4,"queued":0,"running":1,"succeeded":2,"failed":1,"canceled":0,"timedOut":0},
+			"artifacts":{"total":3,"retainedContent":2,"referencedBytes":4096,"retainedBytes":512,"report":1,"log":2},
+			"templates":{
+				"projectScoped":2,
+				"globalVisible":1,
+				"cpuRequests":[{"value":"250m","count":1},{"value":"500m","count":2}],
+				"memoryRequests":[{"value":"512Mi","count":1},{"value":"1Gi","count":2}],
+				"storageRequests":[{"value":"2Gi","count":3}]
+			},
+			"credentials":{"total":2,"registry":1,"ssh":1},
+			"notes":["product-record usage only; not live metrics"]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"projects", "usage", "project-1",
+		"--summary",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || path != "/v1/projects/project-1/usage" {
+		t.Fatalf("unexpected request %s %s", method, path)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"PROJECT USAGE SUMMARY",
+		"Project\tproject-1",
+		"Generated at\t2026-06-02T09:00:00Z",
+		"SANDBOXES",
+		"total\t4",
+		"active\t3",
+		"cleanupPending\t1",
+		"DECLARED REQUESTS",
+		"active\tcount=3 cpu=1500m(declared=3 missing=0 invalid=0) memory=3Gi(declared=3 missing=0 invalid=0) storage=6Gi(declared=2 missing=1 invalid=0)",
+		"running\tcount=2 cpu=1000m(declared=2 missing=0 invalid=0) memory=2Gi(declared=2 missing=0 invalid=0) storage=4Gi(declared=2 missing=0 invalid=0)",
+		"RUNTIME SESSIONS",
+		"types\tcustom=2 terminal=1",
+		"EXECUTION TASKS",
+		"succeeded\t2",
+		"ARTIFACTS",
+		"referencedBytes\t4096",
+		"kinds\tlog=2 report=1",
+		"TEMPLATES",
+		"cpuRequests\t250m=1 500m=2",
+		"CREDENTIAL REFERENCES",
+		"types\tregistry=1 ssh=1",
+		"NOTES",
+		"- product-record usage only; not live metrics",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in usage summary output, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"sandboxes"`) || strings.Contains(output, `"projectId"`) {
+		t.Fatalf("expected human-readable usage summary without raw JSON, got %q", output)
+	}
+}
+
 func TestAuditEventsUsesAuditEventsRoute(t *testing.T) {
 	var method string
 	var uri string

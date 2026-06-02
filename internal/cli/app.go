@@ -167,7 +167,7 @@ Commands:
   projects list
   projects create --name NAME --namespace NAMESPACE [--slug SLUG]
   projects get <project-id>
-  projects usage <project-id>
+  projects usage <project-id> [--summary]
   projects authorization <project-id> [--action ACTION] [--summary]
   projects members <project-id>
   projects add-member <project-id> --principal PRINCIPAL --role owner|operator|viewer [--principal-type user|service_account|automation]
@@ -902,6 +902,105 @@ type policyDeniedSummaryRow struct {
 	Resources map[string]bool
 }
 
+type projectUsageSummary struct {
+	ProjectID       string                        `json:"projectId"`
+	GeneratedAt     string                        `json:"generatedAt"`
+	Sandboxes       projectSandboxUsageSummary    `json:"sandboxes"`
+	RuntimeSessions projectSessionUsageSummary    `json:"runtimeSessions"`
+	ExecutionTasks  projectTaskUsageSummary       `json:"executionTasks"`
+	Artifacts       projectArtifactUsageSummary   `json:"artifacts"`
+	Templates       projectTemplateUsageSummary   `json:"templates"`
+	Credentials     projectCredentialUsageSummary `json:"credentials"`
+	Notes           []string                      `json:"notes"`
+}
+
+type projectSandboxUsageSummary struct {
+	Total           int                         `json:"total"`
+	Active          int                         `json:"active"`
+	Pending         int                         `json:"pending"`
+	Running         int                         `json:"running"`
+	Stopped         int                         `json:"stopped"`
+	Failed          int                         `json:"failed"`
+	Deleted         int                         `json:"deleted"`
+	CleanupPending  int                         `json:"cleanupPending"`
+	ActiveRequests  sandboxResourceRequestUsage `json:"activeRequests"`
+	RunningRequests sandboxResourceRequestUsage `json:"runningRequests"`
+}
+
+type sandboxResourceRequestUsage struct {
+	Count   int                   `json:"count"`
+	CPU     resourceQuantityUsage `json:"cpu"`
+	Memory  resourceQuantityUsage `json:"memory"`
+	Storage resourceQuantityUsage `json:"storage"`
+}
+
+type resourceQuantityUsage struct {
+	Total    string `json:"total"`
+	Declared int    `json:"declared"`
+	Missing  int    `json:"missing"`
+	Invalid  int    `json:"invalid"`
+}
+
+type projectSessionUsageSummary struct {
+	Total    int `json:"total"`
+	Active   int `json:"active"`
+	Ended    int `json:"ended"`
+	Failed   int `json:"failed"`
+	Terminal int `json:"terminal"`
+	IDE      int `json:"ide"`
+	Notebook int `json:"notebook"`
+	Browser  int `json:"browser"`
+	Command  int `json:"command"`
+	Custom   int `json:"custom"`
+}
+
+type projectTaskUsageSummary struct {
+	Total     int `json:"total"`
+	Queued    int `json:"queued"`
+	Running   int `json:"running"`
+	Succeeded int `json:"succeeded"`
+	Failed    int `json:"failed"`
+	Canceled  int `json:"canceled"`
+	TimedOut  int `json:"timedOut"`
+}
+
+type projectArtifactUsageSummary struct {
+	Total           int   `json:"total"`
+	RetainedContent int   `json:"retainedContent"`
+	ReferencedBytes int64 `json:"referencedBytes"`
+	RetainedBytes   int64 `json:"retainedBytes"`
+	File            int   `json:"file"`
+	Directory       int   `json:"directory"`
+	Log             int   `json:"log"`
+	Report          int   `json:"report"`
+	Screenshot      int   `json:"screenshot"`
+	Image           int   `json:"image"`
+	Link            int   `json:"link"`
+	Other           int   `json:"other"`
+}
+
+type projectTemplateUsageSummary struct {
+	ProjectScoped   int                  `json:"projectScoped"`
+	GlobalVisible   int                  `json:"globalVisible"`
+	CPURequests     []resourceUsageValue `json:"cpuRequests"`
+	MemoryRequests  []resourceUsageValue `json:"memoryRequests"`
+	StorageRequests []resourceUsageValue `json:"storageRequests"`
+}
+
+type resourceUsageValue struct {
+	Value string `json:"value"`
+	Count int    `json:"count"`
+}
+
+type projectCredentialUsageSummary struct {
+	Total      int `json:"total"`
+	Git        int `json:"git"`
+	Registry   int `json:"registry"`
+	Kubernetes int `json:"kubernetes"`
+	SSH        int `json:"ssh"`
+	Generic    int `json:"generic"`
+}
+
 type callerSummaryInfo struct {
 	Authenticated          bool     `json:"authenticated"`
 	AuthenticationRequired bool     `json:"authenticationRequired"`
@@ -943,6 +1042,211 @@ type projectAuthorizationSummaryMember struct {
 	PrincipalType string `json:"principalType"`
 	Principal     string `json:"principal"`
 	Role          string `json:"role"`
+}
+
+func writeProjectUsageSummary(w io.Writer, usage projectUsageSummary) error {
+	out := bufio.NewWriter(w)
+	if _, err := fmt.Fprintln(out, "PROJECT USAGE SUMMARY"); err != nil {
+		return err
+	}
+	rows := [][2]string{
+		{"Project", tableValue(usage.ProjectID, "unknown")},
+		{"Generated at", tableValue(usage.GeneratedAt, "unknown")},
+	}
+	for _, row := range rows {
+		if _, err := fmt.Fprintf(out, "%s\t%s\n", row[0], row[1]); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(out, "\nSANDBOXES"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "total\t%d\nactive\t%d\nrunning\t%d\npending\t%d\nstopped\t%d\nfailed\t%d\ndeleted\t%d\ncleanupPending\t%d\n",
+		usage.Sandboxes.Total,
+		usage.Sandboxes.Active,
+		usage.Sandboxes.Running,
+		usage.Sandboxes.Pending,
+		usage.Sandboxes.Stopped,
+		usage.Sandboxes.Failed,
+		usage.Sandboxes.Deleted,
+		usage.Sandboxes.CleanupPending,
+	); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, "\nDECLARED REQUESTS"); err != nil {
+		return err
+	}
+	if err := writeProjectUsageRequestLine(out, "active", usage.Sandboxes.ActiveRequests); err != nil {
+		return err
+	}
+	if err := writeProjectUsageRequestLine(out, "running", usage.Sandboxes.RunningRequests); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, "\nRUNTIME SESSIONS"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "total\t%d\nactive\t%d\nended\t%d\nfailed\t%d\ntypes\t%s\n",
+		usage.RuntimeSessions.Total,
+		usage.RuntimeSessions.Active,
+		usage.RuntimeSessions.Ended,
+		usage.RuntimeSessions.Failed,
+		formatRuntimeSessionUsageTypes(usage.RuntimeSessions),
+	); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, "\nEXECUTION TASKS"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "total\t%d\nqueued\t%d\nrunning\t%d\nsucceeded\t%d\nfailed\t%d\ncanceled\t%d\ntimedOut\t%d\n",
+		usage.ExecutionTasks.Total,
+		usage.ExecutionTasks.Queued,
+		usage.ExecutionTasks.Running,
+		usage.ExecutionTasks.Succeeded,
+		usage.ExecutionTasks.Failed,
+		usage.ExecutionTasks.Canceled,
+		usage.ExecutionTasks.TimedOut,
+	); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, "\nARTIFACTS"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "total\t%d\nretainedContent\t%d\nreferencedBytes\t%d\nretainedBytes\t%d\nkinds\t%s\n",
+		usage.Artifacts.Total,
+		usage.Artifacts.RetainedContent,
+		usage.Artifacts.ReferencedBytes,
+		usage.Artifacts.RetainedBytes,
+		formatArtifactUsageKinds(usage.Artifacts),
+	); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, "\nTEMPLATES"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "projectScoped\t%d\nglobalVisible\t%d\ncpuRequests\t%s\nmemoryRequests\t%s\nstorageRequests\t%s\n",
+		usage.Templates.ProjectScoped,
+		usage.Templates.GlobalVisible,
+		formatResourceUsageValues(usage.Templates.CPURequests),
+		formatResourceUsageValues(usage.Templates.MemoryRequests),
+		formatResourceUsageValues(usage.Templates.StorageRequests),
+	); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, "\nCREDENTIAL REFERENCES"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "total\t%d\ntypes\t%s\n",
+		usage.Credentials.Total,
+		formatCredentialUsageTypes(usage.Credentials),
+	); err != nil {
+		return err
+	}
+	if len(usage.Notes) > 0 {
+		if _, err := fmt.Fprintln(out, "\nNOTES"); err != nil {
+			return err
+		}
+		for _, note := range usage.Notes {
+			note = strings.TrimSpace(note)
+			if note == "" {
+				continue
+			}
+			if _, err := fmt.Fprintf(out, "- %s\n", note); err != nil {
+				return err
+			}
+		}
+	}
+	return out.Flush()
+}
+
+func writeProjectUsageRequestLine(w io.Writer, label string, requests sandboxResourceRequestUsage) error {
+	_, err := fmt.Fprintf(w, "%s\tcount=%d cpu=%s memory=%s storage=%s\n",
+		label,
+		requests.Count,
+		formatResourceQuantityUsage(requests.CPU),
+		formatResourceQuantityUsage(requests.Memory),
+		formatResourceQuantityUsage(requests.Storage),
+	)
+	return err
+}
+
+func formatResourceQuantityUsage(value resourceQuantityUsage) string {
+	total := strings.TrimSpace(value.Total)
+	if total == "" {
+		total = "-"
+	}
+	return fmt.Sprintf("%s(declared=%d missing=%d invalid=%d)", total, value.Declared, value.Missing, value.Invalid)
+}
+
+func formatRuntimeSessionUsageTypes(usage projectSessionUsageSummary) string {
+	return formatNamedCounts([]runtimeResourceCountTable{
+		{Name: "terminal", Count: usage.Terminal},
+		{Name: "ide", Count: usage.IDE},
+		{Name: "notebook", Count: usage.Notebook},
+		{Name: "browser", Count: usage.Browser},
+		{Name: "command", Count: usage.Command},
+		{Name: "custom", Count: usage.Custom},
+	})
+}
+
+func formatArtifactUsageKinds(usage projectArtifactUsageSummary) string {
+	return formatNamedCounts([]runtimeResourceCountTable{
+		{Name: "file", Count: usage.File},
+		{Name: "directory", Count: usage.Directory},
+		{Name: "log", Count: usage.Log},
+		{Name: "report", Count: usage.Report},
+		{Name: "screenshot", Count: usage.Screenshot},
+		{Name: "image", Count: usage.Image},
+		{Name: "link", Count: usage.Link},
+		{Name: "other", Count: usage.Other},
+	})
+}
+
+func formatCredentialUsageTypes(usage projectCredentialUsageSummary) string {
+	return formatNamedCounts([]runtimeResourceCountTable{
+		{Name: "git", Count: usage.Git},
+		{Name: "registry", Count: usage.Registry},
+		{Name: "kubernetes", Count: usage.Kubernetes},
+		{Name: "ssh", Count: usage.SSH},
+		{Name: "generic", Count: usage.Generic},
+	})
+}
+
+func formatNamedCounts(values []runtimeResourceCountTable) string {
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		if value.Count <= 0 {
+			continue
+		}
+		name := strings.TrimSpace(value.Name)
+		if name == "" {
+			name = "(empty)"
+		}
+		items = append(items, fmt.Sprintf("%s=%d", name, value.Count))
+	}
+	if len(items) == 0 {
+		return "(none)"
+	}
+	sort.Strings(items)
+	return strings.Join(items, " ")
+}
+
+func formatResourceUsageValues(values []resourceUsageValue) string {
+	if len(values) == 0 {
+		return "(none)"
+	}
+	items := append([]resourceUsageValue(nil), values...)
+	sort.Slice(items, func(i, j int) bool {
+		return strings.TrimSpace(items[i].Value) < strings.TrimSpace(items[j].Value)
+	})
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		value := strings.TrimSpace(item.Value)
+		if value == "" {
+			value = "(empty)"
+		}
+		parts = append(parts, fmt.Sprintf("%s=%d", value, item.Count))
+	}
+	return strings.Join(parts, " ")
 }
 
 func writeCallerSummary(w io.Writer, caller callerSummaryInfo) error {
@@ -1438,10 +1742,27 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 		}
 		return a.get(ctx, client, "/v1/projects/"+url.PathEscape(args[1]))
 	case "usage":
-		if len(args) != 2 {
-			return usageError("usage: mbox projects usage <project-id>")
+		if len(args) < 2 {
+			return usageError("usage: mbox projects usage <project-id> [--summary]")
 		}
-		return a.get(ctx, client, "/v1/projects/"+url.PathEscape(args[1])+"/usage")
+		fs := flag.NewFlagSet("projects usage", flag.ContinueOnError)
+		fs.SetOutput(a.streams.Stderr)
+		summary := fs.Bool("summary", false, "")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return usageError("usage: mbox projects usage <project-id> [--summary]")
+		}
+		path := "/v1/projects/" + url.PathEscape(args[1]) + "/usage"
+		if *summary {
+			var usage projectUsageSummary
+			if err := client.JSON(ctx, http.MethodGet, path, nil, &usage); err != nil {
+				return err
+			}
+			return writeProjectUsageSummary(a.streams.Stdout, usage)
+		}
+		return a.get(ctx, client, path)
 	case "authorization", "authz":
 		if len(args) < 2 {
 			return usageError("usage: mbox projects authorization <project-id> [--action ACTION] [--summary]")
