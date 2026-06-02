@@ -47,7 +47,7 @@ Automation clients call the public product API. They are clients of the platform
 
 ### Project
 
-A project represents a codebase, workspace, or operational scope. It binds together a repository reference, default environment templates, namespace defaults, policy, credential references, and runtime history.
+A project represents a codebase, workspace, or operational scope. It binds together a repository reference, default environment templates, namespace defaults, member role records, policy, credential references, and runtime history.
 
 ### Environment Template
 
@@ -114,6 +114,12 @@ Policy defines what users and external clients can do:
 - which network destinations are allowed
 - when sandboxes expire
 - how outputs and artifacts are retained
+
+Project member records name principals and roles for the policy model. They are not trusted authentication sessions by themselves. In the starter implementation, they can participate in authorization preflight and, when project RBAC enforcement is explicitly enabled with a trusted principal provider, gate the starter `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage` actions.
+
+The caller/auth handshake exposes the current boundary for clients and operators: anonymous local mode when no API token is configured, shared-token mode when a bearer token was accepted, or `trusted_header` mode when a deployment explicitly enables trusted reverse-proxy principal headers. Trusted headers can identify a `user`, `service_account`, or `automation` principal for preflight matching and enabled project RBAC actions, but they do not create a login system.
+
+The project authorization preflight maps product actions such as sandbox launch, runtime operation, artifact write, credential-reference management, and policy/member management to the roles required by the project member model. It is an explainable contract for clients and operators. Anonymous and shared-token callers are not trusted project identities. The first route-level enforcement slices are disabled by default and cover only `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage`: when `MBOX_PROJECT_RBAC_ENFORCEMENT_ENABLED=true`, sandbox creation, template validation launches, live runtime operations, artifact reference creation, workspace artifact capture, and client artifact-content upload require a trusted-header caller that matches an `owner` or `operator` project member; project launch/quota policy updates and credential-reference create/delete routes require an `owner` project member. Runtime operation enforcement currently covers active runtime access surfaces such as target/log/event/preview/terminal/session/task/workspace-content paths, not ordinary product-record list/get routes. Credential enforcement gates only credential-reference mutations; list/get routes remain read visibility and still expose only Secret reference metadata, not secret values.
 
 ### Upper-layer Workflows
 

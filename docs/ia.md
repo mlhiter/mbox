@@ -18,16 +18,20 @@ The canonical hash locations are:
 - `#environments`
 - `#sandboxes`
 - `#sandboxes/{sandboxID}`
+- `#runtime`
 
 The left rail switches the active resource view:
 
 - Projects
 - Environments
 - Sandboxes
+- Runtime
+
+The rail also shows API health and the current caller boundary from `/v1/auth/caller`: anonymous local mode or shared-token mode, with RBAC enforcement still marked off. This is status visibility, not login navigation.
 
 The main workspace starts with the active view title, active-view record count, and global API/product summary counts. It renders exactly one active resource table, not all resource tables stacked on the same page. Opening a sandbox workspace moves to `#sandboxes/{sandboxID}` and replaces the list with a dedicated sandbox detail page.
 
-The right detail pane is metadata-only. It shows the selected project, environment, or sandbox identity and key fields in list views. It should not host the terminal. Changing the active view clears incompatible selection so the detail pane does not show metadata from another view. The sandbox detail page hides the global detail pane and owns its own inspector.
+The right detail pane is metadata-only. It shows the selected project, environment, or sandbox identity and key fields in list views. For selected projects, it also shows read-only authorization preflight for starter RBAC actions so operators can see required roles, caller trust, matched member state, and whether the selected action is route-enforced. It should not host the terminal. Changing the active view clears incompatible selection so the detail pane does not show metadata from another view. The sandbox detail page hides the global detail pane and owns its own inspector.
 
 ## Main Workspace Sections
 
@@ -79,7 +83,7 @@ Current operations:
 
 - list projects
 - create project
-- inspect selected project metadata
+- inspect selected project metadata, usage, credential references, member role records, and recent audit events
 
 ### Templates
 

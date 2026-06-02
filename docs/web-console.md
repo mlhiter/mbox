@@ -11,9 +11,12 @@ The current console supports the first product slice:
 - hash-routable console locations for `#projects`, `#environments`, `#sandboxes`, `#sandboxes/{sandboxID}`, and `#runtime`
 - project list and create dialog
 - project launch policy and credential-reference visibility in the project table and selected-resource inspector
+- project member role visibility in the selected-resource inspector as starter RBAC data for the explicitly enabled project RBAC starter
+- caller boundary visibility in the left rail from `/v1/auth/caller`, showing anonymous, shared-token, or trusted-header mode plus whether project-role enforcement is active
+- project authorization preflight visibility in the selected project inspector, showing starter action required roles, caller boundary, member count, matched member when a trusted header principal is present, and action-level enforced/not-enforced state
 - project quota policy visibility in the project table and selected-resource inspector
 - project usage visibility in the project table and inspector, backed by product-record counts and declared sandbox request totals rather than live Kubernetes metrics
-- recent project audit-event visibility in the selected-resource inspector, with action, actor, source, request ID, operation, and time-window filtering backed by product records rather than auth or Kubernetes audit logs
+- recent project audit-event visibility in the selected-resource inspector, with action, actor, source, request ID, operation, reason, and time-window filtering backed by product records rather than auth or Kubernetes audit logs; `policy.denied` events are highlighted with operation/reason, authorization action, trusted-caller boundary fields, resource hints, and compact grouped quick filters when matching denial metadata is present
 - sandbox launch preflight visibility for obvious project policy and active-sandbox quota blockers, while the API remains the authoritative enforcement point
 - template library for ready-to-run environments, with create/edit dialogs that foreground runtime type, use case, entrypoints, resource preset, and workspace storage
 - advanced template settings for image, startup command, working directory, CPU, memory, env, secret refs, network preset, and lifecycle JSON
@@ -30,7 +33,7 @@ The current console supports the first product slice:
 - toast feedback for API failures and successful writes
 - runtime readiness notices when terminal access is blocked by missing runtime projection or non-running sandbox status
 
-The console does not yet provide artifact upload, credential injection, metrics-server CPU/memory utilization charts, runtime cleanup, or a full policy editor. Project launch policy, quota policy, credential-reference visibility, object-store retained artifact download support, and read-only runtime workload observation exist, while broader policy and credential management remain roadmap items. Pipeline and deployment screens should be treated as upper-layer integrations, not as the base console model.
+The console does not yet provide artifact upload, credential injection, metrics-server CPU/memory utilization charts, runtime cleanup, member editing, trusted login, broad route-level RBAC enforcement, or a full policy editor. Project launch policy, quota policy, authorization preflight, member visibility, caller boundary visibility, disabled-by-default `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage` RBAC enforcement, credential-reference visibility, object-store retained artifact download support, and read-only runtime workload observation exist, while broader policy, RBAC enforcement, and credential management UI remain roadmap items. Pipeline and deployment screens should be treated as upper-layer integrations, not as the base console model.
 
 ## Local Development
 
@@ -77,7 +80,9 @@ Vite proxies `/healthz` and `/v1/*` to the API server. The `/v1/*` proxy also fo
 MBOX_API_PROXY_TARGET=http://127.0.0.1:19080 npm run dev
 ```
 
-If the local API is started with `MBOX_API_TOKEN`, start Vite with `MBOX_TOKEN` or the same `MBOX_API_TOKEN`. The dev proxy attaches `Authorization: Bearer <token>` server-side, including for WebSocket upgrades, so frontend code does not read the token directly.
+If the local API is started with `MBOX_API_TOKEN`, start Vite with `MBOX_TOKEN` or the same `MBOX_API_TOKEN`. The dev proxy attaches `Authorization: Bearer <token>` server-side, including for WebSocket upgrades, so frontend code does not read the token directly. The rail caller status reads the proxied `/v1/auth/caller` response and remains a boundary indicator, not a login session.
+
+For local trusted-header UI smoke, start the API with `MBOX_TRUSTED_PRINCIPAL_HEADERS_ENABLED=true` and start Vite with `MBOX_TRUSTED_PRINCIPAL=ci-bot MBOX_TRUSTED_PRINCIPAL_TYPE=automation`. The dev proxy attaches the principal headers server-side so the rail can show trusted preflight or project RBAC enforcement state. This is not a production identity system; only use it behind a trusted upstream identity layer or for local tests. Add `MBOX_PROJECT_RBAC_ENFORCEMENT_ENABLED=true` on the API only when you also create matching project member records and want the starter `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage` routes to deny unmatched callers.
 
 If another local project needs the default web port, set:
 
@@ -153,7 +158,7 @@ The Tasks tab creates controlled command tasks through `POST /v1/sandboxes/{sand
 
 The Artifacts tab registers output references through `POST /v1/sandboxes/{sandboxID}/artifacts` and lists the sandbox's artifact history. It can link an artifact to an existing task. `workspace://` file artifacts can be downloaded while the sandbox is running and runtime access can read the resolved workspace mount. The tab also exposes a capture action for supported workspace files; captured content is retained server-side with size, sha256, and storage-provider metadata so it can still be downloaded after runtime cleanup. API, CLI, and SDK clients can upload retained bytes directly; the current web tab does not expose a client-file upload control yet. External HTTPS URLs, object-store URIs, and directories remain reference-only.
 
-The Runtime view opens at `#runtime` and lists the current mbox-managed runtime resources reported by the runtime auditor. It is intentionally cross-project and read-only: the summary shows total resources, adapter, observed Pod counts, summed requests, storage capacity, restart count, and checked-at time, while the table shows resource kind/name, namespace, label-derived owner, best-effort runtime observation, summed Pod requests/limits, PVC state, selected mbox labels, and creation time. This observation comes from the current Kubernetes Pod/PVC shape; it is not metrics-server CPU/memory utilization, quota, billing, or capacity reservation. If the server process has no runtime auditor configured, the view shows a local unavailable state instead of failing the rest of the console. Cleanup remains in the explicit orphan-cleanup API/CLI flow and is not exposed as a Runtime table action.
+The Runtime view opens at `#runtime` and lists the current mbox-managed runtime resources reported by the runtime auditor. It is intentionally read-only: operators can inspect all resources or filter the inventory by project owner label, and the filtered summary shows the matched resource count, label-derived project distribution, adapter, observed Pod counts, summed requests, storage capacity, restart count, and checked-at time. The table shows resource kind/name, namespace, label-derived owner, best-effort runtime observation, summed Pod requests/limits, PVC state, selected mbox labels, and creation time. This observation comes from the current Kubernetes Pod/PVC shape and label attribution; it is not metrics-server CPU/memory utilization, quota, billing, RBAC, or capacity reservation. If the server process has no runtime auditor configured, the view shows a local unavailable state instead of failing the rest of the console. Cleanup remains in the explicit orphan-cleanup API/CLI flow and is not exposed as a Runtime table action.
 
 ## Design System
 
@@ -202,7 +207,8 @@ Useful manual checks:
 
 - `http://127.0.0.1:5174/` loads the console.
 - API status shows healthy when the Go server is running.
-- Selecting a project shows recent activity with actor/source attribution and trace fields when present, and filtering by action, actor, source, request ID, operation, since, or until reloads the project audit feed through the API.
+- Selecting a project shows the Authorization preflight group for starter RBAC actions and registered member role records in the Members group. Trusted-header callers may show a matched member and allowed/denied result; the decision row shows whether `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, or `credential.manage` is currently enforced for the displayed action.
+- Selecting a project shows recent activity with actor/source attribution and trace fields when present, and filtering by action, actor, source, request ID, operation, reason, since, or until reloads the project audit feed through the API. `policy.denied` rows should visually stand out and show available denial metadata without treating audit metadata as trusted identity. When the loaded feed contains repeated denial operations or reasons, compact grouped controls let operators jump to matching `policy.denied` rows by applying the existing action/operation/reason filters.
 - Selecting a project shows active/running declared sandbox request totals in the Usage group; these are summed from saved template requests and may show missing or invalid request counts for incomplete product records.
 - Project, template, and sandbox create dialogs fill the modal width on desktop and mobile.
 - Templates table shows Environment, Use case, Entrypoints, Preset, and Status rather than leading with raw image/resource fields.
@@ -212,7 +218,7 @@ Useful manual checks:
 - Invalid entrypoint text such as `web:abc` shows an error and does not save a template with missing ports.
 - Template create/edit can still save advanced image, command, resources, ports, env, secret refs, network policy, and lifecycle JSON.
 - Left rail buttons switch between Projects, Templates, and Sandboxes instead of scrolling a combined page.
-- The Runtime rail item opens `#runtime` and shows read-only managed runtime resources, Pod readiness, summed resource requests, and PVC state when the runtime auditor is configured.
+- The Runtime rail item opens `#runtime` and shows read-only managed runtime resources, project-label attribution filtering, Pod readiness, summed resource requests, and PVC state when the runtime auditor is configured.
 - Switching away from Sandboxes clears sandbox selection and leaves any sandbox detail hash.
 - Opening a sandbox workspace updates the URL to `#sandboxes/{sandboxID}`; refreshing that URL reopens the detail page after data loads.
 - Sandbox detail shows workspace readiness checks for runtime record projection, preview surface, workspace persistence, and run intent above the Runtime Workspace.

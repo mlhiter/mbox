@@ -68,23 +68,29 @@ All responses include `X-Mbox-Request-ID`. If the client sends `X-Mbox-Request-I
 | --- | --- | --- |
 | `GET` | `/healthz` | Returns `{"status":"ok"}`. |
 | `GET` | `/v1/info` | Returns API version, server version, enabled runtime/artifact capabilities, and compatibility hints for CLI/SDK clients. |
+| `GET` | `/v1/auth/caller` | Returns the current caller/auth boundary for anonymous local mode or accepted shared-token mode. |
 | `GET` | `/v1/openapi.json` | Returns the current OpenAPI 3.1 contract starter for implemented routes, schemas, and bearer-auth security metadata. |
 | `GET` | `/v1/runtime/resources` | Lists the current mbox-managed runtime resources reported by the runtime auditor. Optional `namespace`, `projectId`, and `kind` queries scope the inventory. Requires a configured runtime auditor. |
 | `GET` | `/v1/runtime/orphans` | Read-only operational audit for mbox-managed runtime resources whose Kubernetes labels no longer line up cleanly with product records. Optional `namespace`, `projectId`, and `kind` queries scope the report. Requires a configured runtime auditor. |
-| `GET` | `/v1/audit-events` | Lists recent product audit events. Optional `projectId`, `action`, `resourceType`, `resourceId`, `actor`, `source`, `requestId`, `operation`, `since`, `until`, and `limit` query filters. |
+| `GET` | `/v1/audit-events` | Lists recent product audit events. Optional `projectId`, `action`, `resourceType`, `resourceId`, `actor`, `source`, `requestId`, `operation`, `reason`, `since`, `until`, and `limit` query filters. |
 | `GET` | `/v1/projects` | Lists projects. |
 | `POST` | `/v1/projects` | Creates a project. |
 | `GET` | `/v1/projects/{projectID}` | Gets one project. |
 | `PATCH` | `/v1/projects/{projectID}` | Updates mutable project fields. |
 | `DELETE` | `/v1/projects/{projectID}` | Deletes a project. |
 | `GET` | `/v1/projects/{projectID}/policy` | Gets the effective project launch policy; missing policies return disabled defaults. |
-| `PUT` | `/v1/projects/{projectID}/policy` | Upserts the project launch policy. |
+| `PUT` | `/v1/projects/{projectID}/policy` | Upserts the project launch policy. When project RBAC enforcement is explicitly enabled, this is a `policy.manage` route requiring an owner project member. |
 | `GET` | `/v1/projects/{projectID}/quota-policy` | Gets the effective project quota policy; missing policies return disabled defaults. |
-| `PUT` | `/v1/projects/{projectID}/quota-policy` | Upserts the project quota policy. |
+| `PUT` | `/v1/projects/{projectID}/quota-policy` | Upserts the project quota policy. When project RBAC enforcement is explicitly enabled, this is a `policy.manage` route requiring an owner project member. |
+| `GET` | `/v1/projects/{projectID}/authorization` | Returns project authorization preflight for an `action` query such as `sandbox.launch`, including action-level enforcement state. |
+| `GET` | `/v1/projects/{projectID}/members` | Lists project member role records. |
+| `POST` | `/v1/projects/{projectID}/members` | Creates a project member role record. |
 | `GET` | `/v1/projects/{projectID}/credentials` | Lists project credential-reference records. |
 | `POST` | `/v1/projects/{projectID}/credentials` | Creates a project credential-reference record. |
 | `GET` | `/v1/projects/{projectID}/usage` | Returns a read-only product-record usage summary for project sandboxes, sessions, tasks, artifacts, templates, and credential references. |
-| `GET` | `/v1/projects/{projectID}/audit-events` | Lists recent product audit events for one project. Optional `action`, `resourceType`, `resourceId`, `actor`, `source`, `requestId`, `operation`, `since`, `until`, and `limit` query filters. |
+| `GET` | `/v1/projects/{projectID}/audit-events` | Lists recent product audit events for one project. Optional `action`, `resourceType`, `resourceId`, `actor`, `source`, `requestId`, `operation`, `reason`, `since`, `until`, and `limit` query filters. |
+| `GET` | `/v1/members/{memberID}` | Gets one project member role record. |
+| `DELETE` | `/v1/members/{memberID}` | Deletes one project member role record. |
 | `GET` | `/v1/credentials/{credentialID}` | Gets one project credential-reference record. |
 | `DELETE` | `/v1/credentials/{credentialID}` | Deletes one project credential-reference record. |
 | `GET` | `/v1/templates` | Lists templates. Optional `projectId` query filters project-scoped templates. |
@@ -150,7 +156,9 @@ The route is read-only and does not touch Kubernetes or mutate Postgres. Its res
 - `runtimeController`: whether this server process can reconcile mbox sandboxes into runtime resources.
 - `runtimeAccess`: whether this server process exposes runtime target, terminal, logs, events, task execution, preview proxy, and workspace artifact reads.
 - `artifactContent`: retained-content support, storage provider, and maximum retained byte size.
-- `capabilities`: stable feature flags for implemented product primitives, such as `sandboxes`, `openapi`, `project-usage`, `project-quota-policies`, `audit-events`, `execution-tasks`, `task-events`, `artifact-client-upload`, `project-delete-cleanup-guard`, `runtime-orphan-audit`, and `runtime-orphan-cleanup`.
+- `trustedPrincipalHeaders`: disabled-by-default trusted header provider status and header names for deployments that explicitly inject authenticated principals.
+- `projectRbac`: disabled-by-default project RBAC enforcement status and the action list currently enforced by route guards.
+- `capabilities`: stable feature flags for implemented product primitives, such as `sandboxes`, `openapi`, `caller-info`, `trusted-principal-headers`, `project-usage`, `project-authorization-preflight`, `project-rbac-enforcement`, `project-members`, `project-quota-policies`, `audit-events`, `execution-tasks`, `task-events`, `artifact-client-upload`, `project-delete-cleanup-guard`, `runtime-orphan-audit`, and `runtime-orphan-cleanup`.
 - `compatibility`: minimum CLI and SDK API compatibility labels expected by this server.
 - `authenticationRequired`: `true` when `MBOX_API_TOKEN` is configured, otherwise `false`; clients should use this discovery bit instead of inferring auth from failures.
 
@@ -161,6 +169,10 @@ By default, local development remains unauthenticated. Set `MBOX_API_TOKEN` to e
 The OpenAPI contract publishes `components.securitySchemes.bearerAuth` with HTTP bearer auth. Public operations such as `/healthz` and `/v1/info` explicitly publish `security: []`; private operations publish `security: [{"bearerAuth":[]}]` and a `401` response using the shared `Error` schema.
 
 The CLI reads `MBOX_TOKEN` or `--token`, and the TypeScript SDK accepts `new MboxClient({ token })`. This is a process-level shared secret for automation clients, not a user identity model, RBAC system, or project permission model. Audit attribution headers are still client-supplied labels and are not proof of identity.
+
+`GET /v1/auth/caller` is the private read-only caller/auth boundary handshake. In unauthenticated local mode it returns `authenticated: false`, `mode: "anonymous"`, and `principalType: "anonymous"`. When `MBOX_API_TOKEN` is configured and the request supplies the matching bearer token, it returns `authenticated: true`, `mode: "shared_token"`, and `principalType: "shared_token"`. Shared-token callers still return `rbacTrusted: false`.
+
+Set `MBOX_TRUSTED_PRINCIPAL_HEADERS_ENABLED=true` only behind a trusted reverse proxy or in a local smoke environment. The server then reads `MBOX_TRUSTED_PRINCIPAL_HEADER` and `MBOX_TRUSTED_PRINCIPAL_TYPE_HEADER`, defaulting to `X-Mbox-Principal` and `X-Mbox-Principal-Type`. Accepted principal types are `user`, `service_account`, and `automation`. When both headers are present and valid, caller returns `mode: "trusted_header"` and `rbacTrusted: true`; project authorization preflight can match the caller against project member records. This does not perform login, user sessions, audit-label trust, or secret access. Set `MBOX_PROJECT_RBAC_ENFORCEMENT_ENABLED=true` only with trusted principal headers enabled; the current route-level guard covers `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage`. It denies sandbox creation, template validation launches, active runtime target/log/event/preview/terminal/session/task/workspace-content paths, artifact reference creation, workspace artifact capture, and client artifact-content upload unless the trusted caller matches an `owner` or `operator` project member. It denies project launch/quota policy updates and project credential-reference creation/deletion unless the trusted caller matches an `owner` project member. Ordinary product-record reads, including credential-reference list/get routes, remain outside this starter gate.
 
 ### API Compatibility Policy
 
@@ -180,11 +192,11 @@ Capabilities are separate feature gates. A client that needs task streaming shou
 
 ## Runtime Inventory And Orphan Audit
 
-`GET /v1/runtime/resources` is a read-only operational route. It lists the current mbox-managed `agent-sandbox` runtime resources reported by the runtime adapter, including kind, namespace, name, label-derived owner, raw labels, and creation time when available. For `SandboxClaim` resources, the adapter also adds a best-effort `observation` block from current Kubernetes state: resolved runtime sandbox name, selector, replica count, selected Pod name and phase, observed/running Pod counts, container readiness, restart count, summed Pod resource requests and limits, and resolved PVC storage state. It also returns a summary with total resources, counts by kind, namespace, and owner, plus a filtered workload rollup for observed Pods, ready containers, restarts, requests, limits, and storage capacity.
+`GET /v1/runtime/resources` is a read-only operational route. It lists the current mbox-managed `agent-sandbox` runtime resources reported by the runtime adapter, including kind, namespace, name, label-derived owner, raw labels, and creation time when available. For `SandboxClaim` resources, the adapter also adds a best-effort `observation` block from current Kubernetes state: resolved runtime sandbox name, selector, replica count, selected Pod name and phase, observed/running Pod counts, container readiness, restart count, summed Pod resource requests and limits, and resolved PVC storage state. It also returns a summary with total resources, counts by kind, namespace, owner, and project, plus a filtered workload rollup for observed Pods, ready containers, restarts, requests, limits, and storage capacity. `summary.byProject` is computed from non-empty runtime owner project labels after optional `namespace`, `projectId`, and `kind` filters are applied; it is not RBAC, quota, billing, metrics utilization, or capacity reservation.
 
 This is live runtime inventory and workload-shape visibility. It is not metrics-server CPU or memory utilization, product-record usage, quota, billing, or live cluster capacity reservation. It does not compare against Postgres product records and does not delete or patch Kubernetes resources.
 
-Use `?namespace=<name>` to scope the response to one namespace, `?projectId=<id>` to match resources carrying a runtime owner project label, and `?kind=SandboxClaim` or `?kind=SandboxTemplate` to inspect one managed resource kind. Filters can be combined, which is useful for per-smoke or per-project checks on clusters that may already contain older mbox-managed resources. The project filter is a label-derived runtime attribution aid, mainly for project-owned `SandboxClaim` rows; it is not an RBAC, quota, billing, or capacity boundary.
+Use `?namespace=<name>` to scope the response to one namespace, `?projectId=<id>` to match resources carrying a runtime owner project label, and `?kind=SandboxClaim` or `?kind=SandboxTemplate` to inspect one managed resource kind. Filters can be combined, which is useful for per-smoke or per-project checks on clusters that may already contain older mbox-managed resources. The Web Runtime view uses the same project filter for per-project triage. The project filter is a label-derived runtime attribution aid, mainly for project-owned `SandboxClaim` rows; it is not an RBAC, quota, billing, or capacity boundary.
 
 `GET /v1/runtime/orphans` uses the same runtime inventory, then compares labels with the Postgres product records to find drift. It also stays read-only. The OpenAPI contract publishes structured schemas for the inventory, orphan audit, orphan entries, and the gated cleanup request/result so CLI and SDK clients can validate the fields they render.
 
@@ -425,7 +437,7 @@ Sandbox launch rejects a project-scoped template that belongs to a different pro
 - `allowedServiceAccounts`: optional string array. When non-empty and enforced, the sandbox ServiceAccount must be listed.
 - `allowedSecretRefs`: optional string array. When enforced, every declared template `secretRefs[].name` must be listed; an empty list means templates with secret references are denied.
 
-When enforcement is `enforced`, `POST /v1/sandboxes` and `POST /v1/templates/{templateID}/validation-runs` can return `403` with a `policy denied: ...` error. This is a launch gate, not full RBAC, credential mounting, or custom NetworkPolicy projection. Lifecycle policy enforcement is separate and currently covers only template `lifecyclePolicy.ttlSeconds`.
+When launch policy enforcement is `enforced`, `POST /v1/sandboxes` and `POST /v1/templates/{templateID}/validation-runs` can return `403` with a `policy denied: ...` error. This is a launch-policy gate, not full RBAC, credential mounting, or custom NetworkPolicy projection. Lifecycle policy enforcement is separate and currently covers only template `lifecyclePolicy.ttlSeconds`.
 
 `GET /v1/projects/{projectID}/quota-policy` returns the effective project quota policy:
 
@@ -446,6 +458,23 @@ When enforcement is `enforced`, `POST /v1/sandboxes` and `POST /v1/templates/{te
 
 This is a product-record guard, not live cluster capacity management, billing, reservation, or real-time Kubernetes metrics. The checks use the same project usage aggregation as the read-only usage summary.
 
+`POST /v1/projects/{projectID}/members` accepts:
+
+- `principalType`: required. One of `user`, `service_account`, or `automation`.
+- `principal`: required non-empty principal label, such as an email address, service account name, or automation client name.
+- `role`: required. One of `owner`, `operator`, or `viewer`.
+- `metadata`: optional JSON object.
+
+Project member records are unique by `(projectId, principalType, principal)` and create/delete operations write best-effort audit events as `project.member.created` and `project.member.deleted`. This is a project-scoped role registry for RBAC groundwork. The current shared-token API does not authorize routes from these records, does not expose a trusted login session, and does not treat client-supplied audit actor/source labels as identity.
+
+`GET /v1/projects/{projectID}/authorization?action=sandbox.launch` returns a read-only authorization preflight for known project actions:
+
+- `project.view`: `owner`, `operator`, or `viewer`.
+- `sandbox.launch`, `runtime.operate`, and `artifact.write`: `owner` or `operator`.
+- `project.manage`, `policy.manage`, `credential.manage`, and `member.manage`: `owner`.
+
+The response includes `allowed`, `enforced`, `evaluation`, `requiredRoles`, `caller`, optional `matchedMember`, `memberCount`, `availableActions`, and explanatory `notes`. With the current anonymous/shared-token caller model, `enforced` is `false`, `allowed` is `false`, and `evaluation` is `not_enforceable`; this route does not deny product routes or promote member rows/audit labels into trusted identity unless the explicit project RBAC switch and trusted principal provider are both enabled for one of the starter enforced actions. Current route-level enforcement covers `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage`; the credential-management action gates only project credential-reference create/delete routes, not credential list/get reads.
+
 `POST /v1/projects/{projectID}/credentials` accepts:
 
 - `name`: required display name.
@@ -456,17 +485,17 @@ This is a product-record guard, not live cluster capacity management, billing, r
 - `usage`: optional labels such as `clone`, `fetch`, `push`, `pull`, or `deploy`.
 - `metadata`: optional JSON object.
 
-Project credential records are references only. mbox stores the Secret name/key and metadata, but not secret values, and the current runtime adapter does not mount these credentials into sandbox Pods.
+Project credential records are references only. mbox stores the Secret name/key and metadata, but not secret values, and the current runtime adapter does not mount these credentials into sandbox Pods. When project RBAC enforcement and trusted principal headers are explicitly enabled, credential-reference creation and deletion require an `owner` project member through the `credential.manage` action. Credential-reference list/get routes remain ordinary read visibility and do not expose secret values.
 
 `GET /v1/projects/{projectID}/usage` is a read-only operational summary over mbox product records. It reports sandbox status counts, cleanup-pending soft-deleted sandboxes, runtime session counts, execution task status counts, artifact counts and retained bytes, visible template resource-request strings, active/running sandbox declared resource-request totals, and credential-reference counts. Sandbox request totals are derived by joining active sandbox product records to their saved templates and summing parseable Kubernetes quantity strings for CPU, memory, and storage; missing or invalid request strings are counted but do not make the usage route fail. The OpenAPI contract publishes this shape through `ProjectUsage`, `ProjectSandboxUsage`, `SandboxResourceRequestUsage`, and `ResourceQuantityUsage`. It does not read live Kubernetes metrics. Project quota policies use this product-record aggregation for the currently implemented sandbox-count and retained-byte enforcement points.
 
-`GET /v1/audit-events` and `GET /v1/projects/{projectID}/audit-events` list recent product audit events recorded after successful API write operations and selected policy/quota denials. Query filters are `projectId` for the global route, `action`, `resourceType`, `resourceId`, `actor`, `source`, `requestId`, `operation`, `since`, `until`, and `limit` from 1 to 200. `since` and `until` are inclusive RFC3339 timestamps applied to `createdAt`; the server returns `400` if either timestamp is invalid or `since` is after `until`. `requestId` filters against `metadata.requestId`, which is present only on events written through an HTTP request carrying or receiving an mbox request ID. `operation` filters against `metadata.operation`, which is currently useful for typed `policy.denied` events such as `sandbox.launch`, `template.validation`, `artifact.content.capture`, and `artifact.content.upload`; events without that metadata key do not match an operation filter. Events include `action`, `resourceType`, optional project/resource IDs, resource name, actor, source, metadata, and creation time.
+`GET /v1/audit-events` and `GET /v1/projects/{projectID}/audit-events` list recent product audit events recorded after successful API write operations and selected policy/quota denials. Query filters are `projectId` for the global route, `action`, `resourceType`, `resourceId`, `actor`, `source`, `requestId`, `operation`, `reason`, `since`, `until`, and `limit` from 1 to 200. `since` and `until` are inclusive RFC3339 timestamps applied to `createdAt`; the server returns `400` if either timestamp is invalid or `since` is after `until`. `requestId` filters against `metadata.requestId`, which is present only on events written through an HTTP request carrying or receiving an mbox request ID. `operation` filters against `metadata.operation`, which is currently useful for typed `policy.denied` events such as `sandbox.launch`, `template.validation`, `project.policy.update`, `project.quota_policy.update`, `project.credential.create`, `project.credential.delete`, `runtime.logs`, `runtime.session.create`, `execution.task.create`, `artifact.write`, `artifact.content.workspace.read`, `artifact.content.capture`, and `artifact.content.upload`; events without that metadata key do not match an operation filter. `reason` filters against `metadata.reason`, mainly for narrowing typed policy-denial feeds. Events include `action`, `resourceType`, optional project/resource IDs, resource name, actor, source, metadata, and creation time.
 
-Clients can send `X-Mbox-Request-ID` to correlate an API response with server logs and any audit event written during that request. When a best-effort audit event is written, the same value is recorded in `metadata.requestId`; audit feeds can then be narrowed with `?requestId=...`. CLI and SDK clients expose request ID headers through `--request-id`, `MBOX_REQUEST_ID`, and SDK `requestId`, and expose audit-feed filtering through `--filter-request-id`, `--operation`, and SDK audit list `requestId` / `operation`. Request IDs improve traceability; they are not authentication, authorization, idempotency keys, or a guarantee that every request writes an audit event.
+Clients can send `X-Mbox-Request-ID` to correlate an API response with server logs and any audit event written during that request. When a best-effort audit event is written, the same value is recorded in `metadata.requestId`; audit feeds can then be narrowed with `?requestId=...`. CLI and SDK clients expose request ID headers through `--request-id`, `MBOX_REQUEST_ID`, and SDK `requestId`, and expose audit-feed filtering through `--filter-request-id`, `--operation`, `--reason`, and SDK audit list `requestId` / `operation` / `reason`. Request IDs improve traceability; they are not authentication, authorization, idempotency keys, or a guarantee that every request writes an audit event.
 
 Write requests can set client-supplied attribution with `X-Mbox-Audit-Actor` and `X-Mbox-Audit-Source`; the server trims and bounds those labels, and defaults source to `http-api` when no source is supplied. CLI and SDK clients expose this through `--audit-actor` / `--audit-source`, `MBOX_AUDIT_ACTOR` / `MBOX_AUDIT_SOURCE`, and SDK `auditActor` / `auditSource` options. This attribution improves operator visibility but is not authentication, authorization, or a trusted identity proof.
 
-This is a best-effort product-record audit starter: it currently records successful mbox API mutations such as project/template/sandbox writes, launch policy changes, quota policy changes, credential-reference changes, validation decisions, runtime session lifecycle, task creation/cancel requests, artifact creation/content retention, and gated runtime orphan cleanup. It also records `policy.denied` events for project launch policy denials, active sandbox quota denials, and retained artifact byte quota denials. The OpenAPI contract publishes `AuditEventAction` and `PolicyDeniedAuditMetadata`; for `policy.denied`, metadata always includes `operation` and `reason` and may include `requestId` for request/log correlation. Current `operation` values are `sandbox.launch`, `template.validation`, `artifact.content.capture`, and `artifact.content.upload`. It is not yet a strong transactional audit log, auth identity model, or general failure-event stream.
+This is a best-effort product-record audit starter: it currently records successful mbox API mutations such as project/template/sandbox writes, launch policy changes, quota policy changes, credential-reference changes, validation decisions, runtime session lifecycle, task creation/cancel requests, artifact creation/content retention, and gated runtime orphan cleanup. It also records `policy.denied` events for project launch policy denials, project RBAC denials, active sandbox quota denials, and retained artifact byte quota denials. The OpenAPI contract publishes `AuditEventAction` and `PolicyDeniedAuditMetadata`; for `policy.denied`, metadata always includes `operation` and `reason` and may include `requestId` for request/log correlation. Current RBAC denial `operation` values include sandbox launch, template validation launch, project launch/quota policy updates, project credential-reference create/delete, active runtime operations, execution task operations, artifact write, workspace artifact read, capture, and upload paths. It is not yet a strong transactional audit log, auth identity model, or general failure-event stream.
 
 `GET /v1/templates/{templateID}/boundary` and `GET /v1/sandboxes/{sandboxID}/boundary` are read-only policy-boundary summaries. They answer the current runtime safety questions from the existing project, project launch policy, project credential references, template, sandbox, and runtime projection contract:
 
@@ -553,6 +582,7 @@ The TypeScript SDK in `sdk/typescript` wraps the current HTTP API with exported 
 The package currently includes:
 
 - API info/version/capability handshake helper
+- caller/auth boundary helper
 - OpenAPI contract helper
 - client-supplied request ID and audit attribution headers
 - SDK route contract and OpenAPI alignment helpers
@@ -561,6 +591,7 @@ The package currently includes:
 - typed `policy.denied` audit metadata and an `isPolicyDeniedAuditEvent()` type guard
 - project policy get/set helpers
 - project quota policy get/set helpers
+- project member role list/create/get/delete helpers
 - project credential-reference list/create/get/delete helpers
 - sandbox lifecycle helpers for start and stop
 - `waitForSandbox(sandboxId)` polling convenience for scripts that need a sandbox status, optionally requiring `runtimeRef`
@@ -569,6 +600,7 @@ The package currently includes:
 - execution task create/list/get/cancel helpers
 - `watchExecutionTask(taskId)` for newline-delimited task events
 - `waitForTask(taskId)` polling convenience for external clients
+- `runTemplateValidation(templateId)` client-side convenience over template validation-run creation, sandbox readiness waiting, execution task run/wait, and validation decision
 - runtime orphan audit helper
 - sandbox artifact create/list helpers
 - task artifact list, artifact get, retained-content capture/upload, and artifact content helpers
@@ -587,13 +619,28 @@ const task = await mbox.createExecutionTask("<sandbox-id>", {
 })
 
 const finished = await mbox.waitForTask(task.id, { requireSuccess: true })
+
+const validation = await mbox.runTemplateValidation("<template-id>", {
+  projectId: "<project-id>",
+  validationMetadata: { caller: "sdk-example" },
+  task: {
+    command: ["sh", "-lc", "pwd && echo template-ok"],
+    timeoutSeconds: 60,
+  },
+  timeoutMs: 300_000,
+  requireSuccess: true,
+})
 ```
 
 By default, `waitForTask()` returns any terminal task status. Pass `{ requireSuccess: true }` when automation should throw `MboxTaskStatusError` for `failed`, `canceled`, or `timed_out`; the error keeps the final task record on `error.task`. Use `watchExecutionTask(task.id, { onEvent })` when a client needs live stdout/stderr chunks instead of polling final task output.
 
 `waitForSandbox()` defaults to waiting for `running`. Pass `{ requireRuntimeRef: true }` before calling runtime routes so clients wait for the product sandbox record to expose the resolved runtime reference. If a sandbox reaches `failed` or `deleted` while waiting for another status, the SDK throws `MboxSandboxStatusError` with the final sandbox on `error.sandbox`; if the requested status is reached but `runtimeRef` never appears before the timeout, it throws `MboxSandboxRuntimeRefError`.
 
-The SDK exports `SDK_ROUTE_CONTRACT`, `SDK_SCHEMA_CONTRACT`, `checkOpenAPIAlignment`, `assertOpenAPIAlignment`, and `fetchAndAssertOpenAPIAlignment` as a starter route-alignment guard. The guard verifies SDK route-backed helpers against the published OpenAPI path, method, SDK-used query parameter set, route auth metadata, focused request bodies, and focused response shapes. Auth checks cover the bearer security scheme, explicit public operations, private bearer operations, and `401` responses. Request checks cover JSON schema refs and binary upload media types. Response checks cover direct schema refs, list item refs, NDJSON task-event streams, binary responses, and no-content delete routes. It then checks a focused set of SDK-consumed schema required fields and properties. It is not yet a generated client or full request/response schema validator. Usage and audit contracts are no longer entirely loose objects: the SDK and OpenAPI both expose project usage request-total types, known audit action string types, the current `PolicyDeniedAuditMetadata` shape, and `isPolicyDeniedAuditEvent()` so clients can safely render selected denial events without treating all audit metadata as stable. `createMboxClientFromEnv()` mirrors the CLI environment convention for `MBOX_API_URL`, `MBOX_TOKEN`/`MBOX_API_TOKEN`, `MBOX_REQUEST_ID`, and audit labels, but it does not read CLI context files.
+Audit list routes accept `reason` alongside `requestId`, `operation`, `since`, and `until`. The `reason` query filters `metadata.reason`, primarily for `policy.denied` events such as active-sandbox quota or retained-artifact-byte quota denials. It is an operator investigation filter over best-effort product audit metadata, not an authorization check or a strong audit-log guarantee.
+
+`runTemplateValidation()` is an SDK-side composition only. It does not add a server route, scheduler, CI pipeline, or workflow engine. The helper calls the existing validation-run, sandbox wait, execution task, task wait, and validation decision routes; `validationMetadata` is sent to the validation-run request, while `task.command`, `task.timeoutSeconds`, and `task.metadata` are sent to the execution-task request. `timeoutMs` and `intervalMs` control SDK polling for sandbox and task readiness. The returned object includes `validation`, `sandbox`, optional `task`, `decision`, `decisionStatus`, and `status`. The helper records a `failed` validation decision when sandbox readiness or task execution fails, then throws `MboxTemplateValidationRunError` with the partial result. When a task reaches `failed`, `canceled`, or `timed_out`, the decision is `failed`; `requireSuccess: true` makes that unsuccessful task terminal state throw after the failed decision is written.
+
+The SDK exports `SDK_ROUTE_CONTRACT`, `SDK_SCHEMA_CONTRACT`, `checkOpenAPIAlignment`, `assertOpenAPIAlignment`, and `fetchAndAssertOpenAPIAlignment` as a starter route-alignment guard. The guard verifies SDK route-backed helpers against the published OpenAPI path, method, SDK-used query parameter set, route auth metadata, focused request bodies, and focused response shapes. It also checks reverse route coverage: ordinary published OpenAPI operations must have an SDK route contract entry. The intentional non-helper exceptions are the terminal WebSocket upgrade route and preview proxy pass-through route, which are not ordinary JSON SDK helpers. Auth checks cover the bearer security scheme, explicit public operations, private bearer operations, and `401` responses. Request checks cover JSON schema refs and binary upload media types. Response checks cover direct schema refs, list item refs, NDJSON task-event streams, binary responses, and no-content delete routes. It then checks a focused set of SDK-consumed schema required fields and properties. It is not yet a generated client or full request/response schema validator. Usage and audit contracts are no longer entirely loose objects: the SDK and OpenAPI both expose project usage request-total types, known audit action string types, the current `PolicyDeniedAuditMetadata` shape, and `isPolicyDeniedAuditEvent()` so clients can safely render selected denial events without treating all audit metadata as stable. `createMboxClientFromEnv()` mirrors the CLI environment convention for `MBOX_API_URL`, `MBOX_TOKEN`/`MBOX_API_TOKEN`, `MBOX_REQUEST_ID`, and audit labels, but it does not read CLI context files.
 
 The SDK also exposes `checkCompatibility()` and `assertCompatibility()` on `MboxClient`, plus standalone `checkSDKCompatibility()` and `checkClientCompatibility()` helpers. These compare the client API compatibility label with the server's `/v1/info` minimum SDK or CLI API version and can require specific server capabilities, so external agents and scripts can fail fast before a longer run. The helpers implement the API compatibility policy above: same major family, ordered alpha/beta/stable labels, and separate required capability checks. They do not authenticate the caller.
 
@@ -611,7 +658,7 @@ SDK methods map directly to public API resources. Upper-layer agent, CI, deploy,
 
 ## CLI Client
 
-The Go CLI in `cmd/mbox` is the first scriptable command surface for the implemented API. It uses `MBOX_API_URL` or `--api-url` to select the API server and accepts `MBOX_TOKEN` or `--token` for the `Authorization: Bearer` header when the server is started with `MBOX_API_TOKEN`. `MBOX_REQUEST_ID` or `--request-id` sends `X-Mbox-Request-ID` so scripts can correlate command output with server logs and audit metadata. It also supports client-side contexts with `--context`, `MBOX_CONTEXT`, `--config`, `MBOX_CONFIG`, and a default `~/.mbox/config.json` file when present. `context set`, `context use`, and `context remove` manage that local JSON file; `context current`, `context list`, and `context check` inspect it without printing token values. `context check` calls `/healthz` and `/v1/info`, reuses CLI/server compatibility checks, and can require capabilities before a longer run. Contexts are a local CLI convenience; they do not create server-side projects, identities, permissions, or token-validation claims.
+The Go CLI in `cmd/mbox` is the first scriptable command surface for the implemented API. It uses `MBOX_API_URL` or `--api-url` to select the API server and accepts `MBOX_TOKEN` or `--token` for the `Authorization: Bearer` header when the server is started with `MBOX_API_TOKEN`. `MBOX_REQUEST_ID` or `--request-id` sends `X-Mbox-Request-ID` so scripts can correlate command output with server logs and audit metadata. It also supports client-side contexts with `--context`, `MBOX_CONTEXT`, `--config`, `MBOX_CONFIG`, and a default `~/.mbox/config.json` file when present. `context set`, `context use`, and `context remove` manage that local JSON file; `context current`, `context list`, and `context check` inspect it without printing token values. `context check` calls `/healthz` and `/v1/info`, reuses CLI/server compatibility checks, and can require capabilities before a longer run. `auth caller` and the shorthand `caller` call `/v1/auth/caller` for the current caller boundary. `projects authorization <project-id> --action sandbox.launch` calls project authorization preflight and reports whether that action is currently route-enforced. Contexts are a local CLI convenience; they do not create server-side projects, identities, permissions, or token-validation claims.
 
 Example CLI config:
 
@@ -634,13 +681,15 @@ Explicit flags such as `--api-url`, `--token`, `--request-id`, `--audit-actor`, 
 Current command groups:
 
 - `info` for API version, enabled runtime/artifact capabilities, and CLI/SDK compatibility hints.
+- `auth caller` and `caller` for the current caller/auth boundary. This is not login, whoami, or project RBAC enforcement.
 - `compat` for an explicit CLI/server API compatibility and capability preflight using `/v1/info`. Use repeated `--require-capability` flags for features a script depends on before it starts creating sandboxes, sessions, tasks, or artifacts.
 - `context set|use|remove|current|list|check` for local CLI context management, inspection, and health/info/compatibility preflight. Token values are never printed; outputs only include `hasToken`.
 - `openapi` for the machine-readable OpenAPI contract.
 - `audit-events` for recent product audit events.
-- `runtime resources` for the read-only managed runtime resource inventory. Add `--summary` to print only the filtered `summary` object; use `--project-id` to filter by runtime owner project label.
+- `runtime resources` for the read-only managed runtime resource inventory. Add `--summary` to print only the filtered JSON `summary` object, or `--summary-table` for a human-readable total/grouping/workload summary; use `--project-id` to filter by runtime owner project label.
 - `runtime orphans` for the read-only runtime orphan audit. Use `--project-id` to inspect drift for one runtime owner project label.
-- `projects`: list, create, get, usage, audit-events, policy, set-policy, quota-policy, set-quota-policy, credentials, add-credential, delete.
+- `projects`: list, create, get, usage, authorization, audit-events, policy, set-policy, quota-policy, set-quota-policy, members, add-member, credentials, add-credential, delete.
+- `members`: get, delete.
 - `credentials`: get, delete.
 - `templates`: list, create, get, boundary, validate, validate-run, decide-validation, delete. `templates validate-run <template-id> --project-id <project-id> -- ...` is a CLI-only composition over validation-run creation, sandbox wait, execution task creation/waiting, and validation decision; it does not add a server route or CI workflow model.
 - `sandboxes`: list, create, get, boundary, start, stop, wait, delete. `sandboxes wait <sandbox-id> --status running --require-runtime-ref` prints final sandbox JSON when ready, and exits nonzero after printing the final JSON if the sandbox reaches `failed` or `deleted` first.
@@ -700,6 +749,14 @@ The twelfth and thirteenth migrations add:
 
 - audit-event attribution and action indexes for the current list filters.
 
+The seventeenth migration adds:
+
+- audit-event reason indexes for global and project-scoped denial investigation filters.
+
+The eighteenth migration adds:
+
+- `project_members`: project-scoped principal/role records for RBAC groundwork.
+
 Important constraints:
 
 - UUID primary keys use `pgcrypto` `gen_random_uuid()`.
@@ -713,6 +770,7 @@ Important constraints:
 - `artifacts` belong to one project and one sandbox, and may reference one execution task from that sandbox.
 - `project_policies` are one-to-one with projects and cascade on project deletion.
 - `project_quota_policies` are one-to-one with projects, cascade on project deletion, and constrain limits to non-negative values.
+- `project_members` belong to one project, cascade on project deletion, constrain principal type and role values, and keep a unique `(project_id, principal_type, principal)` record.
 - `project_credentials` belong to one project, have unique `(project_id, slug)`, and store only a Kubernetes Secret reference plus target/usage metadata.
 - `audit_events` may belong to a project, keep optional resource IDs, and use `ON DELETE SET NULL` for deleted projects so global operators can still inspect recent deletion activity.
 - `updated_at` is maintained by Postgres triggers.

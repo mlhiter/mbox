@@ -60,6 +60,9 @@ Current progress:
 - Done: Web launch preflight visibility for policy and active-sandbox quota blockers, with server-side policy/quota enforcement remaining authoritative.
 - Done: `policy.denied` audit-event starter for launch-policy, active-sandbox quota, and retained-artifact-byte quota denials.
 - Done: OpenAPI and TypeScript SDK audit contract hardening for known audit actions and typed `policy.denied` metadata without expanding audit into a strong transactional log.
+- Done: project member role registry starter across API, Postgres, CLI, SDK, OpenAPI, and Web project inspector visibility for future RBAC, without enforcing authorization from the current shared-token API.
+- Done: read-only caller/auth handshake across API, CLI, SDK, OpenAPI, Web rail, docs, and smoke coverage, reporting anonymous or shared-token mode plus explicit RBAC trust/enforcement flags without adding login or route-level authorization.
+- Done: project authorization preflight across API, CLI, SDK, OpenAPI, Web project inspector, docs, and smoke coverage, mapping project actions to required roles and later reporting action-level enforcement state.
 
 Scope:
 
@@ -190,8 +193,8 @@ Exit criteria:
 
 Current status:
 
-- Started: TypeScript SDK in `sdk/typescript` with typed wrappers for API info/version/capability handshake, runtime orphan audit/cleanup, health, projects, project policy, project quota policy, project credential references, templates, template validation, template/sandbox boundary summaries, sandboxes, runtime target/log/event/port reads, runtime sessions, execution tasks, task polling/watch/cancel, artifact references, retained artifact upload/capture/content, and workspace artifact content fallback.
-- Started: Go CLI in `cmd/mbox` as a thin HTTP client for API info/version/capability handshake, runtime orphan audit/cleanup, health, projects, project policy, project quota policy, project credential references, templates, template validation, template/sandbox boundary summaries, sandboxes, sessions, tasks, artifacts, retained artifact upload/capture/content, logs, ports, and terminal access.
+- Started: TypeScript SDK in `sdk/typescript` with typed wrappers for API info/version/capability handshake, caller/auth boundary handshake including trusted-header mode, project authorization preflight, runtime orphan audit/cleanup, health, projects, project policy, project quota policy, project member role records, project credential references, templates, template validation, template/sandbox boundary summaries, sandboxes, runtime target/log/event/port reads, runtime sessions, execution tasks, task polling/watch/cancel, artifact references, retained artifact upload/capture/content, and workspace artifact content fallback.
+- Started: Go CLI in `cmd/mbox` as a thin HTTP client for API info/version/capability handshake, caller/auth boundary handshake, project authorization preflight, runtime orphan audit/cleanup, health, projects, project policy, project quota policy, project member role records, project credential references, templates, template validation, template/sandbox boundary summaries, sandboxes, sessions, tasks, artifacts, retained artifact upload/capture/content, logs, ports, and terminal access.
 - Done: `GET /v1/info` as a read-only server capability manifest for API version, server version, runtime controller/access state, artifact-content backend, and CLI/SDK compatibility hints.
 - Done: `GET /v1/openapi.json` OpenAPI contract starter plus CLI/SDK readers and smoke coverage for implemented public routes and schemas.
 - Done: SDK route contract plus OpenAPI path/method alignment check for route-backed TypeScript helpers.
@@ -202,12 +205,15 @@ Current status:
 - Done: audit-event `action` filtering across API, CLI, SDK, Web project inspector, OpenAPI, and docs for narrowing operational feeds without turning audit into a strong transactional log.
 - Done: audit-event `requestId` filtering across API, Postgres indexes, CLI, SDK, OpenAPI, docs, and CLI smoke path for retrieving request-correlated audit feed slices.
 - Done: audit-event metadata `operation` filtering across API, Postgres indexes, CLI, SDK, OpenAPI, docs, and CLI smoke path for narrowing typed policy-denial feeds.
+- Done: audit-event metadata `reason` filtering across API, Postgres indexes, CLI, SDK, Web, OpenAPI, and docs for narrowing policy-denial investigations without treating audit metadata as authorization.
 - Done: audit-event inclusive `since` / `until` time-window filtering across API, CLI, SDK, OpenAPI, docs, and tests for bounded operator investigation windows.
 - Done: audit-event action query indexes for global and project-scoped feeds ordered by recency.
+- Done: Web project inspector policy-denial ergonomics for highlighting `policy.denied` audit rows and surfacing operation, reason, authorization action, caller boundary, and resource hints without treating audit metadata as trusted identity.
 - Done: SDK/OpenAPI alignment guard now checks SDK-used query parameters in addition to route paths and methods.
 - Done: SDK/OpenAPI alignment guard now checks focused SDK-consumed schema required fields and properties for project usage and audit contracts.
 - Done: SDK/OpenAPI alignment guard now checks focused SDK helper response schemas, list item refs, NDJSON task events, binary responses, and no-content delete routes.
 - Done: SDK/OpenAPI alignment guard now checks focused SDK helper request body schema refs and binary upload media types.
+- Done: SDK/OpenAPI alignment guard now checks reverse published-route coverage, so ordinary OpenAPI operations must have SDK route contract entries while terminal WebSocket and preview proxy pass-through routes stay explicit non-helper exceptions.
 - Done: explicit SDK and CLI compatibility preflight helpers compare client API labels with the server `/v1/info` minimum CLI/SDK API versions before longer automation runs.
 - Done: SDK and CLI compatibility preflight can require server capabilities such as `execution-tasks`, `task-events`, and `artifact-client-upload` before clients start a longer run.
 - Done: SDK local smoke gate now builds the package and exercises compatibility helpers plus OpenAPI alignment success/failure paths without requiring a live API server.
@@ -217,12 +223,21 @@ Current status:
 - Done: starter API compatibility policy documented and regression-tested for same-family `vNalphaM`, `vNbetaM`, and stable `vN` ordering, with capabilities kept as separate feature gates.
 - Done: starter shared API token model for automation clients: optional `MBOX_API_TOKEN` server gate, public health/info discovery, CLI `MBOX_TOKEN`/`--token`, SDK `token`, and smoke/test coverage.
 - Done: OpenAPI auth contract hardening for the starter token model: `bearerAuth` security scheme, explicit public health/info operations, private bearer operations, `401` error responses, and SDK alignment checks for route auth metadata.
+- Done: caller/auth handshake: `GET /v1/auth/caller`, CLI `auth caller` / `caller`, SDK `caller()`, and Web rail visibility report anonymous, shared-token, or trusted-header mode plus RBAC trust/enforcement flags.
+- Done: project authorization preflight: `GET /v1/projects/{projectID}/authorization?action=...`, CLI `projects authorization`, SDK `getProjectAuthorization()`, OpenAPI, Web project inspector visibility, docs, and smoke coverage map actions to required roles and action-level enforcement state.
+- Done: trusted principal header provider starter for explicit reverse-proxy/local-smoke identity, disabled by default and surfaced through `/v1/info`, `/v1/auth/caller`, OpenAPI, SDK, Web rail/project inspector, docs, and smoke coverage.
+- Done: disabled-by-default `sandbox.launch` project RBAC enforcement starter across API config, caller/preflight/info surfaces, sandbox creation, template validation launches, OpenAPI, SDK, Web, docs, and tests.
+- Done: disabled-by-default `artifact.write` project RBAC enforcement starter across API config, caller/preflight/info surfaces, artifact reference creation, workspace artifact capture, client artifact-content upload, OpenAPI, SDK, docs, and tests.
+- Done: disabled-by-default `runtime.operate` project RBAC enforcement starter across API config, caller/preflight/info surfaces, runtime target/log/event/preview/terminal, runtime session create/end, execution task create/cancel/events, workspace artifact fallback reads, SDK request-option propagation, OpenAPI, docs, and tests.
+- Done: disabled-by-default `policy.manage` project RBAC enforcement starter across API config, caller/preflight/info surfaces, project launch/quota policy update routes, OpenAPI, SDK, Web audit metadata rendering, docs, and tests; when enabled with trusted principal headers, policy updates require an owner project member match.
+- Done: disabled-by-default `credential.manage` project RBAC enforcement starter across API config, caller/preflight/info surfaces, project credential-reference create/delete routes, OpenAPI, SDK, Web preflight visibility, docs, and tests; when enabled with trusted principal headers, credential-reference mutations require an owner project member match while read/list routes stay visible.
 - Done: starter CLI context selection through `--context`, `MBOX_CONTEXT`, `--config`, `MBOX_CONFIG`, and `~/.mbox/config.json`, with API URL/token/audit-label loading, explicit flag overrides, and local `context current/list` inspection that redacts token values.
 - Done: CLI local context management with `context set`, `context use`, and `context remove`, including parent-directory creation, token-env support for reusable configs, redacted JSON output, and CLI smoke coverage against an authenticated API.
 - Done: CLI context preflight through `context check`, combining redacted context selection, `/healthz`, `/v1/info`, and capability-aware CLI compatibility checks without implying login, whoami, RBAC, or token validity.
 - Done: TypeScript SDK environment factory `createMboxClientFromEnv()` for automation scripts that share the CLI `MBOX_API_URL`, `MBOX_TOKEN`/`MBOX_API_TOKEN`, and audit-label conventions without reading local context files.
 - Done: CLI `sandboxes wait` and SDK `waitForSandbox()` polling conveniences for scripts that need a sandbox to reach `running` with a resolved `runtimeRef` before calling runtime routes.
 - Done: CLI `templates validate-run` composition for scriptable template validation: create validation sandbox, wait for runtime readiness, run one execution task, and write a passed/failed validation decision without introducing a new server-side workflow primitive.
+- Done: TypeScript SDK `runTemplateValidation()` composition over the same existing primitives, with `validationMetadata`, `task.command`, polling `timeoutMs`/`intervalMs`, and `requireSuccess` error handling for automation clients without introducing a server-side workflow or CI engine.
 - Done: CLI `tasks wait --require-success` and SDK `waitForTask({ requireSuccess: true })` terminal success gates for automation scripts that need SDK-style task terminal-state waiting without parsing the NDJSON watch stream.
 - Done: CLI task-scoped artifact listing through `tasks artifacts <task-id>`, matching the existing task artifact API and SDK helper.
 - Done: CLI one-shot execution through `tasks run <sandbox-id> -- ...`, composing task creation with terminal polling while keeping `--timeout` as task execution timeout and `--wait-timeout` as the client wait limit, with runtime smoke coverage for the successful task/artifact path.
@@ -231,9 +246,13 @@ Current status:
 - Done: read-only runtime managed-resource inventory, namespace/kind filtering, live kind/namespace/owner summary, and structured OpenAPI/SDK orphan-audit contracts across API, CLI, SDK, OpenAPI, docs, and smoke coverage, reusing the runtime auditor without adding automatic cleanup or new write paths.
 - Done: Web Runtime inventory view at `#runtime` for read-only operator triage over `/v1/runtime/resources`, including summary, owner, label, and disabled-auditor handling without adding runtime write actions.
 - Done: Web project inspector audit-feed ergonomics for request ID, operation, and RFC3339 time-window filters, with trace metadata display when present.
+- Done: Web project inspector grouped `policy.denied` quick navigation for recurring denial operation/reason families, using the existing audit feed filters without adding a new audit model.
 - Done: Runtime inventory workload observation for resolved SandboxClaim Pod phase, readiness, restart count, summed requests/limits, and PVC state across API, OpenAPI, SDK, Web, and runtime smoke coverage without adding metrics-server utilization or quota semantics.
 - Done: Runtime inventory workload rollups for filtered observed resources, desired/observed/running Pods, container readiness, restarts, summed requests/limits, and PVC capacity across API, OpenAPI, SDK, Web, docs, and smoke coverage.
-- Remaining: user/project RBAC beyond the shared automation token, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
+- Done: Web Runtime inventory project filter for label-derived per-project runtime attribution and filtered workload rollups, without treating the view as RBAC, quota, billing, or live capacity.
+- Done: Runtime inventory `summary.byProject` rollup across API, OpenAPI, SDK, Web, docs, and tests, deriving project attribution only from runtime owner labels after current filters are applied.
+- Done: SDK/OpenAPI reverse route-coverage guard for published operations, with explicit non-helper exceptions for terminal WebSocket and preview proxy pass-through routes.
+- Remaining: broader route-level user/project RBAC enforcement beyond the current disabled-by-default `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage` starters, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
 
 ## Phase 4: Upper-layer Workflow Integrations
 
@@ -350,6 +369,22 @@ First slice status:
 45. Done: Web project inspector filters for request-correlated and operation-scoped audit feed slices.
 46. Done: read-only runtime inventory workload observation for Pod phase/readiness, restart count, resource requests/limits, and PVC state.
 47. Done: read-only runtime inventory workload rollups for filtered Pod, readiness, request/limit, restart, and PVC capacity totals.
-48. Next: operational hardening around user/project RBAC starter, remaining audit ergonomics, or deeper per-project runtime usage attribution.
+48. Done: policy-denial reason filtering for audit feeds across API, Postgres, CLI, SDK, Web, OpenAPI, and docs.
+49. Done: project member role registry starter across API, Postgres, CLI, SDK, OpenAPI, Web project inspector visibility, docs, and smoke coverage, without route-level authorization enforcement yet.
+50. Done: caller/auth handshake across API, CLI, SDK, OpenAPI, Web rail, docs, and smoke coverage, reporting anonymous, shared-token, or trusted-header mode plus RBAC trust/enforcement flags.
+51. Done: project authorization preflight across API, CLI, SDK, OpenAPI, Web project inspector, docs, and smoke coverage, mapping `project.view`, `sandbox.launch`, `runtime.operate`, `artifact.write`, policy/member/credential management, and project management to required project roles and action-level enforcement state.
+52. Done: trusted principal header provider starter across API config, `/v1/info`, caller handshake, authorization preflight, OpenAPI, SDK, Web rail/project inspector, docs, and smoke coverage; it is disabled by default and intended for trusted reverse-proxy/local-smoke identity.
+53. Done: disabled-by-default `sandbox.launch` project RBAC enforcement starter across API config, caller/preflight/info surfaces, sandbox creation, template validation launches, OpenAPI, SDK, Web, docs, and tests; when enabled with trusted principal headers, sandbox launch requires an owner/operator project member match.
+54. Done: disabled-by-default `artifact.write` project RBAC enforcement starter across API config, caller/preflight/info surfaces, artifact reference creation, workspace artifact capture, client artifact-content upload, OpenAPI, SDK, docs, and tests; when enabled with trusted principal headers, artifact writes require an owner/operator project member match.
+55. Done: disabled-by-default `runtime.operate` project RBAC enforcement starter across API config, caller/preflight/info surfaces, runtime target/log/event/preview/terminal, runtime session create/end, execution task create/cancel/events, workspace artifact fallback reads, SDK request-option propagation, OpenAPI, docs, and tests; when enabled with trusted principal headers, live runtime operations require an owner/operator project member match.
+56. Done: Web project inspector policy-denial/RBAC audit ergonomics highlight `policy.denied` events and expose typed denial metadata for operation, reason, authorization action, caller boundary, and resource hints without expanding the audit log or identity model.
+57. Done: Web Runtime inventory per-project filter over existing `projectId` runtime-resource attribution, preserving filtered workload rollups as read-only operator triage rather than quota, billing, RBAC, or capacity semantics.
+58. Done: disabled-by-default `policy.manage` project RBAC enforcement starter for project launch/quota policy update routes, with owner-only trusted-header authorization, `policy.denied` audit metadata, OpenAPI/SDK/Web/docs sync, and tests.
+59. Done: Web project inspector grouped `policy.denied` quick navigation for recurring denial operation/reason families, using existing action/operation/reason filters and preserving audit metadata as operator debugging rather than trusted identity.
+60. Done: SDK/OpenAPI published-route coverage guard requires ordinary OpenAPI operations to be represented in `SDK_ROUTE_CONTRACT`, while keeping terminal WebSocket and preview proxy pass-through routes as explicit non-helper exceptions.
+61. Done: disabled-by-default `credential.manage` RBAC gate for project credential-reference create/delete routes, with owner-only trusted-header authorization, `policy.denied` metadata, OpenAPI/SDK/Web/docs sync, and tests.
+62. Done: Runtime inventory `summary.byProject` rollup for deeper per-project runtime attribution, preserving the view as read-only label-derived operator triage rather than RBAC, quota, billing, metrics utilization, or capacity reservation.
+63. Done: CLI `runtime resources --summary-table` for a human-readable runtime inventory summary over the existing filtered `summary` object, preserving JSON output for scripts and keeping runtime inventory read-only.
+64. Next: a narrow member management gate after bootstrap/UX is clearer, remaining audit ergonomics, or the next generated-client/schema alignment slice.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

@@ -163,6 +163,7 @@ Use the orphan audit when runtime labels and product records may have drifted:
 ```sh
 go run ./cmd/mbox runtime resources
 go run ./cmd/mbox runtime resources --summary
+go run ./cmd/mbox runtime resources --summary-table
 go run ./cmd/mbox runtime resources --namespace mbox-smoke-20260529
 go run ./cmd/mbox runtime resources --project-id <project-id> --kind SandboxClaim
 go run ./cmd/mbox runtime resources --namespace mbox-smoke-20260529 --kind SandboxClaim
@@ -173,7 +174,7 @@ go run ./cmd/mbox runtime orphans --kind SandboxTemplate
 curl -fsS http://127.0.0.1:18080/v1/runtime/orphans | jq
 ```
 
-The runtime inventory reports the current auditor view plus `summary.total`, `summary.byKind`, `summary.byNamespace`, `summary.byOwner`, and `summary.workload` for quick operator triage. Use `runtime resources --summary` when a script or operator only needs the filtered summary object instead of every managed resource row. Owner entries are derived from existing `mbox.dev/project-id`, `mbox.dev/sandbox-id`, and `mbox.dev/template-id` labels; they are not live metrics or capacity accounting. The orphan audit reports `missing-sandbox-record`, `cleanup-pending`, `runtime-ref-mismatch`, `missing-template-record`, and `unlabeled-owner`. Use `--namespace` / `?namespace=`, `--project-id` / `?projectId=`, and `--kind` / `?kind=` when a shared test cluster has older mbox-managed resources from prior runs. Project filtering only matches resources with a runtime owner project label, normally `SandboxClaim` rows, and is not an RBAC or quota decision.
+The runtime inventory reports the current auditor view plus `summary.total`, `summary.byKind`, `summary.byNamespace`, `summary.byOwner`, `summary.byProject`, and `summary.workload` for quick operator triage. Use `runtime resources --summary` when a script needs the filtered JSON summary object instead of every managed resource row; use `runtime resources --summary-table` when a human operator wants the same summary rendered as totals, grouping sections, and workload lines. Owner and project entries are derived from existing `mbox.dev/project-id`, `mbox.dev/sandbox-id`, and `mbox.dev/template-id` labels; they are not live metrics, RBAC, quota, billing, or capacity accounting. The orphan audit reports `missing-sandbox-record`, `cleanup-pending`, `runtime-ref-mismatch`, `missing-template-record`, and `unlabeled-owner`. Use `--namespace` / `?namespace=`, `--project-id` / `?projectId=`, and `--kind` / `?kind=` when a shared test cluster has older mbox-managed resources from prior runs. Project filtering only matches resources with a runtime owner project label, normally `SandboxClaim` rows, and is not an RBAC or quota decision.
 
 If an operator decides to remove a reported orphan, use the explicitly gated cleanup command. It deletes only one currently reported orphan runtime resource and requires the current reason plus the confirmation string:
 
@@ -200,24 +201,52 @@ go run ./cmd/mbox --api-url http://127.0.0.1:18080 health
 go run ./cmd/mbox --api-url http://127.0.0.1:18080 openapi | jq '.openapi, .info.title'
 go run ./cmd/mbox projects list
 go run ./cmd/mbox projects usage <project-id>
-go run ./cmd/mbox projects audit-events <project-id> --action policy.denied --operation sandbox.launch --actor cli-smoke --source mbox-cli --filter-request-id cli-smoke-request --since 2026-05-30T00:00:00Z --until 2026-05-30T01:00:00Z
+go run ./cmd/mbox projects audit-events <project-id> --action policy.denied --operation sandbox.launch --reason "active sandbox quota exceeded" --actor cli-smoke --source mbox-cli --filter-request-id cli-smoke-request --since 2026-05-30T00:00:00Z --until 2026-05-30T01:00:00Z
 go run ./cmd/mbox projects quota-policy <project-id>
 go run ./cmd/mbox projects set-quota-policy <project-id> --enforcement enforced --max-active-sandboxes 5 --max-retained-artifact-bytes 1048576
+go run ./cmd/mbox projects authorization <project-id> --action sandbox.launch
+go run ./cmd/mbox projects add-member <project-id> --principal alice@example.com --role operator
+go run ./cmd/mbox projects members <project-id>
+go run ./cmd/mbox members get <member-id>
+go run ./cmd/mbox members delete <member-id>
+go run ./cmd/mbox auth caller
 go run ./cmd/mbox audit-events --project-id <project-id> --action sandbox.created --actor cli-smoke --source mbox-cli --filter-request-id cli-smoke-request --limit 20
 go run ./cmd/mbox sandboxes list
 ```
 
-Every API response includes `X-Mbox-Request-ID`. Pass `--request-id <id>` or set `MBOX_REQUEST_ID` when a script needs to correlate command output with server logs and `audit_events.metadata.requestId`. Use `--filter-request-id <id>` on `audit-events` or `projects audit-events` when reading the feed back for one script or agent run. Use `--operation <operation>` when narrowing typed metadata, especially `policy.denied` operations such as `sandbox.launch` and `artifact.content.upload`. Use inclusive RFC3339 `--since` / `--until` windows when operators need to inspect a known run interval.
+Project member commands manage product records for `user`, `service_account`, or `automation` principals with `owner`, `operator`, or `viewer` roles. They are starter RBAC records; the current API does not treat shared bearer tokens, member rows alone, or audit labels as trusted identity.
+
+`projects authorization <project-id> --action sandbox.launch` is RBAC preflight. It returns the roles required for the action, the current caller boundary, member count, and action-level `enforced` state. When trusted principal headers are explicitly enabled, the same route can return allowed or denied decisions by matching the trusted caller to project member records. With `MBOX_PROJECT_RBAC_ENFORCEMENT_ENABLED=true`, `sandbox.launch` is route-enforced for `POST /v1/sandboxes` and template validation launches, `runtime.operate` is route-enforced for active runtime target/log/event/preview/terminal/session/task/workspace-content paths, `artifact.write` is route-enforced for artifact reference creation, workspace artifact capture, and client artifact-content upload, `policy.manage` is route-enforced for project launch/quota policy updates, and `credential.manage` is route-enforced for project credential-reference create/delete routes. Other actions remain preflight-only.
+
+`auth caller` is a read-only caller boundary check. It reports anonymous local mode when no token gate is configured, shared-token mode after a matching bearer token is accepted, or trusted-header mode when a trusted reverse-proxy/test principal provider is explicitly enabled. The response includes `rbacTrusted` and `projectRolesEnforced`; trusted headers can make `rbacTrusted=true`, while `projectRolesEnforced=true` only means the starter `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage` gates are enabled.
+
+Every API response includes `X-Mbox-Request-ID`. Pass `--request-id <id>` or set `MBOX_REQUEST_ID` when a script needs to correlate command output with server logs and `audit_events.metadata.requestId`. Use `--filter-request-id <id>` on `audit-events` or `projects audit-events` when reading the feed back for one script or agent run. Use `--operation <operation>` and `--reason <reason>` when narrowing typed metadata, especially `policy.denied` operations such as `sandbox.launch` and denial reasons such as `active sandbox quota exceeded`. Use inclusive RFC3339 `--since` / `--until` windows when operators need to inspect a known run interval.
 
 For the starter API token model, start the API with `MBOX_API_TOKEN` and pass the same value as `MBOX_TOKEN` or `--token`:
 
 ```sh
 MBOX_API_TOKEN=local-token DATABASE_URL="$DATABASE_URL" go run ./cmd/mbox-server
 go run ./cmd/mbox --api-url http://127.0.0.1:18080 info
+MBOX_TOKEN=local-token go run ./cmd/mbox --api-url http://127.0.0.1:18080 auth caller
 MBOX_TOKEN=local-token go run ./cmd/mbox --api-url http://127.0.0.1:18080 projects list
 ```
 
-`/healthz` and `/v1/info` remain public for discovery. Other routes return `401` without a matching bearer token. This is a shared automation token, not a user identity or RBAC model.
+`/healthz` and `/v1/info` remain public for discovery. Other routes return `401` without a matching bearer token. This is a shared automation token, not a user identity or RBAC model. The caller handshake confirms the accepted-token boundary but still reports that RBAC identity is not trusted and project roles are not enforced.
+
+For local trusted-header preflight smoke, start a server with explicit trusted principal headers and send the headers directly or through a trusted local proxy:
+
+```sh
+MBOX_TRUSTED_PRINCIPAL_HEADERS_ENABLED=true \
+  DATABASE_URL="$DATABASE_URL" \
+  go run ./cmd/mbox-server
+
+curl -fsS \
+  -H 'X-Mbox-Principal-Type: automation' \
+  -H 'X-Mbox-Principal: ci-bot' \
+  http://127.0.0.1:18080/v1/auth/caller | jq
+```
+
+For web-console local verification, Vite can inject the same headers into its development proxy with `MBOX_TRUSTED_PRINCIPAL` and `MBOX_TRUSTED_PRINCIPAL_TYPE`. Do this only for local smoke or behind a trusted upstream identity layer; do not expose a server that accepts arbitrary client-supplied principal headers.
 
 For repeated CLI use, create a client-side context file:
 
@@ -249,7 +278,7 @@ go run ./cmd/mbox \
   sandboxes create --project-id <project-id> --template-id <template-id> --name audit-demo
 ```
 
-These labels are visible in audit events but are not authentication or authorization claims. Request IDs are correlation labels only; they are not idempotency keys or trusted identity. Use `--action` when narrowing feeds to a known event type such as `sandbox.created` or `policy.denied`, `--operation` when narrowing action-specific metadata, `--filter-request-id` when narrowing to one request or scripted run, and `--since` / `--until` when narrowing to a time window. Current denial audit coverage is intentionally narrow: project launch-policy denials, active sandbox quota denials, and retained artifact byte quota denials record `action: "policy.denied"` with `operation`, `reason`, and request correlation metadata when available. The published OpenAPI schema and TypeScript SDK expose this metadata shape for the current operations: `sandbox.launch`, `template.validation`, `artifact.content.capture`, and `artifact.content.upload`.
+These labels are visible in audit events but are not authentication or authorization claims. Request IDs are correlation labels only; they are not idempotency keys or trusted identity. Use `--action` when narrowing feeds to a known event type such as `sandbox.created` or `policy.denied`, `--operation` and `--reason` when narrowing action-specific metadata, `--filter-request-id` when narrowing to one request or scripted run, and `--since` / `--until` when narrowing to a time window. Current denial audit coverage is intentionally narrow: project launch-policy denials, project RBAC denials, active sandbox quota denials, and retained artifact byte quota denials record `action: "policy.denied"` with `operation`, `reason`, and request correlation metadata when available. The published OpenAPI schema and TypeScript SDK expose this metadata shape for the current operations: `sandbox.launch`, `template.validation`, `project.policy.update`, `project.quota_policy.update`, `project.credential.create`, `project.credential.delete`, runtime operation paths, `artifact.write`, `artifact.content.workspace.read`, `artifact.content.capture`, and `artifact.content.upload`.
 
 For runtime-enabled sandboxes, the CLI maps to the same lower-level primitives as the API and SDK:
 
@@ -483,6 +512,10 @@ const mbox = new MboxClient({
   auditActor: "agent-runner",
   auditSource: "sdk",
 })
+const caller = await mbox.caller()
+console.log(caller.mode, caller.rbacTrusted, caller.projectRolesEnforced)
+const authorization = await mbox.getProjectAuthorization("<project-id>", { action: "sandbox.launch" })
+console.log(authorization.evaluation, authorization.requiredRoles)
 const boundary = await mbox.getSandboxBoundary("<sandbox-id>")
 const sandbox = await mbox.waitForSandbox("<sandbox-id>", {
   status: "running",
@@ -493,7 +526,20 @@ const task = await mbox.createExecutionTask("<sandbox-id>", {
   command: ["sh", "-lc", "pwd && echo task-ok"],
 })
 const finished = await mbox.waitForTask(task.id, { requireSuccess: true })
+
+const validation = await mbox.runTemplateValidation("<template-id>", {
+  projectId: "<project-id>",
+  validationMetadata: { caller: "runbook" },
+  task: {
+    command: ["sh", "-lc", "pwd && echo template-ok"],
+    timeoutSeconds: 60,
+  },
+  timeoutMs: 300_000,
+  requireSuccess: true,
+})
 ```
+
+`runTemplateValidation()` is the SDK counterpart to CLI `templates validate-run`. It is a client-side sequence over existing mbox primitives: create a validation sandbox, wait for sandbox readiness with a runtime reference, run one execution task, wait for the final task record, and write the validation decision. Use `task.command` as an argv array, with `["sh", "-lc", "..."]` when shell parsing is needed. `timeoutMs` and `intervalMs` are SDK polling limits; `task.timeoutSeconds` is the server-side execution-task timeout. A failed sandbox wait or task run records a failed decision when possible and raises `MboxTemplateValidationRunError`; an unsuccessful terminal task also raises when `requireSuccess` is true. This remains a script/SDK convenience and should not be treated as a server-side workflow, scheduler, or CI engine.
 
 ## Sandbox Stop/Start Check
 
