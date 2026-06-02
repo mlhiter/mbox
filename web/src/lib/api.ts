@@ -14,6 +14,8 @@ import type {
   ProjectAuthorizationDecision,
   ProjectCredential,
   ProjectMember,
+  ProjectMemberPrincipalType,
+  ProjectMemberRole,
   ProjectPolicy,
   ProjectQuotaPolicy,
   ProjectUsage,
@@ -123,6 +125,22 @@ export function listProjectCredentials(projectID: string) {
 
 export function listProjectMembers(projectID: string) {
   return request<ListResponse<ProjectMember>>(`/v1/projects/${projectID}/members`)
+}
+
+export function createProjectMember(
+  projectID: string,
+  payload: { principalType: ProjectMemberPrincipalType; principal: string; role: ProjectMemberRole },
+) {
+  return request<ProjectMember>(`/v1/projects/${projectID}/members`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteProjectMember(memberID: string) {
+  return request<void>(`/v1/members/${memberID}`, {
+    method: "DELETE",
+  })
 }
 
 export function getProjectUsage(projectID: string) {

@@ -267,6 +267,7 @@ Current status:
 - Done: SDK/OpenAPI artifact schema guard now covers artifact response/create and retained-content metadata fields for SDK artifact clients without expanding artifact storage semantics.
 - Done: SDK/OpenAPI project schema guard now covers project response/create/update fields and catches immutable project update-field drift.
 - Done: Web project inspector audit ergonomics now surfaces member-management denial metadata for requested member principal type, principal, and role as debugging context without treating audit metadata as trusted identity.
+- Done: Web project inspector member-management ergonomics now supports registering and removing project member records for starter RBAC, including refreshed authorization/audit visibility and a front-end guard against removing the last visible owner, without adding login, invites, or broader route-level RBAC.
 - Remaining: broader route-level user/project RBAC enforcement beyond the current disabled-by-default `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, `credential.manage`, and `member.manage` starters, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
 
 ## Phase 4: Upper-layer Workflow Integrations
@@ -411,6 +412,7 @@ First slice status:
 72. Done: SDK/OpenAPI artifact schema guard covers artifact response/create and retained-content metadata fields such as artifact identity, task linkage, kind/name/URI, size/content metadata, retained-content hash/source/provider/key, and capture time.
 73. Done: SDK/OpenAPI project schema guard covers project response/create/update fields such as name, slug, repository URL, default namespace/template, metadata, and timestamp fields while rejecting immutable `id`/`slug` drift on update schemas.
 74. Done: Web project inspector member-management denial ergonomics show requested member principal type, principal, and role in `policy.denied` rows as operator debugging context, preserving audit metadata as non-identity evidence.
-75. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or a narrow frontend member-management ergonomics slice that stays inside the starter RBAC boundary.
+75. Done: Web project inspector member-management ergonomics can register and remove project member records for the starter RBAC model, refresh member/preflight/audit state after mutations, and keep at least one visible owner from being removed in the UI without adding login, invite, or broader route-level RBAC primitives.
+76. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or per-project runtime usage attribution polish that stays read-only and does not turn runtime inventory into quota, billing, RBAC, or capacity reservation.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

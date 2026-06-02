@@ -30,6 +30,8 @@ export function AppShell({
   onValidateTemplate,
   onOpenSandboxWorkspace,
   onRefreshProjectAuditEvents,
+  onCreateProjectMember,
+  onDeleteProjectMember,
   projects,
   projectAuditEvents,
   projectCredentials,
@@ -51,6 +53,11 @@ export function AppShell({
   onViewChange: (view: WorkspaceView) => void
   onValidateTemplate?: (id: string) => Promise<void>
   onOpenSandboxWorkspace?: (id: string) => void
+  onCreateProjectMember?: (
+    projectID: string,
+    input: Pick<ProjectMember, "principalType" | "principal" | "role">,
+  ) => Promise<ProjectMember>
+  onDeleteProjectMember?: (member: ProjectMember) => Promise<void>
   onRefreshProjectAuditEvents?: (
     projectID: string,
     filters?: {
@@ -98,6 +105,8 @@ export function AppShell({
             onValidateTemplate={onValidateTemplate}
             onOpenSandboxWorkspace={onOpenSandboxWorkspace}
             onRefreshProjectAuditEvents={onRefreshProjectAuditEvents}
+            onCreateProjectMember={onCreateProjectMember}
+            onDeleteProjectMember={onDeleteProjectMember}
             onClear={onClearSelection}
           />
         ) : null}

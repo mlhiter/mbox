@@ -2,10 +2,12 @@ import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 import {
   createProject as createProjectRequest,
+  createProjectMember as createProjectMemberRequest,
   createSandbox as createSandboxRequest,
   createTemplate as createTemplateRequest,
   createTemplateValidationRun,
   decideTemplateValidationRun as decideTemplateValidationRunRequest,
+  deleteProjectMember as deleteProjectMemberRequest,
   deleteSandbox as deleteSandboxRequest,
   getCaller,
   getHealth,
@@ -41,6 +43,8 @@ import type {
   ProjectAuthorizationDecision,
   ProjectCredential,
   ProjectMember,
+  ProjectMemberPrincipalType,
+  ProjectMemberRole,
   ProjectPolicy,
   ProjectQuotaPolicy,
   ProjectUsage,
@@ -59,6 +63,12 @@ type RuntimeResourceFilters = {
   namespace?: string
   projectId?: string
   kind?: string
+}
+
+type ProjectMemberInput = {
+  principalType: ProjectMemberPrincipalType
+  principal: string
+  role: ProjectMemberRole
 }
 
 export function useMboxData() {
@@ -136,6 +146,7 @@ export function useMboxData() {
               getProjectAuthorization(project.id, "artifact.write"),
               getProjectAuthorization(project.id, "policy.manage"),
               getProjectAuthorization(project.id, "credential.manage"),
+              getProjectAuthorization(project.id, "member.manage"),
             ])
             return [project.id, decisions] as const
           } catch {
@@ -432,6 +443,73 @@ export function useMboxData() {
     [],
   )
 
+  const refreshProjectMembers = useCallback(async (projectID: string) => {
+    const result = await listProjectMembers(projectID)
+    const members = result.items || []
+    setProjectMembers((current) => ({ ...current, [projectID]: members }))
+    return members
+  }, [])
+
+  const refreshProjectAuthorizations = useCallback(async (projectID: string) => {
+    const decisions: ProjectAuthorizationDecision[] = await Promise.all([
+      getProjectAuthorization(projectID, "sandbox.launch"),
+      getProjectAuthorization(projectID, "runtime.operate"),
+      getProjectAuthorization(projectID, "artifact.write"),
+      getProjectAuthorization(projectID, "policy.manage"),
+      getProjectAuthorization(projectID, "credential.manage"),
+      getProjectAuthorization(projectID, "member.manage"),
+    ])
+    setProjectAuthorizations((current) => ({ ...current, [projectID]: decisions }))
+    return decisions
+  }, [])
+
+  const createProjectMember = useCallback(
+    async (projectID: string, input: ProjectMemberInput) => {
+      try {
+        const principal = input.principal.trim()
+        if (!principal) {
+          throw new Error("Principal is required")
+        }
+        const member = await createProjectMemberRequest(projectID, {
+          principalType: input.principalType,
+          principal,
+          role: input.role,
+        })
+        await Promise.all([
+          refreshProjectMembers(projectID),
+          refreshProjectAuthorizations(projectID).catch(() => undefined),
+          refreshProjectAuditEvents(projectID).catch(() => []),
+        ])
+        toast.success("Member registered")
+        return member
+      } catch (memberError) {
+        const message = memberError instanceof Error ? memberError.message : "Could not register member"
+        toast.error(message)
+        throw memberError
+      }
+    },
+    [refreshProjectAuditEvents, refreshProjectAuthorizations, refreshProjectMembers],
+  )
+
+  const deleteProjectMember = useCallback(
+    async (member: ProjectMember) => {
+      try {
+        await deleteProjectMemberRequest(member.id)
+        await Promise.all([
+          refreshProjectMembers(member.projectId),
+          refreshProjectAuthorizations(member.projectId).catch(() => undefined),
+          refreshProjectAuditEvents(member.projectId).catch(() => []),
+        ])
+        toast.success("Member removed")
+      } catch (memberError) {
+        const message = memberError instanceof Error ? memberError.message : "Could not remove member"
+        toast.error(message)
+        throw memberError
+      }
+    },
+    [refreshProjectAuditEvents, refreshProjectAuthorizations, refreshProjectMembers],
+  )
+
   const refreshRuntimeResources = useCallback(async (filters: RuntimeResourceFilters = {}) => {
     try {
       const inventory = await getRuntimeResources(filters)
@@ -451,9 +529,11 @@ export function useMboxData() {
     callerInfo,
     counts,
     createProject,
+    createProjectMember,
     createSandbox,
     createTemplate,
     decideTemplateValidation,
+    deleteProjectMember,
     deleteSandbox,
     error,
     loadAll,

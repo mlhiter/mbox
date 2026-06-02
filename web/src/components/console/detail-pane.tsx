@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Box, FlaskConical, Layers3, Search, SquareTerminal, X } from "lucide-react"
+import { Box, FlaskConical, Layers3, Plus, Search, SquareTerminal, Trash2, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -57,6 +57,8 @@ export function DetailPane({
   onValidateTemplate,
   onOpenSandboxWorkspace,
   onRefreshProjectAuditEvents,
+  onCreateProjectMember,
+  onDeleteProjectMember,
   onClear,
 }: {
   selection: Selection | null
@@ -76,6 +78,11 @@ export function DetailPane({
     projectID: string,
     filters?: AuditEventFilters,
   ) => Promise<AuditEvent[]>
+  onCreateProjectMember?: (
+    projectID: string,
+    input: Pick<ProjectMember, "principalType" | "principal" | "role">,
+  ) => Promise<ProjectMember>
+  onDeleteProjectMember?: (member: ProjectMember) => Promise<void>
   onClear: () => void
 }) {
   const selected = selection
@@ -113,6 +120,8 @@ export function DetailPane({
             templates={templates}
             sandboxes={sandboxes}
             onRefreshAuditEvents={onRefreshProjectAuditEvents}
+            onCreateProjectMember={onCreateProjectMember}
+            onDeleteProjectMember={onDeleteProjectMember}
           />
         ) : selection.kind === "template" ? (
           <TemplateInspector
@@ -147,6 +156,8 @@ function ProjectInspector({
   templates,
   sandboxes,
   onRefreshAuditEvents,
+  onCreateProjectMember,
+  onDeleteProjectMember,
 }: {
   project: Project
   auditEvents: AuditEvent[]
@@ -162,6 +173,11 @@ function ProjectInspector({
     projectID: string,
     filters?: AuditEventFilters,
   ) => Promise<AuditEvent[]>
+  onCreateProjectMember?: (
+    projectID: string,
+    input: Pick<ProjectMember, "principalType" | "principal" | "role">,
+  ) => Promise<ProjectMember>
+  onDeleteProjectMember?: (member: ProjectMember) => Promise<void>
 }) {
   const projectSandboxes = sandboxes.filter((sandbox) => sandbox.projectId === project.id)
   const [auditAction, setAuditAction] = useState("")
@@ -260,9 +276,12 @@ function ProjectInspector({
         title="Authorization preflight"
         rows={authorizationRows(authorizations)}
       />
-      <InspectorGroup
-        title="Members"
-        rows={memberRows(members)}
+      <ProjectMembersGroup
+        project={project}
+        members={members}
+        authorizations={authorizations}
+        onCreateMember={onCreateProjectMember}
+        onDeleteMember={onDeleteProjectMember}
       />
       <InspectorGroup
         title="Credential refs"
@@ -443,14 +462,191 @@ function credentialRows(credentials: ProjectCredential[]): Array<[string, string
   ])
 }
 
-function memberRows(members: ProjectMember[]): Array<[string, string]> {
+function ProjectMembersGroup({
+  project,
+  members,
+  authorizations,
+  onCreateMember,
+  onDeleteMember,
+}: {
+  project: Project
+  members: ProjectMember[]
+  authorizations?: ProjectAuthorizationDecision[]
+  onCreateMember?: (
+    projectID: string,
+    input: Pick<ProjectMember, "principalType" | "principal" | "role">,
+  ) => Promise<ProjectMember>
+  onDeleteMember?: (member: ProjectMember) => Promise<void>
+}) {
+  const [principalType, setPrincipalType] = useState<ProjectMember["principalType"]>("user")
+  const [principal, setPrincipal] = useState("")
+  const [role, setRole] = useState<ProjectMember["role"]>("viewer")
+  const [saving, setSaving] = useState(false)
+  const [deletingMemberID, setDeletingMemberID] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const memberAuthorization = authorizations?.find((authorization) => authorization.action === "member.manage")
+  const ownerCount = members.filter((member) => member.role === "owner").length
+  const memberManagementBlocked = memberAuthorization?.enforced === true && !memberAuthorization.allowed
+  const canSubmit = Boolean(onCreateMember && principal.trim() && !saving && !deletingMemberID && !memberManagementBlocked)
+  const managementState = memberManagementState(memberAuthorization)
+
+  async function submitMember(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!onCreateMember) {
+      return
+    }
+    const nextPrincipal = principal.trim()
+    if (!nextPrincipal) {
+      setError("Principal is required.")
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      await onCreateMember(project.id, { principalType, principal: nextPrincipal, role })
+      setPrincipal("")
+      setRole("viewer")
+    } catch (memberError) {
+      setError(memberError instanceof Error ? memberError.message : "Could not register member.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function deleteMember(member: ProjectMember) {
+    if (!onDeleteMember) {
+      return
+    }
+    setDeletingMemberID(member.id)
+    setError(null)
+    try {
+      await onDeleteMember(member)
+    } catch (memberError) {
+      setError(memberError instanceof Error ? memberError.message : "Could not remove member.")
+    } finally {
+      setDeletingMemberID(null)
+    }
+  }
+
+  return (
+    <section className="detail-group project-members-group">
+      <div className="detail-group-head">
+        <h3>Members</h3>
+        <Badge variant={memberAuthorization?.allowed ? "secondary" : "outline"}>{managementState}</Badge>
+      </div>
+      <dl className="kv project-member-list">
+        {memberRows(members).map(([key, value, member]) => (
+          <div key={member?.id || key}>
+            <dt>{key}</dt>
+            <dd>
+              <span>{value}</span>
+              {member && onDeleteMember ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`Remove member ${member.principal}`}
+                  title={memberDeleteTitle(member, ownerCount, memberManagementBlocked)}
+                  disabled={
+                    saving ||
+                    deletingMemberID === member.id ||
+                    isLastProjectOwner(member, ownerCount) ||
+                    memberManagementBlocked
+                  }
+                  onClick={() => void deleteMember(member)}
+                >
+                  <Trash2 />
+                </Button>
+              ) : null}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {onCreateMember ? (
+        <form className="project-member-form" onSubmit={submitMember}>
+          <div>
+            <Label htmlFor={`project-member-principal-${project.id}`}>Principal</Label>
+            <Input
+              id={`project-member-principal-${project.id}`}
+              value={principal}
+              onChange={(event) => setPrincipal(event.target.value)}
+              placeholder="alice@example.com"
+              disabled={saving || Boolean(deletingMemberID) || memberManagementBlocked}
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor={`project-member-type-${project.id}`}>Type</Label>
+            <select
+              id={`project-member-type-${project.id}`}
+              value={principalType}
+              onChange={(event) => setPrincipalType(event.target.value as ProjectMember["principalType"])}
+              disabled={saving || Boolean(deletingMemberID) || memberManagementBlocked}
+            >
+              <option value="user">user</option>
+              <option value="service_account">service_account</option>
+              <option value="automation">automation</option>
+            </select>
+          </div>
+          <div>
+            <Label htmlFor={`project-member-role-${project.id}`}>Role</Label>
+            <select
+              id={`project-member-role-${project.id}`}
+              value={role}
+              onChange={(event) => setRole(event.target.value as ProjectMember["role"])}
+              disabled={saving || Boolean(deletingMemberID) || memberManagementBlocked}
+            >
+              <option value="viewer">viewer</option>
+              <option value="operator">operator</option>
+              <option value="owner">owner</option>
+            </select>
+          </div>
+          <div className="project-member-form-actions">
+            <Button type="submit" size="sm" disabled={!canSubmit}>
+              <Plus data-icon="inline-start" />
+              Add member
+            </Button>
+          </div>
+        </form>
+      ) : null}
+      {error ? <p className="project-member-error">{error}</p> : null}
+    </section>
+  )
+}
+
+function memberRows(members: ProjectMember[]): Array<[string, string, ProjectMember?]> {
   if (members.length === 0) {
     return [["Registered", "-"]]
   }
   return members.slice(0, 5).map((member) => [
     member.principal,
     `${member.role} · ${member.principalType}`,
+    member,
   ])
+}
+
+function memberManagementState(authorization?: ProjectAuthorizationDecision) {
+  if (!authorization) {
+    return "Preflight unavailable"
+  }
+  if (!authorization.enforced) {
+    return "Manage not enforced"
+  }
+  return authorization.allowed ? "Owner can manage" : "Owner required"
+}
+
+function isLastProjectOwner(member: ProjectMember, ownerCount: number) {
+  return member.role === "owner" && ownerCount <= 1
+}
+
+function memberDeleteTitle(member: ProjectMember, ownerCount: number, blocked: boolean) {
+  if (blocked) {
+    return "Owner required"
+  }
+  if (isLastProjectOwner(member, ownerCount)) {
+    return "Keep at least one owner"
+  }
+  return "Remove member"
 }
 
 function authorizationRows(authorizations?: ProjectAuthorizationDecision[]): Array<[string, string]> {

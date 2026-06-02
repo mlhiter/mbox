@@ -113,9 +113,11 @@ export function App() {
     callerInfo,
     counts,
     createProject,
+    createProjectMember,
     createSandbox,
     createTemplate,
     decideTemplateValidation,
+    deleteProjectMember,
     deleteSandbox,
     error,
     loadAll,
@@ -277,6 +279,8 @@ export function App() {
       onValidateTemplate={validateTemplateAndOpen}
       onOpenSandboxWorkspace={openSandboxWorkspace}
       onClearSelection={() => setSelection(null)}
+      onCreateProjectMember={createProjectMember}
+      onDeleteProjectMember={deleteProjectMember}
       projectAuditEvents={projectAuditEvents}
       projectPolicies={projectPolicies}
       projectQuotaPolicies={projectQuotaPolicies}
