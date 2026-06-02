@@ -37,6 +37,12 @@ export type SDKSchemaContractEntry = {
   required?: readonly string[]
   properties?: readonly string[]
   absentProperties?: readonly string[]
+  enumProperties?: readonly SDKSchemaEnumPropertyContract[]
+}
+
+export type SDKSchemaEnumPropertyContract = {
+  property: string
+  values: readonly string[]
 }
 
 export type SDKOpenAPIAlignmentIssue = {
@@ -63,6 +69,7 @@ export type SDKOpenAPIAlignmentIssue = {
     | "missing-schema-required"
     | "missing-schema-property"
     | "unexpected-schema-property"
+    | "missing-schema-enum-value"
   sdk?: keyof MboxClient
   method?: SDKRouteMethod
   path?: string
@@ -78,6 +85,7 @@ export type SDKOpenAPIAlignmentIssue = {
   required?: readonly string[]
   properties?: readonly string[]
   property?: string
+  enumValue?: string
 }
 
 export type SDKOpenAPIAlignmentResult = {
@@ -93,6 +101,7 @@ export type SDKOpenAPIAlignmentResult = {
   checkedSchemaRequired: number
   checkedSchemaProperties: number
   checkedSchemaAbsentProperties: number
+  checkedSchemaEnumValues: number
   missing: SDKOpenAPIAlignmentIssue[]
 }
 
@@ -830,6 +839,22 @@ export const SDK_SCHEMA_CONTRACT = [
       "availableActions",
       "notes",
     ],
+    enumProperties: [
+      {
+        property: "action",
+        values: [
+          "project.view",
+          "project.manage",
+          "sandbox.launch",
+          "runtime.operate",
+          "artifact.write",
+          "policy.manage",
+          "credential.manage",
+          "member.manage",
+        ],
+      },
+      { property: "evaluation", values: ["allowed", "denied", "not_enforceable"] },
+    ],
   },
   {
     schema: "CallerInfo",
@@ -852,6 +877,10 @@ export const SDK_SCHEMA_CONTRACT = [
       "rbacTrusted",
       "projectRolesEnforced",
       "notes",
+    ],
+    enumProperties: [
+      { property: "mode", values: ["anonymous", "shared_token", "trusted_header"] },
+      { property: "principalType", values: ["anonymous", "shared_token", "user", "service_account", "automation"] },
     ],
   },
   {
@@ -1186,6 +1215,7 @@ export function checkOpenAPIAlignment(
   let checkedSchemaRequired = 0
   let checkedSchemaProperties = 0
   let checkedSchemaAbsentProperties = 0
+  let checkedSchemaEnumValues = 0
   const routeCoverage = sdkRouteCoverage(routes)
 
   for (const operation of openAPIOperations(paths)) {
@@ -1258,6 +1288,20 @@ export function checkOpenAPIAlignment(
         missing.push({ ...schemaContract, reason: "unexpected-schema-property", property })
       }
     }
+    for (const enumProperty of schemaContract.enumProperties ?? []) {
+      const values = schemaPropertyEnumValues(schema, enumProperty.property)
+      for (const value of enumProperty.values) {
+        checkedSchemaEnumValues += 1
+        if (!values.has(value)) {
+          missing.push({
+            ...schemaContract,
+            reason: "missing-schema-enum-value",
+            property: enumProperty.property,
+            enumValue: value,
+          })
+        }
+      }
+    }
   }
 
   return {
@@ -1273,6 +1317,7 @@ export function checkOpenAPIAlignment(
     checkedSchemaRequired,
     checkedSchemaProperties,
     checkedSchemaAbsentProperties,
+    checkedSchemaEnumValues,
     missing,
   }
 }
@@ -1299,14 +1344,15 @@ export async function fetchAndAssertOpenAPIAlignment(
 
 function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
   if (result.ok) {
-    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, and ${result.checkedSchemas} SDK schema contracts`
+    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, and ${result.checkedSchemaEnumValues} SDK schema enum values`
   }
   const preview = result.missing
     .slice(0, 10)
     .map((issue) => {
       if (issue.schema) {
         const property = issue.property ? `:${issue.property}` : ""
-        return `${issue.schema} (${issue.reason}${property})`
+        const enumValue = issue.enumValue ? `=${issue.enumValue}` : ""
+        return `${issue.schema} (${issue.reason}${property}${enumValue})`
       }
       if (issue.reason === "missing-sdk-route-coverage") {
         return `OpenAPI operation ${issue.method} ${issue.path} (${issue.reason})`
@@ -1551,6 +1597,17 @@ function propertyNames(schema: Record<string, unknown>) {
     names.add(name)
   }
   return names
+}
+
+function schemaPropertyEnumValues(schema: Record<string, unknown>, property: string) {
+  if (!isRecord(schema.properties)) {
+    return new Set<string>()
+  }
+  const propertySchema = schema.properties[property]
+  if (!isRecord(propertySchema)) {
+    return new Set<string>()
+  }
+  return stringSet(propertySchema.enum)
 }
 
 function stringSet(value: unknown) {

@@ -420,6 +420,7 @@ First slice status:
 78. Done: CLI audit ergonomics add `audit-events --policy-denied-summary` and `projects audit-events --policy-denied-summary`, grouping returned `policy.denied` rows by operation/reason over the existing read-only audit feed filters while preserving JSON output for scripts.
 79. Done: CLI RBAC ergonomics add `projects authorization --summary`, rendering the existing project authorization preflight response as a compact human-readable decision view while preserving default JSON output and starter RBAC boundaries.
 80. Done: CLI auth ergonomics add `auth caller --summary` and `caller --summary`, rendering the existing caller/auth boundary handshake as compact text while preserving JSON output and avoiding login/session semantics.
-81. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+81. Done: SDK/OpenAPI schema alignment guard now checks selected auth and authorization enum values, including `CallerInfo` mode/principal-type values and project authorization action/evaluation values, so starter RBAC client contracts fail fast on enum drift.
+82. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

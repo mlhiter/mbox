@@ -1045,6 +1045,46 @@ assert.throws(
         issue.reason === "missing-schema-required" &&
         issue.schema === "Project" &&
         issue.property === "defaultNamespace",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.CallerInfo.properties.mode.enum = ["anonymous", "shared_token"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "CallerInfo" &&
+        issue.property === "mode" &&
+        issue.enumValue === "trusted_header",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectAuthorizationDecision.properties.action.enum = [
+      "project.view",
+      "project.manage",
+      "sandbox.launch",
+      "runtime.operate",
+      "artifact.write",
+      "policy.manage",
+      "credential.manage",
+    ]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "ProjectAuthorizationDecision" &&
+        issue.property === "action" &&
+        issue.enumValue === "member.manage",
     ),
 )
 assert.throws(
@@ -1825,6 +1865,25 @@ function schemaComponents() {
     "source",
     "metadata",
   ])
+  schemas.ProjectAuthorizationDecision.properties.action.enum = [
+    "project.view",
+    "project.manage",
+    "sandbox.launch",
+    "runtime.operate",
+    "artifact.write",
+    "policy.manage",
+    "credential.manage",
+    "member.manage",
+  ]
+  schemas.ProjectAuthorizationDecision.properties.evaluation.enum = ["allowed", "denied", "not_enforceable"]
+  schemas.CallerInfo.properties.mode.enum = ["anonymous", "shared_token", "trusted_header"]
+  schemas.CallerInfo.properties.principalType.enum = [
+    "anonymous",
+    "shared_token",
+    "user",
+    "service_account",
+    "automation",
+  ]
   return schemas
 }
 
