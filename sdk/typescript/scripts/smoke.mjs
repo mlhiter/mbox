@@ -804,6 +804,21 @@ assert.throws(
         issue.property === "policyKind",
     ),
 )
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectQuotaPolicy.required = ["enforcement"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-required" &&
+        issue.schema === "ProjectQuotaPolicy" &&
+        issue.property === "projectId",
+    ),
+)
 assert.equal(assertOpenAPIAlignment(buildOpenAPIWithIntentionalSDKExceptions()).ok, true)
 
 console.log("SDK smoke passed")
@@ -1297,6 +1312,28 @@ function schemaComponents() {
     ]),
     TrustedPrincipalHeaderInfo: objectSchema(["enabled"], ["principalHeader", "principalTypeHeader"]),
     ProjectRBACInfo: objectSchema(["enforcementEnabled", "enforcedActions"]),
+    ProjectPolicy: objectSchema(["projectId", "enforcement"], [
+      "allowedImagePrefixes",
+      "allowedServiceAccounts",
+      "allowedSecretRefs",
+      "createdAt",
+      "updatedAt",
+    ]),
+    ProjectPolicyUpsert: objectSchema(["enforcement"], [
+      "allowedImagePrefixes",
+      "allowedServiceAccounts",
+      "allowedSecretRefs",
+    ]),
+    ProjectQuotaPolicy: objectSchema(["projectId", "enforcement"], [
+      "maxActiveSandboxes",
+      "maxRetainedArtifactBytes",
+      "createdAt",
+      "updatedAt",
+    ]),
+    ProjectQuotaPolicyUpsert: objectSchema(["enforcement"], [
+      "maxActiveSandboxes",
+      "maxRetainedArtifactBytes",
+    ]),
     ProjectMember: objectSchema(["id", "projectId", "principalType", "principal", "role"], [
       "metadata",
       "createdAt",

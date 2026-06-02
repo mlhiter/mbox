@@ -334,9 +334,19 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected schemas object, got %#v", components["schemas"])
 	}
-	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectMember", "ProjectMemberCreate", "ProjectQuotaPolicy", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "ExecutionTask", "Artifact", "Error"} {
+	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "ExecutionTask", "Artifact", "Error"} {
 		if _, ok := schemas[name]; !ok {
 			t.Fatalf("expected schema %s in OpenAPI components", name)
+		}
+	}
+	for _, name := range []string{"ProjectPolicy", "ProjectQuotaPolicy"} {
+		schema, ok := schemas[name].(map[string]any)
+		if !ok {
+			t.Fatalf("expected %s schema in %#v", name, schemas[name])
+		}
+		required, ok := schema["required"].([]any)
+		if !ok || !anySliceContainsString(required, "projectId") || !anySliceContainsString(required, "enforcement") {
+			t.Fatalf("expected %s projectId/enforcement required fields, got %#v", name, schema["required"])
 		}
 	}
 	apiInfo, ok := schemas["APIInfo"].(map[string]any)

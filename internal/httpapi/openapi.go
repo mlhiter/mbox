@@ -768,6 +768,7 @@ func projectUpdateSchema() map[string]any {
 }
 
 func projectPolicySchema(upsert bool) map[string]any {
+	required := requiredProps("enforcement")
 	props := []schemaProp{
 		prop("enforcement", enumSchema("disabled", "enforced")),
 		prop("allowedImagePrefixes", arraySchema(stringSchema())),
@@ -775,23 +776,26 @@ func projectPolicySchema(upsert bool) map[string]any {
 		prop("allowedSecretRefs", arraySchema(stringSchema())),
 	}
 	if !upsert {
+		required = requiredProps("projectId", "enforcement")
 		props = append([]schemaProp{prop("projectId", stringSchema())}, props...)
 		props = append(props, prop("createdAt", dateTimeSchema()), prop("updatedAt", dateTimeSchema()))
 	}
-	return objectSchema(requiredProps("enforcement"), props...)
+	return objectSchema(required, props...)
 }
 
 func projectQuotaPolicySchema(upsert bool) map[string]any {
+	required := requiredProps("enforcement")
 	props := []schemaProp{
 		prop("enforcement", enumSchema("disabled", "enforced")),
 		prop("maxActiveSandboxes", integerSchema()),
 		prop("maxRetainedArtifactBytes", integerSchema()),
 	}
 	if !upsert {
+		required = requiredProps("projectId", "enforcement")
 		props = append([]schemaProp{prop("projectId", stringSchema())}, props...)
 		props = append(props, prop("createdAt", dateTimeSchema()), prop("updatedAt", dateTimeSchema()))
 	}
-	return objectSchema(requiredProps("enforcement"), props...)
+	return objectSchema(required, props...)
 }
 
 func projectAuthorizationDecisionSchema() map[string]any {

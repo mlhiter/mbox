@@ -659,6 +659,34 @@ export const SDK_SCHEMA_CONTRACT = [
     ],
   },
   {
+    schema: "ProjectPolicy",
+    required: ["projectId", "enforcement"],
+    properties: [
+      "projectId",
+      "enforcement",
+      "allowedImagePrefixes",
+      "allowedServiceAccounts",
+      "allowedSecretRefs",
+      "createdAt",
+      "updatedAt",
+    ],
+  },
+  {
+    schema: "ProjectPolicyUpsert",
+    required: ["enforcement"],
+    properties: ["enforcement", "allowedImagePrefixes", "allowedServiceAccounts", "allowedSecretRefs"],
+  },
+  {
+    schema: "ProjectQuotaPolicy",
+    required: ["projectId", "enforcement"],
+    properties: ["projectId", "enforcement", "maxActiveSandboxes", "maxRetainedArtifactBytes", "createdAt", "updatedAt"],
+  },
+  {
+    schema: "ProjectQuotaPolicyUpsert",
+    required: ["enforcement"],
+    properties: ["enforcement", "maxActiveSandboxes", "maxRetainedArtifactBytes"],
+  },
+  {
     schema: "ProjectMember",
     required: ["id", "projectId", "principalType", "principal", "role"],
     properties: ["id", "projectId", "principalType", "principal", "role", "metadata", "createdAt", "updatedAt"],

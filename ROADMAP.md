@@ -215,6 +215,7 @@ Current status:
 - Done: SDK/OpenAPI alignment guard now checks focused SDK helper request body schema refs and binary upload media types.
 - Done: SDK/OpenAPI alignment guard now checks reverse published-route coverage, so ordinary OpenAPI operations must have SDK route contract entries while terminal WebSocket and preview proxy pass-through routes stay explicit non-helper exceptions.
 - Done: SDK/OpenAPI alignment guard now checks policy/quota denial fields on `PolicyDeniedAuditMetadata`, including `policyKind`, `enforcement`, active-sandbox limits, and retained-artifact byte limits.
+- Done: SDK/OpenAPI alignment guard now checks project launch-policy and quota-policy response/upsert schemas, including required `projectId` on policy responses.
 - Done: explicit SDK and CLI compatibility preflight helpers compare client API labels with the server `/v1/info` minimum CLI/SDK API versions before longer automation runs.
 - Done: SDK and CLI compatibility preflight can require server capabilities such as `execution-tasks`, `task-events`, and `artifact-client-upload` before clients start a longer run.
 - Done: SDK local smoke gate now builds the package and exercises compatibility helpers plus OpenAPI alignment success/failure paths without requiring a live API server.
@@ -254,6 +255,7 @@ Current status:
 - Done: Runtime inventory `summary.byProject` rollup across API, OpenAPI, SDK, Web, docs, and tests, deriving project attribution only from runtime owner labels after current filters are applied.
 - Done: SDK/OpenAPI reverse route-coverage guard for published operations, with explicit non-helper exceptions for terminal WebSocket and preview proxy pass-through routes.
 - Done: SDK/OpenAPI `PolicyDeniedAuditMetadata` schema guard now covers policy/quota denial metadata fields used by operator audit rendering.
+- Done: SDK/OpenAPI project policy and quota policy schema guard now covers response/upsert fields for launch and quota policy clients.
 - Remaining: broader route-level user/project RBAC enforcement beyond the current disabled-by-default `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage` starters, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
 
 ## Phase 4: Upper-layer Workflow Integrations
@@ -388,6 +390,7 @@ First slice status:
 62. Done: Runtime inventory `summary.byProject` rollup for deeper per-project runtime attribution, preserving the view as read-only label-derived operator triage rather than RBAC, quota, billing, metrics utilization, or capacity reservation.
 63. Done: CLI `runtime resources --summary-table` for a human-readable runtime inventory summary over the existing filtered `summary` object, preserving JSON output for scripts and keeping runtime inventory read-only.
 64. Done: SDK/OpenAPI `PolicyDeniedAuditMetadata` schema guard now covers typed policy/quota denial fields such as `policyKind`, `enforcement`, active-sandbox limits, and retained-artifact byte limits.
-65. Next: a narrow member management gate after bootstrap/UX is clearer, remaining audit ergonomics, or the next generated-client/schema alignment slice.
+65. Done: SDK/OpenAPI project launch-policy and quota-policy schema guard covers response/upsert fields and required `projectId` on policy responses.
+66. Next: a narrow member management gate after bootstrap/UX is clearer, remaining audit ergonomics, or the next generated-client/schema alignment slice.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.
