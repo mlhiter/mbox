@@ -36,6 +36,7 @@ export type SDKSchemaContractEntry = {
   schema: string
   required?: readonly string[]
   properties?: readonly string[]
+  absentProperties?: readonly string[]
 }
 
 export type SDKOpenAPIAlignmentIssue = {
@@ -61,6 +62,7 @@ export type SDKOpenAPIAlignmentIssue = {
     | "missing-schema"
     | "missing-schema-required"
     | "missing-schema-property"
+    | "unexpected-schema-property"
   sdk?: keyof MboxClient
   method?: SDKRouteMethod
   path?: string
@@ -90,6 +92,7 @@ export type SDKOpenAPIAlignmentResult = {
   checkedSchemas: number
   checkedSchemaRequired: number
   checkedSchemaProperties: number
+  checkedSchemaAbsentProperties: number
   missing: SDKOpenAPIAlignmentIssue[]
 }
 
@@ -872,6 +875,75 @@ export const SDK_SCHEMA_CONTRACT = [
     properties: ["name", "slug", "type", "target", "secretRef", "usage", "metadata"],
   },
   {
+    schema: "TemplatePort",
+    required: ["name", "port", "protocol"],
+    properties: ["name", "port", "protocol"],
+  },
+  {
+    schema: "EnvironmentTemplate",
+    required: ["id", "name", "slug", "image"],
+    properties: [
+      "id",
+      "projectId",
+      "name",
+      "slug",
+      "image",
+      "startupCommand",
+      "workingDir",
+      "cpuRequest",
+      "memoryRequest",
+      "storageRequest",
+      "exposedPorts",
+      "env",
+      "secretRefs",
+      "networkPolicy",
+      "lifecyclePolicy",
+      "metadata",
+      "createdAt",
+      "updatedAt",
+    ],
+  },
+  {
+    schema: "TemplateCreate",
+    required: ["name", "image"],
+    properties: [
+      "projectId",
+      "name",
+      "slug",
+      "image",
+      "startupCommand",
+      "workingDir",
+      "cpuRequest",
+      "memoryRequest",
+      "storageRequest",
+      "exposedPorts",
+      "env",
+      "secretRefs",
+      "networkPolicy",
+      "lifecyclePolicy",
+      "metadata",
+    ],
+  },
+  {
+    schema: "TemplateUpdate",
+    properties: [
+      "name",
+      "image",
+      "startupCommand",
+      "workingDir",
+      "cpuRequest",
+      "memoryRequest",
+      "storageRequest",
+      "exposedPorts",
+      "env",
+      "secretRefs",
+      "networkPolicy",
+      "lifecyclePolicy",
+      "metadata",
+    ],
+    absentProperties: ["projectId", "slug"],
+  },
+  {
     schema: "AuditEvent",
     required: ["id", "action", "resourceType", "createdAt"],
     properties: [
@@ -942,6 +1014,7 @@ export function checkOpenAPIAlignment(
   let ignoredPublishedOperations = 0
   let checkedSchemaRequired = 0
   let checkedSchemaProperties = 0
+  let checkedSchemaAbsentProperties = 0
   const routeCoverage = sdkRouteCoverage(routes)
 
   for (const operation of openAPIOperations(paths)) {
@@ -1008,6 +1081,12 @@ export function checkOpenAPIAlignment(
         missing.push({ ...schemaContract, reason: "missing-schema-property", property })
       }
     }
+    for (const property of schemaContract.absentProperties ?? []) {
+      checkedSchemaAbsentProperties += 1
+      if (properties.has(property)) {
+        missing.push({ ...schemaContract, reason: "unexpected-schema-property", property })
+      }
+    }
   }
 
   return {
@@ -1022,6 +1101,7 @@ export function checkOpenAPIAlignment(
     checkedSchemas: schemas.length,
     checkedSchemaRequired,
     checkedSchemaProperties,
+    checkedSchemaAbsentProperties,
     missing,
   }
 }

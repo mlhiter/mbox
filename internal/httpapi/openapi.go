@@ -1254,9 +1254,7 @@ func templateSchema(create bool, update bool) map[string]any {
 		required = requiredProps("name", "image")
 	}
 	props := []schemaProp{
-		prop("projectId", stringSchema()),
 		prop("name", stringSchema()),
-		prop("slug", stringSchema()),
 		prop("image", stringSchema()),
 		prop("startupCommand", arraySchema(stringSchema())),
 		prop("workingDir", stringSchema()),
@@ -1269,6 +1267,9 @@ func templateSchema(create bool, update bool) map[string]any {
 		prop("networkPolicy", stringSchema()),
 		prop("lifecyclePolicy", objectAnySchema()),
 		prop("metadata", objectAnySchema()),
+	}
+	if !update {
+		props = append([]schemaProp{prop("projectId", stringSchema()), prop("slug", stringSchema())}, props...)
 	}
 	if !create && !update {
 		required = requiredProps("id", "name", "slug", "image")

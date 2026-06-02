@@ -834,6 +834,36 @@ assert.throws(
         issue.property === "secretRef",
     ),
 )
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.TemplateCreate.required = ["name"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-required" &&
+        issue.schema === "TemplateCreate" &&
+        issue.property === "image",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.TemplateUpdate.properties.projectId = { type: "string" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "unexpected-schema-property" &&
+        issue.schema === "TemplateUpdate" &&
+        issue.property === "projectId",
+    ),
+)
 assert.equal(assertOpenAPIAlignment(buildOpenAPIWithIntentionalSDKExceptions()).ok, true)
 
 console.log("SDK smoke passed")
@@ -1324,6 +1354,53 @@ function schemaComponents() {
       "slug",
       "target",
       "usage",
+      "metadata",
+    ]),
+    TemplatePort: objectSchema(["name", "port", "protocol"]),
+    EnvironmentTemplate: objectSchema(["id", "name", "slug", "image"], [
+      "projectId",
+      "startupCommand",
+      "workingDir",
+      "cpuRequest",
+      "memoryRequest",
+      "storageRequest",
+      "exposedPorts",
+      "env",
+      "secretRefs",
+      "networkPolicy",
+      "lifecyclePolicy",
+      "metadata",
+      "createdAt",
+      "updatedAt",
+    ]),
+    TemplateCreate: objectSchema(["name", "image"], [
+      "projectId",
+      "slug",
+      "startupCommand",
+      "workingDir",
+      "cpuRequest",
+      "memoryRequest",
+      "storageRequest",
+      "exposedPorts",
+      "env",
+      "secretRefs",
+      "networkPolicy",
+      "lifecyclePolicy",
+      "metadata",
+    ]),
+    TemplateUpdate: objectSchema([], [
+      "name",
+      "image",
+      "startupCommand",
+      "workingDir",
+      "cpuRequest",
+      "memoryRequest",
+      "storageRequest",
+      "exposedPorts",
+      "env",
+      "secretRefs",
+      "networkPolicy",
+      "lifecyclePolicy",
       "metadata",
     ]),
     APIInfo: objectSchema([

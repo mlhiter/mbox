@@ -217,6 +217,7 @@ Current status:
 - Done: SDK/OpenAPI alignment guard now checks policy/quota denial fields on `PolicyDeniedAuditMetadata`, including `policyKind`, `enforcement`, active-sandbox limits, and retained-artifact byte limits.
 - Done: SDK/OpenAPI alignment guard now checks project launch-policy and quota-policy response/upsert schemas, including required `projectId` on policy responses.
 - Done: SDK/OpenAPI alignment guard now checks project credential-reference and `SecretRef` schemas without expanding credential records into secret-value storage or runtime mounting.
+- Done: SDK/OpenAPI alignment guard now checks template-library schemas for `EnvironmentTemplate`, `TemplateCreate`, `TemplateUpdate`, and `TemplatePort`, including forbidden immutable update fields such as `projectId` and `slug`.
 - Done: explicit SDK and CLI compatibility preflight helpers compare client API labels with the server `/v1/info` minimum CLI/SDK API versions before longer automation runs.
 - Done: SDK and CLI compatibility preflight can require server capabilities such as `execution-tasks`, `task-events`, and `artifact-client-upload` before clients start a longer run.
 - Done: SDK local smoke gate now builds the package and exercises compatibility helpers plus OpenAPI alignment success/failure paths without requiring a live API server.
@@ -258,6 +259,7 @@ Current status:
 - Done: SDK/OpenAPI `PolicyDeniedAuditMetadata` schema guard now covers policy/quota denial metadata fields used by operator audit rendering.
 - Done: SDK/OpenAPI project policy and quota policy schema guard now covers response/upsert fields for launch and quota policy clients.
 - Done: SDK/OpenAPI project credential-reference schema guard now covers `ProjectCredential`, `ProjectCredentialCreate`, and `SecretRef` fields for reference-only credential clients.
+- Done: SDK/OpenAPI template-library schema guard now covers template response/create/update/port fields and catches immutable-field drift in update schemas.
 - Remaining: broader route-level user/project RBAC enforcement beyond the current disabled-by-default `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, and `credential.manage` starters, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
 
 ## Phase 4: Upper-layer Workflow Integrations
@@ -394,6 +396,7 @@ First slice status:
 64. Done: SDK/OpenAPI `PolicyDeniedAuditMetadata` schema guard now covers typed policy/quota denial fields such as `policyKind`, `enforcement`, active-sandbox limits, and retained-artifact byte limits.
 65. Done: SDK/OpenAPI project launch-policy and quota-policy schema guard covers response/upsert fields and required `projectId` on policy responses.
 66. Done: SDK/OpenAPI project credential-reference schema guard covers reference-only credential fields and `SecretRef` without implying secret-value storage or runtime mounting.
-67. Next: a narrow member management gate after bootstrap/UX is clearer, remaining audit ergonomics, or the next generated-client/schema alignment slice.
+67. Done: SDK/OpenAPI template-library schema guard covers template response/create/update/port fields and rejects immutable `projectId`/`slug` drift on update schemas.
+68. Next: a narrow member management gate after bootstrap/UX is clearer, remaining audit ergonomics, or the next generated-client/schema alignment slice.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

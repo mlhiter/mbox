@@ -334,7 +334,7 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected schemas object, got %#v", components["schemas"])
 	}
-	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "SecretRef", "ProjectCredential", "ProjectCredentialCreate", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "ExecutionTask", "Artifact", "Error"} {
+	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "SecretRef", "ProjectCredential", "ProjectCredentialCreate", "TemplatePort", "EnvironmentTemplate", "TemplateCreate", "TemplateUpdate", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "ExecutionTask", "Artifact", "Error"} {
 		if _, ok := schemas[name]; !ok {
 			t.Fatalf("expected schema %s in OpenAPI components", name)
 		}
@@ -359,6 +359,22 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(credentialRequired, "projectId") ||
 		!anySliceContainsString(credentialRequired, "secretRef") {
 		t.Fatalf("expected ProjectCredential identity/secretRef required fields, got %#v", credentialSchema["required"])
+	}
+	templateCreateSchema, ok := schemas["TemplateCreate"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected TemplateCreate schema in %#v", schemas["TemplateCreate"])
+	}
+	templateCreateRequired, ok := templateCreateSchema["required"].([]any)
+	if !ok || !anySliceContainsString(templateCreateRequired, "name") || !anySliceContainsString(templateCreateRequired, "image") {
+		t.Fatalf("expected TemplateCreate name/image required fields, got %#v", templateCreateSchema["required"])
+	}
+	templateUpdateSchema, ok := schemas["TemplateUpdate"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected TemplateUpdate schema in %#v", schemas["TemplateUpdate"])
+	}
+	templateUpdateProperties, ok := templateUpdateSchema["properties"].(map[string]any)
+	if !ok || templateUpdateProperties["projectId"] != nil || templateUpdateProperties["slug"] != nil {
+		t.Fatalf("expected TemplateUpdate to omit projectId/slug update fields, got %#v", templateUpdateSchema["properties"])
 	}
 	apiInfo, ok := schemas["APIInfo"].(map[string]any)
 	if !ok {
