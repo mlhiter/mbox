@@ -161,7 +161,7 @@ Commands:
   context remove NAME
   openapi
   runtime resources [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary|--summary-table] [--resolve-project-names]
-  runtime orphans [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND]
+  runtime orphans [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary-table]
   runtime cleanup-orphan --adapter ADAPTER --kind KIND --namespace NAMESPACE --name NAME --reason REASON --confirm delete-orphan-runtime-resource
   audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--policy-denied-summary]
   projects list
@@ -362,11 +362,12 @@ func (a *App) runRuntime(ctx context.Context, client *Client, args []string) err
 		namespace := fs.String("namespace", "", "")
 		projectID := fs.String("project-id", "", "")
 		kind := fs.String("kind", "", "")
+		summaryTable := fs.Bool("summary-table", false, "")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 0 {
-			return usageError("usage: mbox runtime orphans [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND]")
+			return usageError("usage: mbox runtime orphans [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary-table]")
 		}
 		path := "/v1/runtime/orphans"
 		values := url.Values{}
@@ -381,6 +382,13 @@ func (a *App) runRuntime(ctx context.Context, client *Client, args []string) err
 		}
 		if encoded := values.Encode(); encoded != "" {
 			path += "?" + encoded
+		}
+		if *summaryTable {
+			var audit runtimeOrphanAuditSummaryTable
+			if err := client.JSON(ctx, http.MethodGet, path, nil, &audit); err != nil {
+				return err
+			}
+			return writeRuntimeOrphanSummaryTable(a.streams.Stdout, audit)
 		}
 		return a.get(ctx, client, path)
 	case "cleanup-orphan":
@@ -423,6 +431,34 @@ type runtimeResourceSummaryTable struct {
 	ByOwner     []runtimeResourceCountTable `json:"byOwner"`
 	ByProject   []runtimeResourceCountTable `json:"byProject"`
 	Workload    runtimeWorkloadSummaryTable `json:"workload"`
+}
+
+type runtimeOrphanAuditSummaryTable struct {
+	Adapter       string                           `json:"adapter"`
+	CheckedAt     string                           `json:"checkedAt"`
+	Namespace     string                           `json:"namespace"`
+	ResourceCount int                              `json:"resourceCount"`
+	OrphanCount   int                              `json:"orphanCount"`
+	ExpectedClean bool                             `json:"expectedClean"`
+	Items         []runtimeOrphanSummaryTableEntry `json:"items"`
+}
+
+type runtimeOrphanSummaryTableEntry struct {
+	Reason     string                            `json:"reason"`
+	Resource   runtimeOrphanSummaryTableResource `json:"resource"`
+	SandboxID  string                            `json:"sandboxId"`
+	TemplateID string                            `json:"templateId"`
+	ProjectID  string                            `json:"projectId"`
+	Status     string                            `json:"status"`
+	Message    string                            `json:"message"`
+	Evidence   []string                          `json:"evidence"`
+}
+
+type runtimeOrphanSummaryTableResource struct {
+	Adapter   string `json:"adapter"`
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
 }
 
 type runtimeResourceCountTable struct {
@@ -507,6 +543,118 @@ func writeRuntimeResourceSummaryTable(w io.Writer, summary runtimeResourceSummar
 		return err
 	}
 	return out.Flush()
+}
+
+func writeRuntimeOrphanSummaryTable(w io.Writer, audit runtimeOrphanAuditSummaryTable) error {
+	out := bufio.NewWriter(w)
+	if _, err := fmt.Fprintln(out, "RUNTIME ORPHANS SUMMARY"); err != nil {
+		return err
+	}
+	lines := []struct {
+		label string
+		value any
+	}{
+		{"adapter", tableValue(audit.Adapter, "unknown")},
+		{"checkedAt", tableValue(audit.CheckedAt, "unknown")},
+		{"namespace", tableValue(audit.Namespace, "all")},
+		{"resources", audit.ResourceCount},
+		{"orphans", audit.OrphanCount},
+		{"expectedClean", formatBool(audit.ExpectedClean)},
+	}
+	for _, line := range lines {
+		if _, err := fmt.Fprintf(out, "%s\t%v\n", line.label, line.value); err != nil {
+			return err
+		}
+	}
+	if err := writeRuntimeResourceCountSection(out, "BY REASON", runtimeOrphanReasonCounts(audit.Items)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, "\nORPHANS"); err != nil {
+		return err
+	}
+	if len(audit.Items) == 0 {
+		if _, err := fmt.Fprintln(out, "  (none)"); err != nil {
+			return err
+		}
+		return out.Flush()
+	}
+	items := append([]runtimeOrphanSummaryTableEntry(nil), audit.Items...)
+	sort.Slice(items, func(i, j int) bool {
+		left := runtimeOrphanSortKey(items[i])
+		right := runtimeOrphanSortKey(items[j])
+		if left == right {
+			return items[i].Reason < items[j].Reason
+		}
+		return left < right
+	})
+	if _, err := fmt.Fprintln(out, "REASON\tRESOURCE\tPROJECT\tSTATUS\tMESSAGE"); err != nil {
+		return err
+	}
+	for _, item := range items {
+		if _, err := fmt.Fprintf(out, "%s\t%s\t%s\t%s\t%s\n",
+			tableValue(item.Reason, "unknown"),
+			runtimeOrphanResourceLabel(item.Resource),
+			tableValue(item.ProjectID, "-"),
+			tableValue(item.Status, "-"),
+			tableValue(item.Message, "-"),
+		); err != nil {
+			return err
+		}
+		if len(item.Evidence) > 0 {
+			for _, evidence := range item.Evidence {
+				evidence = strings.TrimSpace(evidence)
+				if evidence == "" {
+					continue
+				}
+				if _, err := fmt.Fprintf(out, "  evidence\t%s\n", evidence); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return out.Flush()
+}
+
+func runtimeOrphanReasonCounts(items []runtimeOrphanSummaryTableEntry) []runtimeResourceCountTable {
+	counts := map[string]int{}
+	for _, item := range items {
+		reason := strings.TrimSpace(item.Reason)
+		if reason == "" {
+			reason = "unknown"
+		}
+		counts[reason]++
+	}
+	result := make([]runtimeResourceCountTable, 0, len(counts))
+	for reason, count := range counts {
+		result = append(result, runtimeResourceCountTable{Name: reason, Count: count})
+	}
+	return result
+}
+
+func runtimeOrphanSortKey(item runtimeOrphanSummaryTableEntry) string {
+	resource := item.Resource
+	return strings.Join([]string{
+		strings.TrimSpace(resource.Namespace),
+		strings.TrimSpace(resource.Kind),
+		strings.TrimSpace(resource.Name),
+		strings.TrimSpace(item.Reason),
+	}, "/")
+}
+
+func runtimeOrphanResourceLabel(resource runtimeOrphanSummaryTableResource) string {
+	kind := tableValue(resource.Kind, "Resource")
+	namespace := strings.TrimSpace(resource.Namespace)
+	name := strings.TrimSpace(resource.Name)
+	if namespace == "" && name == "" {
+		return kind
+	}
+	if namespace == "" {
+		return kind + " " + name
+	}
+	if name == "" {
+		return kind + " " + namespace
+	}
+	return kind + " " + namespace + "/" + name
 }
 
 func displayRuntimeProjectCounts(counts []runtimeResourceCountTable, projectNames map[string]string) []runtimeResourceCountTable {

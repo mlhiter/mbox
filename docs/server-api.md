@@ -326,6 +326,8 @@ When `items` is non-empty, each entry includes:
 
 The inventory and orphan routes return `503` when no runtime auditor is configured. In local development that means neither runtime controller nor runtime access was enabled for the server process.
 
+The CLI keeps `mbox runtime orphans` as raw JSON by default for scripts. Operators can add `--summary-table` to render the same response as a compact read-only audit table with adapter, checked-at time, resource/orphan counts, reason counts, resource identity, project ID, sandbox status, message, and evidence lines. This does not add cleanup behavior; it is only a human-readable view over `GET /v1/runtime/orphans`.
+
 `POST /v1/runtime/orphans/cleanup` deletes one currently reported orphan runtime resource. It is intentionally gated and does not run automatic cleanup. The request must include the exact resource identity, the current audit reason, `deleteOrphan: true`, and the confirmation string:
 
 ```json
@@ -687,7 +689,7 @@ Current command groups:
 - `openapi` for the machine-readable OpenAPI contract.
 - `audit-events` for recent product audit events.
 - `runtime resources` for the read-only managed runtime resource inventory. Add `--summary` to print only the filtered JSON `summary` object, or `--summary-table` for a human-readable total/grouping/workload summary; use `--project-id` to filter by runtime owner project label.
-- `runtime orphans` for the read-only runtime orphan audit. Use `--project-id` to inspect drift for one runtime owner project label.
+- `runtime orphans` for the read-only runtime orphan audit. Use `--project-id` to inspect drift for one runtime owner project label, and add `--summary-table` when an operator wants reason counts and actionable resource rows instead of raw JSON.
 - `projects`: list, create, get, usage, authorization, audit-events, policy, set-policy, quota-policy, set-quota-policy, members, add-member, credentials, add-credential, delete.
 - `members`: get, delete.
 - `credentials`: get, delete.

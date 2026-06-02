@@ -381,6 +381,83 @@ func TestRuntimeOrphansUsesRuntimeOrphansRoute(t *testing.T) {
 	}
 }
 
+func TestRuntimeOrphansSummaryTablePrintsReadableAudit(t *testing.T) {
+	var method string
+	var uri string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		uri = r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"adapter":"agent-sandbox",
+			"checkedAt":"2026-06-02T08:00:00Z",
+			"namespace":"mbox-smoke",
+			"resourceCount":4,
+			"orphanCount":2,
+			"expectedClean":false,
+			"items":[
+				{
+					"reason":"missing-sandbox-record",
+					"resource":{"adapter":"agent-sandbox","kind":"SandboxClaim","namespace":"mbox-smoke","name":"claim-old"},
+					"projectId":"project-1",
+					"status":"deleted",
+					"message":"sandbox product record was not found",
+					"evidence":["label sandbox-id=sandbox-missing"]
+				},
+				{
+					"reason":"cleanup-pending",
+					"resource":{"adapter":"agent-sandbox","kind":"SandboxClaim","namespace":"mbox-smoke","name":"claim-cleanup"},
+					"projectId":"project-1",
+					"status":"deleted",
+					"message":"sandbox cleanup is pending"
+				}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"runtime", "orphans",
+		"--summary-table",
+		"--namespace", "mbox-smoke",
+		"--project-id", "project-1",
+		"--kind", "SandboxClaim",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || uri != "/v1/runtime/orphans?kind=SandboxClaim&namespace=mbox-smoke&projectId=project-1" {
+		t.Fatalf("unexpected request %s %s", method, uri)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"RUNTIME ORPHANS SUMMARY",
+		"adapter\tagent-sandbox",
+		"checkedAt\t2026-06-02T08:00:00Z",
+		"namespace\tmbox-smoke",
+		"resources\t4",
+		"orphans\t2",
+		"expectedClean\tfalse",
+		"BY REASON",
+		"cleanup-pending\t1",
+		"missing-sandbox-record\t1",
+		"ORPHANS",
+		"REASON\tRESOURCE\tPROJECT\tSTATUS\tMESSAGE",
+		"cleanup-pending\tSandboxClaim mbox-smoke/claim-cleanup\tproject-1\tdeleted\tsandbox cleanup is pending",
+		"missing-sandbox-record\tSandboxClaim mbox-smoke/claim-old\tproject-1\tdeleted\tsandbox product record was not found",
+		"evidence\tlabel sandbox-id=sandbox-missing",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in orphan summary output, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"items"`) || strings.Contains(output, `"expectedClean"`) {
+		t.Fatalf("expected human-readable orphan summary without raw JSON, got %q", output)
+	}
+}
+
 func TestRuntimeResourcesUsesRuntimeResourcesRoute(t *testing.T) {
 	var method string
 	var uri string

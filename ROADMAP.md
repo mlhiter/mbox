@@ -258,6 +258,7 @@ Current status:
 - Done: Runtime inventory `summary.byProject` rollup across API, OpenAPI, SDK, Web, docs, and tests, deriving project attribution only from runtime owner labels after current filters are applied.
 - Done: Web Runtime inventory clickable project attribution strip over `summary.byProject`, reusing the existing read-only `projectId` filter for operator triage without adding quota, billing, RBAC, or capacity semantics.
 - Done: CLI runtime summary table can optionally resolve known project IDs to project names through a read-only `/v1/projects` request, preserving JSON output, API contracts, and label-derived attribution semantics.
+- Done: CLI runtime orphan audit summary table renders the existing `/v1/runtime/orphans` response as reason counts and actionable resource rows for human operators, preserving default JSON output and the explicitly gated one-resource cleanup model.
 - Done: SDK/OpenAPI reverse route-coverage guard for published operations, with explicit non-helper exceptions for terminal WebSocket and preview proxy pass-through routes.
 - Done: SDK/OpenAPI `PolicyDeniedAuditMetadata` schema guard now covers policy/quota denial metadata fields used by operator audit rendering.
 - Done: SDK/OpenAPI project policy and quota policy schema guard now covers response/upsert fields for launch and quota policy clients.
@@ -425,6 +426,7 @@ First slice status:
 83. Done: SDK/OpenAPI schema alignment guard now checks runtime-facing enum values for template validation decisions, sandbox statuses, runtime session types/statuses, execution task statuses/events/streams, artifact kinds, and retained-content storage providers, preserving the SDK as a thin typed client over existing execution primitives.
 84. Done: SDK/OpenAPI schema alignment guard now checks runtime orphan audit and gated cleanup enum/literal values, including orphan reasons, orphan sandbox statuses, cleanup request/result reasons, and the `delete-orphan-runtime-resource` confirmation string, without adding automatic cleanup or new runtime write paths.
 85. Done: SDK/OpenAPI schema alignment guard now checks `RuntimeResourceOwner.kind` values (`sandbox` and `template`) so read-only runtime inventory attribution cannot silently drift away from the SDK owner model.
-86. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+86. Done: CLI runtime orphan audit ergonomics add `runtime orphans --summary-table`, grouping returned orphan rows by reason and rendering resource/project/status/message/evidence columns over the existing read-only audit response while preserving default JSON output and explicit cleanup confirmation.
+87. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.
