@@ -163,7 +163,7 @@ Commands:
   context use NAME
   context remove NAME
   openapi
-  runtime resources [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary|--summary-table]
+  runtime resources [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary|--summary-table] [--resolve-project-names]
   runtime orphans [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND]
   runtime cleanup-orphan --adapter ADAPTER --kind KIND --namespace NAMESPACE --name NAME --reason REASON --confirm delete-orphan-runtime-resource
   audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N]
@@ -279,14 +279,18 @@ func (a *App) runRuntime(ctx context.Context, client *Client, args []string) err
 		kind := fs.String("kind", "", "")
 		summaryOnly := fs.Bool("summary", false, "")
 		summaryTable := fs.Bool("summary-table", false, "")
+		resolveProjectNames := fs.Bool("resolve-project-names", false, "")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 0 {
-			return usageError("usage: mbox runtime resources [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary|--summary-table]")
+			return usageError("usage: mbox runtime resources [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary|--summary-table] [--resolve-project-names]")
 		}
 		if *summaryOnly && *summaryTable {
 			return usageError("mbox runtime resources accepts only one of --summary or --summary-table")
+		}
+		if *resolveProjectNames && !*summaryTable {
+			return usageError("mbox runtime resources --resolve-project-names requires --summary-table")
 		}
 		path := "/v1/runtime/resources"
 		values := url.Values{}
@@ -327,7 +331,15 @@ func (a *App) runRuntime(ctx context.Context, client *Client, args []string) err
 			if err := json.Unmarshal(response.Summary, &summary); err != nil {
 				return fmt.Errorf("runtime resources summary was not readable: %w", err)
 			}
-			return writeRuntimeResourceSummaryTable(a.streams.Stdout, summary)
+			projectNames := map[string]string(nil)
+			if *resolveProjectNames {
+				var err error
+				projectNames, err = runtimeResourceProjectNames(ctx, client)
+				if err != nil {
+					return err
+				}
+			}
+			return writeRuntimeResourceSummaryTable(a.streams.Stdout, summary, projectNames)
 		}
 		return a.get(ctx, client, path)
 	case "orphan", "orphans":
@@ -404,6 +416,15 @@ type runtimeResourceCountTable struct {
 	Count int    `json:"count"`
 }
 
+type runtimeProjectList struct {
+	Items []runtimeProjectListItem `json:"items"`
+}
+
+type runtimeProjectListItem struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type runtimeWorkloadSummaryTable struct {
 	ObservedResources int                          `json:"observedResources"`
 	DesiredPods       int64                        `json:"desiredPods"`
@@ -432,7 +453,23 @@ type runtimeStorageSummaryTable struct {
 	Capacity string `json:"capacity"`
 }
 
-func writeRuntimeResourceSummaryTable(w io.Writer, summary runtimeResourceSummaryTable) error {
+func runtimeResourceProjectNames(ctx context.Context, client *Client) (map[string]string, error) {
+	var projects runtimeProjectList
+	if err := client.JSON(ctx, http.MethodGet, "/v1/projects", nil, &projects); err != nil {
+		return nil, fmt.Errorf("runtime resources project names were not readable: %w", err)
+	}
+	names := make(map[string]string, len(projects.Items))
+	for _, project := range projects.Items {
+		id := strings.TrimSpace(project.ID)
+		name := strings.TrimSpace(project.Name)
+		if id != "" && name != "" {
+			names[id] = name
+		}
+	}
+	return names, nil
+}
+
+func writeRuntimeResourceSummaryTable(w io.Writer, summary runtimeResourceSummaryTable, projectNames map[string]string) error {
 	out := bufio.NewWriter(w)
 	if _, err := fmt.Fprintln(out, "RUNTIME RESOURCES SUMMARY"); err != nil {
 		return err
@@ -446,7 +483,7 @@ func writeRuntimeResourceSummaryTable(w io.Writer, summary runtimeResourceSummar
 	if err := writeRuntimeResourceCountSection(out, "BY NAMESPACE", summary.ByNamespace); err != nil {
 		return err
 	}
-	if err := writeRuntimeResourceCountSection(out, "BY PROJECT", summary.ByProject); err != nil {
+	if err := writeRuntimeResourceCountSection(out, "BY PROJECT", displayRuntimeProjectCounts(summary.ByProject, projectNames)); err != nil {
 		return err
 	}
 	if err := writeRuntimeResourceCountSection(out, "BY OWNER", summary.ByOwner); err != nil {
@@ -456,6 +493,32 @@ func writeRuntimeResourceSummaryTable(w io.Writer, summary runtimeResourceSummar
 		return err
 	}
 	return out.Flush()
+}
+
+func displayRuntimeProjectCounts(counts []runtimeResourceCountTable, projectNames map[string]string) []runtimeResourceCountTable {
+	if len(projectNames) == 0 {
+		return counts
+	}
+	items := make([]runtimeResourceCountTable, 0, len(counts))
+	for _, item := range counts {
+		name := strings.TrimSpace(item.Name)
+		if display := strings.TrimSpace(projectNames[name]); display != "" {
+			name = fmt.Sprintf("%s (%s)", display, shortRuntimeResourceID(name))
+		}
+		items = append(items, runtimeResourceCountTable{
+			Name:  name,
+			Count: item.Count,
+		})
+	}
+	return items
+}
+
+func shortRuntimeResourceID(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= 12 {
+		return value
+	}
+	return value[:8] + "..." + value[len(value)-4:]
 }
 
 func writeRuntimeResourceCountSection(w io.Writer, title string, counts []runtimeResourceCountTable) error {

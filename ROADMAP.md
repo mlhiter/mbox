@@ -257,6 +257,7 @@ Current status:
 - Done: Web Runtime inventory project filter for label-derived per-project runtime attribution and filtered workload rollups, without treating the view as RBAC, quota, billing, or live capacity.
 - Done: Runtime inventory `summary.byProject` rollup across API, OpenAPI, SDK, Web, docs, and tests, deriving project attribution only from runtime owner labels after current filters are applied.
 - Done: Web Runtime inventory clickable project attribution strip over `summary.byProject`, reusing the existing read-only `projectId` filter for operator triage without adding quota, billing, RBAC, or capacity semantics.
+- Done: CLI runtime summary table can optionally resolve known project IDs to project names through a read-only `/v1/projects` request, preserving JSON output, API contracts, and label-derived attribution semantics.
 - Done: SDK/OpenAPI reverse route-coverage guard for published operations, with explicit non-helper exceptions for terminal WebSocket and preview proxy pass-through routes.
 - Done: SDK/OpenAPI `PolicyDeniedAuditMetadata` schema guard now covers policy/quota denial metadata fields used by operator audit rendering.
 - Done: SDK/OpenAPI project policy and quota policy schema guard now covers response/upsert fields for launch and quota policy clients.
@@ -415,6 +416,7 @@ First slice status:
 74. Done: Web project inspector member-management denial ergonomics show requested member principal type, principal, and role in `policy.denied` rows as operator debugging context, preserving audit metadata as non-identity evidence.
 75. Done: Web project inspector member-management ergonomics can register and remove project member records for the starter RBAC model, refresh member/preflight/audit state after mutations, and keep at least one visible owner from being removed in the UI without adding login, invite, or broader route-level RBAC primitives.
 76. Done: Web Runtime inventory attribution ergonomics render `summary.byProject` as clickable project distribution chips, preserving label-derived read-only runtime triage without turning the view into quota, billing, RBAC, metrics utilization, or capacity reservation.
-77. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+77. Done: CLI Runtime inventory attribution ergonomics add `runtime resources --summary-table --resolve-project-names`, resolving known project IDs through `/v1/projects` only for human-readable output while preserving raw JSON and runtime-resource contracts for scripts.
+78. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

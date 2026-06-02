@@ -455,11 +455,90 @@ func TestRuntimeResourcesSummaryTablePrintsReadableSummary(t *testing.T) {
 	}
 }
 
+func TestRuntimeResourcesSummaryTableCanResolveProjectNames(t *testing.T) {
+	var requests []string
+	projectID := "11111111-1111-4111-8111-111111111111"
+	unknownProjectID := "22222222-2222-4222-8222-222222222222"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/runtime/resources":
+			_, _ = w.Write([]byte(`{
+				"adapter":"agent-sandbox",
+				"summary":{
+					"total":3,
+					"byKind":[{"name":"SandboxClaim","count":3}],
+					"byNamespace":[{"name":"mbox-alpha","count":2},{"name":"mbox-beta","count":1}],
+					"byProject":[
+						{"name":"` + projectID + `","count":2},
+						{"name":"` + unknownProjectID + `","count":1}
+					],
+					"byOwner":[],
+					"workload":{
+						"observedResources":3,
+						"desiredPods":3,
+						"observedPods":3,
+						"runningPods":3,
+						"containersReady":3,
+						"containersTotal":3,
+						"restartCount":0,
+						"requests":{"cpu":"750m"},
+						"limits":{},
+						"storage":[]
+					}
+				},
+				"items":[]
+			}`))
+		case "/v1/projects":
+			_, _ = w.Write([]byte(`{"items":[{"id":"` + projectID + `","name":"Runtime Alpha"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"runtime", "resources",
+		"--summary-table",
+		"--resolve-project-names",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(requests, ",") != "GET /v1/runtime/resources,GET /v1/projects" {
+		t.Fatalf("unexpected requests: %#v", requests)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"BY PROJECT",
+		"Runtime Alpha (11111111...1111)\t2",
+		unknownProjectID + "\t1",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in summary table output, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"items"`) || strings.Contains(output, `"summary"`) {
+		t.Fatalf("expected human-readable summary table without raw response JSON, got %q", output)
+	}
+}
+
 func TestRuntimeResourcesSummaryFlagsAreMutuallyExclusive(t *testing.T) {
 	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
 	err := app.Run(context.Background(), []string{"--api-url", "http://127.0.0.1:18080", "runtime", "resources", "--summary", "--summary-table"})
 	if err == nil || !strings.Contains(err.Error(), "only one of --summary or --summary-table") {
 		t.Fatalf("expected mutually exclusive summary flag error, got %v", err)
+	}
+}
+
+func TestRuntimeResourcesResolveProjectNamesRequiresSummaryTable(t *testing.T) {
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{"--api-url", "http://127.0.0.1:18080", "runtime", "resources", "--resolve-project-names"})
+	if err == nil || !strings.Contains(err.Error(), "--resolve-project-names requires --summary-table") {
+		t.Fatalf("expected resolve-project-names summary-table error, got %v", err)
 	}
 }
 
