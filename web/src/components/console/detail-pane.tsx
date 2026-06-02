@@ -588,6 +588,9 @@ function policyDeniedAuditRows(event: AuditEvent, metadata: Record<string, unkno
   const callerMode = auditMetadataString(metadata, "callerMode")
   const callerPrincipalType = auditMetadataString(metadata, "callerPrincipalType")
   const callerPrincipal = auditMetadataString(metadata, "callerPrincipal")
+  const principalType = auditMetadataString(metadata, "principalType")
+  const principal = auditMetadataString(metadata, "principal")
+  const role = auditMetadataString(metadata, "role")
   const templateName = auditMetadataString(metadata, "templateName")
   const templateId = auditMetadataString(metadata, "templateId")
   const image = auditMetadataString(metadata, "image")
@@ -623,6 +626,10 @@ function policyDeniedAuditRows(event: AuditEvent, metadata: Record<string, unkno
     callerPrincipalType && callerPrincipal ? `${callerPrincipalType}:${callerPrincipal}` : callerPrincipal,
     callerMode,
   ].filter(Boolean)
+  const member = [
+    principalType && principal ? `${principalType}:${principal}` : principal,
+    role ? `role:${role}` : "",
+  ].filter(Boolean)
   return [
     {
       key: "Policy denial",
@@ -631,6 +638,7 @@ function policyDeniedAuditRows(event: AuditEvent, metadata: Record<string, unkno
     },
     ...(authorizationAction ? [{ key: "Authorization", value: authorizationAction, tone: "muted" as const }] : []),
     ...(caller.length ? [{ key: "Caller", value: caller.join(" · "), tone: "muted" as const }] : []),
+    ...(member.length ? [{ key: "Member", value: member.join(" · "), tone: "muted" as const }] : []),
     ...(requestShape.length ? [{ key: "Request", value: requestShape.join(" · "), tone: "muted" as const }] : []),
     ...(resourceHints.length ? [{ key: "Resource", value: resourceHints.join(" · "), tone: "muted" as const }] : []),
   ]

@@ -266,6 +266,7 @@ Current status:
 - Done: SDK/OpenAPI execution task schema guard now covers task response/create/watch-event fields for SDK task clients, including persisted output and timing metadata.
 - Done: SDK/OpenAPI artifact schema guard now covers artifact response/create and retained-content metadata fields for SDK artifact clients without expanding artifact storage semantics.
 - Done: SDK/OpenAPI project schema guard now covers project response/create/update fields and catches immutable project update-field drift.
+- Done: Web project inspector audit ergonomics now surfaces member-management denial metadata for requested member principal type, principal, and role as debugging context without treating audit metadata as trusted identity.
 - Remaining: broader route-level user/project RBAC enforcement beyond the current disabled-by-default `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, `credential.manage`, and `member.manage` starters, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
 
 ## Phase 4: Upper-layer Workflow Integrations
@@ -409,6 +410,7 @@ First slice status:
 71. Done: SDK/OpenAPI execution task schema guard covers task response/create/watch-event fields such as command, status, timeout, stdout/stderr, truncation marker, runtime reference, timing metadata, and event stream output fields.
 72. Done: SDK/OpenAPI artifact schema guard covers artifact response/create and retained-content metadata fields such as artifact identity, task linkage, kind/name/URI, size/content metadata, retained-content hash/source/provider/key, and capture time.
 73. Done: SDK/OpenAPI project schema guard covers project response/create/update fields such as name, slug, repository URL, default namespace/template, metadata, and timestamp fields while rejecting immutable `id`/`slug` drift on update schemas.
-74. Next: remaining audit ergonomics, deeper generated-client/schema alignment, or a narrow frontend member-management ergonomics slice that stays inside the starter RBAC boundary.
+74. Done: Web project inspector member-management denial ergonomics show requested member principal type, principal, and role in `policy.denied` rows as operator debugging context, preserving audit metadata as non-identity evidence.
+75. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or a narrow frontend member-management ergonomics slice that stays inside the starter RBAC boundary.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.
