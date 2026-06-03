@@ -1292,6 +1292,107 @@ func TestProjectsUsageSummaryPrintsReadableUsage(t *testing.T) {
 	}
 }
 
+func TestProjectsUsageSummaryCanIncludeRuntimeAttribution(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/projects/project-1/usage":
+			_, _ = w.Write([]byte(`{
+				"projectId":"project-1",
+				"generatedAt":"2026-06-03T09:00:00Z",
+				"sandboxes":{"total":1,"active":1,"running":1,"activeRequests":{"cpu":{},"memory":{},"storage":{}},"runningRequests":{"cpu":{},"memory":{},"storage":{}}},
+				"runtimeSessions":{},
+				"executionTasks":{},
+				"artifacts":{},
+				"templates":{},
+				"credentials":{}
+			}`))
+		case "/v1/runtime/resources":
+			if r.URL.Query().Get("projectId") != "project-1" {
+				t.Fatalf("expected runtime project filter, got %q", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{
+				"adapter":"agent-sandbox",
+				"summary":{
+					"total":2,
+					"byKind":[{"name":"SandboxClaim","count":1},{"name":"SandboxTemplate","count":1}],
+					"byNamespace":[{"name":"mbox-runtime","count":2}],
+					"byProject":[{"name":"project-1","count":2}],
+					"byOwner":[{"name":"project/project-1/sandbox/sandbox-1","count":1}],
+					"workload":{
+						"observedResources":1,
+						"desiredPods":1,
+						"observedPods":1,
+						"runningPods":1,
+						"containersReady":1,
+						"containersTotal":1,
+						"restartCount":2,
+						"requests":{"cpu":"250m","memory":"512Mi"},
+						"limits":{"cpu":"500m"},
+						"storageCapacity":"2Gi",
+						"storage":[{"phase":"Bound","count":1,"capacity":"2Gi"}]
+					}
+				},
+				"items":[]
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"projects", "usage", "project-1",
+		"--summary",
+		"--runtime-attribution",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(requests, ",") != "GET /v1/projects/project-1/usage,GET /v1/runtime/resources?projectId=project-1" {
+		t.Fatalf("unexpected requests: %#v", requests)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"PROJECT USAGE SUMMARY",
+		"RUNTIME ATTRIBUTION",
+		"resources\t2",
+		"byKind\tSandboxClaim=1 SandboxTemplate=1",
+		"byNamespace\tmbox-runtime=2",
+		"ownerLabels\tproject/project-1/sandbox/sandbox-1=1",
+		"observedResources\t1",
+		"desiredPods\t1",
+		"runningPods\t1",
+		"containersReady\t1/1",
+		"restartCount\t2",
+		"requests\tcpu=250m memory=512Mi",
+		"limits\tcpu=500m",
+		"storage\tBound=1(2Gi)",
+		"storageCapacity\t2Gi",
+		"source\t/v1/runtime/resources?projectId=<project-id> label-derived inventory; not metrics, quota, billing, or RBAC",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in usage runtime attribution output, got %q", expected, output)
+		}
+	}
+}
+
+func TestProjectsUsageRuntimeAttributionRequiresSummary(t *testing.T) {
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", "http://127.0.0.1:18080",
+		"projects", "usage", "project-1",
+		"--runtime-attribution",
+	})
+	if err == nil || !strings.Contains(err.Error(), "--runtime-attribution requires --summary") {
+		t.Fatalf("expected runtime attribution summary error, got %v", err)
+	}
+}
+
 func TestAuditEventsUsesAuditEventsRoute(t *testing.T) {
 	var method string
 	var uri string

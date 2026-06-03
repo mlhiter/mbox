@@ -167,7 +167,7 @@ Commands:
   projects list
   projects create --name NAME --namespace NAMESPACE [--slug SLUG]
   projects get <project-id>
-  projects usage <project-id> [--summary]
+  projects usage <project-id> [--summary] [--runtime-attribution]
   projects authorization <project-id> [--action ACTION] [--summary]
   projects members <project-id> [--summary]
   projects add-member <project-id> --principal PRINCIPAL --role owner|operator|viewer [--principal-type user|service_account|automation]
@@ -1533,7 +1533,25 @@ func formatOptionalInt64(value *int64) string {
 	return strconv.FormatInt(*value, 10)
 }
 
-func writeProjectUsageSummary(w io.Writer, usage projectUsageSummary) error {
+func projectRuntimeAttributionSummary(ctx context.Context, client *Client, projectID string) (runtimeResourceSummaryTable, error) {
+	path := "/v1/runtime/resources?projectId=" + url.QueryEscape(strings.TrimSpace(projectID))
+	var response struct {
+		Summary json.RawMessage `json:"summary"`
+	}
+	if err := client.JSON(ctx, http.MethodGet, path, nil, &response); err != nil {
+		return runtimeResourceSummaryTable{}, err
+	}
+	if len(response.Summary) == 0 || strings.TrimSpace(string(response.Summary)) == "null" {
+		return runtimeResourceSummaryTable{}, fmt.Errorf("runtime resources response did not include summary")
+	}
+	var summary runtimeResourceSummaryTable
+	if err := json.Unmarshal(response.Summary, &summary); err != nil {
+		return runtimeResourceSummaryTable{}, fmt.Errorf("runtime resources summary was not readable: %w", err)
+	}
+	return summary, nil
+}
+
+func writeProjectUsageSummary(w io.Writer, usage projectUsageSummary, runtimeSummary *runtimeResourceSummaryTable) error {
 	out := bufio.NewWriter(w)
 	if _, err := fmt.Fprintln(out, "PROJECT USAGE SUMMARY"); err != nil {
 		return err
@@ -1644,7 +1662,55 @@ func writeProjectUsageSummary(w io.Writer, usage projectUsageSummary) error {
 			}
 		}
 	}
+	if runtimeSummary != nil {
+		if err := writeProjectRuntimeAttribution(out, *runtimeSummary); err != nil {
+			return err
+		}
+	}
 	return out.Flush()
+}
+
+func writeProjectRuntimeAttribution(w io.Writer, summary runtimeResourceSummaryTable) error {
+	if _, err := fmt.Fprintln(w, "\nRUNTIME ATTRIBUTION"); err != nil {
+		return err
+	}
+	rows := []struct {
+		label string
+		value any
+	}{
+		{"resources", summary.Total},
+		{"byKind", formatNamedCounts(summary.ByKind)},
+		{"byNamespace", formatNamedCounts(summary.ByNamespace)},
+		{"ownerLabels", formatNamedCounts(summary.ByOwner)},
+		{"observedResources", summary.Workload.ObservedResources},
+		{"desiredPods", summary.Workload.DesiredPods},
+		{"observedPods", summary.Workload.ObservedPods},
+		{"runningPods", summary.Workload.RunningPods},
+		{"containersReady", fmt.Sprintf("%d/%d", summary.Workload.ContainersReady, summary.Workload.ContainersTotal)},
+		{"restartCount", summary.Workload.RestartCount},
+		{"requests", formatRuntimeSummaryStringMap(summary.Workload.Requests)},
+		{"limits", formatRuntimeSummaryStringMap(summary.Workload.Limits)},
+		{"storage", formatRuntimeStorageSummaries(summary.Workload.Storage)},
+	}
+	for _, row := range rows {
+		if _, err := fmt.Fprintf(w, "%s\t%v\n", row.label, row.value); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(summary.Workload.StorageCapacity) != "" {
+		if _, err := fmt.Fprintf(w, "storageCapacity\t%s\n", strings.TrimSpace(summary.Workload.StorageCapacity)); err != nil {
+			return err
+		}
+	}
+	if len(summary.Workload.QuantityIssues) > 0 {
+		if _, err := fmt.Fprintf(w, "quantityIssues\t%d\n", len(summary.Workload.QuantityIssues)); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(w, "source\t/v1/runtime/resources?projectId=<project-id> label-derived inventory; not metrics, quota, billing, or RBAC"); err != nil {
+		return err
+	}
+	return nil
 }
 
 func writeProjectUsageRequestLine(w io.Writer, label string, requests sandboxResourceRequestUsage) error {
@@ -2662,16 +2728,20 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 		return a.get(ctx, client, "/v1/projects/"+url.PathEscape(args[1]))
 	case "usage":
 		if len(args) < 2 {
-			return usageError("usage: mbox projects usage <project-id> [--summary]")
+			return usageError("usage: mbox projects usage <project-id> [--summary] [--runtime-attribution]")
 		}
 		fs := flag.NewFlagSet("projects usage", flag.ContinueOnError)
 		fs.SetOutput(a.streams.Stderr)
 		summary := fs.Bool("summary", false, "")
+		runtimeAttribution := fs.Bool("runtime-attribution", false, "")
 		if err := fs.Parse(args[2:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 0 {
-			return usageError("usage: mbox projects usage <project-id> [--summary]")
+			return usageError("usage: mbox projects usage <project-id> [--summary] [--runtime-attribution]")
+		}
+		if *runtimeAttribution && !*summary {
+			return usageError("mbox projects usage --runtime-attribution requires --summary")
 		}
 		path := "/v1/projects/" + url.PathEscape(args[1]) + "/usage"
 		if *summary {
@@ -2679,7 +2749,15 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 			if err := client.JSON(ctx, http.MethodGet, path, nil, &usage); err != nil {
 				return err
 			}
-			return writeProjectUsageSummary(a.streams.Stdout, usage)
+			var runtimeSummary *runtimeResourceSummaryTable
+			if *runtimeAttribution {
+				summary, err := projectRuntimeAttributionSummary(ctx, client, args[1])
+				if err != nil {
+					return err
+				}
+				runtimeSummary = &summary
+			}
+			return writeProjectUsageSummary(a.streams.Stdout, usage, runtimeSummary)
 		}
 		return a.get(ctx, client, path)
 	case "authorization", "authz":
