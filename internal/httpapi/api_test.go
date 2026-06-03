@@ -502,6 +502,12 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		projectProperties["updatedAt"] == nil {
 		t.Fatalf("expected Project optional metadata/template/timestamp properties, got %#v", projectSchema["properties"])
 	}
+	if format := schemaPropertyFormat(projectSchema, "id"); format != "uuid" {
+		t.Fatalf("expected Project id uuid format, got %q", format)
+	}
+	if format := schemaPropertyFormat(projectSchema, "defaultTemplateId"); format != "uuid" {
+		t.Fatalf("expected Project defaultTemplateId uuid format, got %q", format)
+	}
 	projectCreate, ok := schemas["ProjectCreate"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected ProjectCreate schema in %#v", schemas["ProjectCreate"])
@@ -516,7 +522,8 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok ||
 		projectCreateProperties["slug"] == nil ||
 		projectCreateProperties["repositoryUrl"] == nil ||
-		projectCreateProperties["metadata"] == nil {
+		projectCreateProperties["metadata"] == nil ||
+		projectCreateProperties["defaultTemplateId"] != nil {
 		t.Fatalf("expected ProjectCreate slug/repository/metadata properties, got %#v", projectCreate["properties"])
 	}
 	projectUpdate, ok := schemas["ProjectUpdate"].(map[string]any)
@@ -533,6 +540,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		projectUpdateProperties["id"] != nil ||
 		projectUpdateProperties["slug"] != nil {
 		t.Fatalf("expected ProjectUpdate mutable fields and immutable-field omissions, got %#v", projectUpdate["properties"])
+	}
+	if format := schemaPropertyFormat(projectUpdate, "defaultTemplateId"); format != "uuid" {
+		t.Fatalf("expected ProjectUpdate defaultTemplateId uuid format, got %q", format)
 	}
 	sandboxSchema, ok := schemas["Sandbox"].(map[string]any)
 	if !ok {
@@ -560,6 +570,11 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if ref := schemaArrayItemRef(sandboxSchema, "ports"); ref != "#/components/schemas/SandboxPort" {
 		t.Fatalf("expected Sandbox ports to reference SandboxPort, got %q", ref)
 	}
+	for _, property := range []string{"id", "projectId", "templateId"} {
+		if format := schemaPropertyFormat(sandboxSchema, property); format != "uuid" {
+			t.Fatalf("expected Sandbox %s uuid format, got %q", property, format)
+		}
+	}
 	sandboxCreateSchema, ok := schemas["SandboxCreate"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected SandboxCreate schema in %#v", schemas["SandboxCreate"])
@@ -569,6 +584,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(sandboxCreateRequired, "projectId") ||
 		!anySliceContainsString(sandboxCreateRequired, "name") {
 		t.Fatalf("expected SandboxCreate projectId/name required fields, got %#v", sandboxCreateSchema["required"])
+	}
+	if format := schemaPropertyFormat(sandboxCreateSchema, "projectId"); format != "uuid" {
+		t.Fatalf("expected SandboxCreate projectId uuid format, got %q", format)
 	}
 	sandboxUpdateSchema, ok := schemas["SandboxUpdate"].(map[string]any)
 	if !ok {
@@ -1163,6 +1181,11 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected AuditEvent schema in %#v", schemas["AuditEvent"])
 	}
+	for _, property := range []string{"id", "projectId", "resourceId"} {
+		if format := schemaPropertyFormat(auditEventSchema, property); format != "uuid" {
+			t.Fatalf("expected AuditEvent %s uuid format, got %q", property, format)
+		}
+	}
 	for property, expectedRef := range map[string]string{
 		"action":   "#/components/schemas/AuditEventAction",
 		"metadata": "#/components/schemas/AuditEventMetadata",
@@ -1232,6 +1255,11 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	}
 	if _, ok := properties["matchedMemberRole"].(map[string]any); !ok {
 		t.Fatalf("expected matchedMemberRole policy denied metadata property, got %#v", properties["matchedMemberRole"])
+	}
+	for _, property := range []string{"templateId", "sandboxId", "matchedMemberId"} {
+		if format := schemaPropertyFormat(deniedSchema, property); format != "uuid" {
+			t.Fatalf("expected PolicyDeniedAuditMetadata %s uuid format, got %q", property, format)
+		}
 	}
 	policyKind, ok := properties["policyKind"].(map[string]any)
 	if !ok {
@@ -1844,6 +1872,19 @@ func schemaPropertyRef(schema map[string]any, property string) string {
 	}
 	ref, _ := propertySchema["$ref"].(string)
 	return ref
+}
+
+func schemaPropertyFormat(schema map[string]any, property string) string {
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	propertySchema, ok := properties[property].(map[string]any)
+	if !ok {
+		return ""
+	}
+	format, _ := propertySchema["format"].(string)
+	return format
 }
 
 func schemaArrayItemRef(schema map[string]any, property string) string {

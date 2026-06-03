@@ -1188,6 +1188,22 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    delete broken.components.schemas.Project.properties.id.format
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-format-mismatch" &&
+        issue.schema === "Project" &&
+        issue.property === "id" &&
+        issue.expectedFormat === "uuid",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.RuntimeSessionCreate.required = []
     assertOpenAPIAlignment(broken)
   },
@@ -3340,6 +3356,32 @@ function schemaComponents() {
     ArtifactContent: ["capturedAt"],
     AuditEvent: ["createdAt"],
   })
+  markUUIDProperties(schemas, {
+    RuntimeResourceOwner: ["projectId", "sandboxId", "templateId"],
+    RuntimeOrphan: ["sandboxId", "templateId", "projectId"],
+    ProjectUsage: ["projectId"],
+    BoundarySummary: ["projectId", "templateId", "sandboxId"],
+    BoundaryCredentialRef: ["id"],
+    Project: ["id", "defaultTemplateId"],
+    ProjectUpdate: ["defaultTemplateId"],
+    ProjectPolicy: ["projectId"],
+    ProjectQuotaPolicy: ["projectId"],
+    ProjectMember: ["id", "projectId"],
+    ProjectCredential: ["id", "projectId"],
+    ProjectAuthorizationDecision: ["projectId"],
+    EnvironmentTemplate: ["id", "projectId"],
+    TemplateCreate: ["projectId"],
+    TemplateValidationRunCreate: ["projectId"],
+    Sandbox: ["id", "projectId", "templateId"],
+    SandboxCreate: ["projectId", "templateId"],
+    RuntimeSession: ["id", "projectId", "sandboxId"],
+    ExecutionTask: ["id", "projectId", "sandboxId"],
+    Artifact: ["id", "projectId", "sandboxId", "taskId"],
+    ArtifactCreate: ["taskId"],
+    ArtifactContent: ["artifactId"],
+    AuditEvent: ["id", "projectId", "resourceId"],
+    PolicyDeniedAuditMetadata: ["templateId", "sandboxId", "matchedMemberId"],
+  })
   return schemas
 }
 
@@ -3350,6 +3392,17 @@ function markDateTimeProperties(schemas, contracts) {
     for (const property of properties) {
       assert(schema.properties[property], `missing smoke schema property ${schemaName}.${property}`)
       schema.properties[property].format = "date-time"
+    }
+  }
+}
+
+function markUUIDProperties(schemas, contracts) {
+  for (const [schemaName, properties] of Object.entries(contracts)) {
+    const schema = schemas[schemaName]
+    assert(schema, `missing smoke schema ${schemaName}`)
+    for (const property of properties) {
+      assert(schema.properties[property], `missing smoke schema property ${schemaName}.${property}`)
+      schema.properties[property].format = "uuid"
     }
   }
 }

@@ -565,7 +565,7 @@ func openAPIComponents() map[string]any {
 			"TemplateUpdate":                templateSchema(false, true),
 			"TemplatePort":                  objectSchema(requiredProps("name", "port", "protocol"), prop("name", stringSchema()), prop("port", integerSchema()), prop("protocol", stringSchema())),
 			"SecretRef":                     objectSchema(requiredProps("name"), prop("name", stringSchema()), prop("key", stringSchema())),
-			"TemplateValidationRunCreate":   objectSchema(nil, prop("projectId", stringSchema()), prop("name", stringSchema()), prop("metadata", objectAnySchema())),
+			"TemplateValidationRunCreate":   objectSchema(nil, prop("projectId", uuidSchema()), prop("name", stringSchema()), prop("metadata", objectAnySchema())),
 			"TemplateValidationRunDecision": objectSchema(requiredProps("status"), prop("status", enumSchema("passed", "failed"))),
 			"TemplateValidationRun":         objectSchema(requiredProps("template", "sandbox"), prop("template", schemaRef("EnvironmentTemplate")), prop("sandbox", schemaRef("Sandbox"))),
 			"BoundarySummary":               boundarySummarySchema(),
@@ -655,6 +655,10 @@ func requiredProps(names ...string) []string {
 
 func stringSchema() map[string]any {
 	return map[string]any{"type": "string"}
+}
+
+func uuidSchema() map[string]any {
+	return map[string]any{"type": "string", "format": "uuid"}
 }
 
 func boolSchema() map[string]any {
@@ -756,12 +760,12 @@ func projectSchema(create bool) map[string]any {
 		prop("slug", stringSchema()),
 		prop("repositoryUrl", stringSchema()),
 		prop("defaultNamespace", stringSchema()),
-		prop("defaultTemplateId", stringSchema()),
 		prop("metadata", objectAnySchema()),
 	}
 	if !create {
 		required = requiredProps("id", "name", "slug", "defaultNamespace")
-		props = append([]schemaProp{prop("id", stringSchema())}, props...)
+		props = append([]schemaProp{prop("id", uuidSchema())}, props...)
+		props = append(props, prop("defaultTemplateId", uuidSchema()))
 		props = append(props, prop("createdAt", dateTimeSchema()), prop("updatedAt", dateTimeSchema()))
 	}
 	return objectSchema(required, props...)
@@ -772,7 +776,7 @@ func projectUpdateSchema() map[string]any {
 		prop("name", stringSchema()),
 		prop("repositoryUrl", stringSchema()),
 		prop("defaultNamespace", stringSchema()),
-		prop("defaultTemplateId", nullable(stringSchema())),
+		prop("defaultTemplateId", nullable(uuidSchema())),
 		prop("metadata", objectAnySchema()),
 	)
 }
@@ -787,7 +791,7 @@ func projectPolicySchema(upsert bool) map[string]any {
 	}
 	if !upsert {
 		required = requiredProps("projectId", "enforcement")
-		props = append([]schemaProp{prop("projectId", stringSchema())}, props...)
+		props = append([]schemaProp{prop("projectId", uuidSchema())}, props...)
 		props = append(props, prop("createdAt", dateTimeSchema()), prop("updatedAt", dateTimeSchema()))
 	}
 	return objectSchema(required, props...)
@@ -802,7 +806,7 @@ func projectQuotaPolicySchema(upsert bool) map[string]any {
 	}
 	if !upsert {
 		required = requiredProps("projectId", "enforcement")
-		props = append([]schemaProp{prop("projectId", stringSchema())}, props...)
+		props = append([]schemaProp{prop("projectId", uuidSchema())}, props...)
 		props = append(props, prop("createdAt", dateTimeSchema()), prop("updatedAt", dateTimeSchema()))
 	}
 	return objectSchema(required, props...)
@@ -810,7 +814,7 @@ func projectQuotaPolicySchema(upsert bool) map[string]any {
 
 func projectAuthorizationDecisionSchema() map[string]any {
 	schema := objectSchema(requiredProps("projectId", "action", "allowed", "enforced", "evaluation", "requiredRoles", "caller", "memberCount", "availableActions", "notes"),
-		prop("projectId", stringSchema()),
+		prop("projectId", uuidSchema()),
 		prop("action", enumSchema(projectAuthorizationActions...)),
 		prop("allowed", boolSchema()),
 		prop("enforced", boolSchema()),
@@ -836,7 +840,7 @@ func projectMemberSchema(create bool) map[string]any {
 	}
 	if !create {
 		required = requiredProps("id", "projectId", "principalType", "principal", "role")
-		props = append([]schemaProp{prop("id", stringSchema()), prop("projectId", stringSchema())}, props...)
+		props = append([]schemaProp{prop("id", uuidSchema()), prop("projectId", uuidSchema())}, props...)
 		props = append(props, prop("createdAt", dateTimeSchema()), prop("updatedAt", dateTimeSchema()))
 	}
 	schema := objectSchema(required, props...)
@@ -857,7 +861,7 @@ func projectCredentialSchema(create bool) map[string]any {
 	}
 	if !create {
 		required = requiredProps("id", "projectId", "name", "slug", "type", "secretRef")
-		props = append([]schemaProp{prop("id", stringSchema()), prop("projectId", stringSchema())}, props...)
+		props = append([]schemaProp{prop("id", uuidSchema()), prop("projectId", uuidSchema())}, props...)
 		props = append(props, prop("createdAt", dateTimeSchema()), prop("updatedAt", dateTimeSchema()))
 	}
 	return objectSchema(required, props...)
@@ -865,7 +869,7 @@ func projectCredentialSchema(create bool) map[string]any {
 
 func projectUsageSchema() map[string]any {
 	schema := objectSchema(requiredProps("projectId", "generatedAt", "sandboxes", "runtimeSessions", "executionTasks", "artifacts", "templates", "credentials"),
-		prop("projectId", stringSchema()),
+		prop("projectId", uuidSchema()),
 		prop("generatedAt", dateTimeSchema()),
 		prop("sandboxes", schemaRef("ProjectSandboxUsage")),
 		prop("runtimeSessions", schemaRef("ProjectSessionUsage")),
@@ -989,11 +993,11 @@ func projectCredentialUsageSchema() map[string]any {
 func boundarySummarySchema() map[string]any {
 	schema := objectSchema(requiredProps("kind", "templateId", "templateName", "serviceAccountTokenAutomount", "image", "workingDir", "envVarCount", "secretProjection", "networkPolicy", "networkPolicyProjection", "lifecyclePolicyProjection", "policyEnforcement", "credentialProjection", "controllerPermissions", "runtimeAccess", "cleanup", "checks"),
 		prop("kind", enumSchema("template", "sandbox")),
-		prop("projectId", stringSchema()),
+		prop("projectId", uuidSchema()),
 		prop("projectName", stringSchema()),
-		prop("templateId", stringSchema()),
+		prop("templateId", uuidSchema()),
 		prop("templateName", stringSchema()),
-		prop("sandboxId", stringSchema()),
+		prop("sandboxId", uuidSchema()),
 		prop("sandboxName", stringSchema()),
 		prop("sandboxStatus", enumSchema("pending", "running", "stopped", "failed", "deleted")),
 		prop("namespace", stringSchema()),
@@ -1039,7 +1043,7 @@ func boundaryCheckSchema() map[string]any {
 
 func boundaryCredentialRefSchema() map[string]any {
 	return objectSchema(requiredProps("id", "name", "slug", "type", "secretRef"),
-		prop("id", stringSchema()),
+		prop("id", uuidSchema()),
 		prop("name", stringSchema()),
 		prop("slug", stringSchema()),
 		prop("type", enumSchema("git", "registry", "kubernetes", "ssh", "generic")),
@@ -1123,9 +1127,9 @@ func runtimeResourceSchema() map[string]any {
 func runtimeResourceOwnerSchema() map[string]any {
 	return objectSchema(requiredProps("kind"),
 		prop("kind", enumSchema("sandbox", "template")),
-		prop("projectId", stringSchema()),
-		prop("sandboxId", stringSchema()),
-		prop("templateId", stringSchema()),
+		prop("projectId", uuidSchema()),
+		prop("sandboxId", uuidSchema()),
+		prop("templateId", uuidSchema()),
 	)
 }
 
@@ -1221,9 +1225,9 @@ func runtimeOrphanSchema() map[string]any {
 	return objectSchema(requiredProps("reason", "resource", "message"),
 		prop("reason", schemaRef("RuntimeOrphanReason")),
 		prop("resource", schemaRef("RuntimeResource")),
-		prop("sandboxId", stringSchema()),
-		prop("templateId", stringSchema()),
-		prop("projectId", stringSchema()),
+		prop("sandboxId", uuidSchema()),
+		prop("templateId", uuidSchema()),
+		prop("projectId", uuidSchema()),
 		prop("runtimeRef", schemaRef("RuntimeRef")),
 		prop("status", enumSchema("pending", "running", "stopped", "failed", "deleted")),
 		prop("deletedAt", dateTimeSchema()),
@@ -1261,11 +1265,11 @@ func runtimeOrphanCleanupResultSchema() map[string]any {
 
 func auditEventSchema() map[string]any {
 	schema := objectSchema(requiredProps("id", "action", "resourceType", "createdAt"),
-		prop("id", stringSchema()),
-		prop("projectId", stringSchema()),
+		prop("id", uuidSchema()),
+		prop("projectId", uuidSchema()),
 		prop("action", schemaRef("AuditEventAction")),
 		prop("resourceType", stringSchema()),
-		prop("resourceId", stringSchema()),
+		prop("resourceId", uuidSchema()),
 		prop("resourceName", stringSchema()),
 		prop("actor", stringSchema()),
 		prop("source", stringSchema()),
@@ -1297,11 +1301,11 @@ func policyDeniedAuditMetadataSchema() map[string]any {
 		prop("operation", enumSchema(knownPolicyDeniedOperations...)),
 		prop("reason", stringSchema()),
 		prop("requestId", stringSchema()),
-		prop("templateId", stringSchema()),
+		prop("templateId", uuidSchema()),
 		prop("templateName", stringSchema()),
 		prop("image", stringSchema()),
 		prop("serviceAccountName", stringSchema()),
-		prop("sandboxId", stringSchema()),
+		prop("sandboxId", uuidSchema()),
 		prop("authorizationAction", enumSchema(projectAuthorizationActions...)),
 		prop("callerMode", enumSchema("anonymous", "shared_token", "trusted_header")),
 		prop("callerPrincipalType", enumSchema("anonymous", "shared_token", "user", "service_account", "automation")),
@@ -1318,7 +1322,7 @@ func policyDeniedAuditMetadataSchema() map[string]any {
 		prop("principalType", enumSchema("user", "service_account", "automation")),
 		prop("principal", stringSchema()),
 		prop("role", enumSchema("owner", "operator", "viewer")),
-		prop("matchedMemberId", stringSchema()),
+		prop("matchedMemberId", uuidSchema()),
 		prop("matchedMemberPrincipalType", enumSchema("user", "service_account", "automation")),
 		prop("matchedMemberPrincipal", stringSchema()),
 		prop("matchedMemberRole", enumSchema("owner", "operator", "viewer")),
@@ -1349,11 +1353,11 @@ func templateSchema(create bool, update bool) map[string]any {
 		prop("metadata", objectAnySchema()),
 	}
 	if !update {
-		props = append([]schemaProp{prop("projectId", stringSchema()), prop("slug", stringSchema())}, props...)
+		props = append([]schemaProp{prop("projectId", uuidSchema()), prop("slug", stringSchema())}, props...)
 	}
 	if !create && !update {
 		required = requiredProps("id", "name", "slug", "image")
-		props = append([]schemaProp{prop("id", stringSchema())}, props...)
+		props = append([]schemaProp{prop("id", uuidSchema())}, props...)
 		props = append(props, prop("createdAt", dateTimeSchema()), prop("updatedAt", dateTimeSchema()))
 	}
 	return objectSchema(required, props...)
@@ -1362,8 +1366,8 @@ func templateSchema(create bool, update bool) map[string]any {
 func sandboxSchema(create bool) map[string]any {
 	required := requiredProps("projectId", "name")
 	props := []schemaProp{
-		prop("projectId", stringSchema()),
-		prop("templateId", stringSchema()),
+		prop("projectId", uuidSchema()),
+		prop("templateId", uuidSchema()),
 		prop("name", stringSchema()),
 		prop("slug", stringSchema()),
 		prop("namespace", stringSchema()),
@@ -1372,7 +1376,7 @@ func sandboxSchema(create bool) map[string]any {
 	}
 	if !create {
 		required = requiredProps("id", "projectId", "name", "slug", "status", "namespace", "serviceAccountName")
-		props = append([]schemaProp{prop("id", stringSchema())}, props...)
+		props = append([]schemaProp{prop("id", uuidSchema())}, props...)
 		props = append(props,
 			prop("status", enumSchema("pending", "running", "stopped", "failed", "deleted")),
 			prop("runtimeRef", schemaRef("RuntimeRef")),
@@ -1406,7 +1410,7 @@ func runtimeSessionSchema(create bool) map[string]any {
 	required := requiredProps("type")
 	if !create {
 		required = requiredProps("id", "projectId", "sandboxId", "type", "status", "startedAt")
-		props = append([]schemaProp{prop("id", stringSchema()), prop("projectId", stringSchema()), prop("sandboxId", stringSchema())}, props...)
+		props = append([]schemaProp{prop("id", uuidSchema()), prop("projectId", uuidSchema()), prop("sandboxId", uuidSchema())}, props...)
 		props = append(props,
 			prop("status", enumSchema("active", "ended", "failed")),
 			prop("userAgent", stringSchema()),
@@ -1429,9 +1433,9 @@ func executionTaskSchema(create bool) map[string]any {
 		)
 	}
 	return objectSchema(requiredProps("id", "projectId", "sandboxId", "status", "command", "timeoutSeconds", "stdout", "stderr", "outputTruncated", "createdAt", "updatedAt"),
-		prop("id", stringSchema()),
-		prop("projectId", stringSchema()),
-		prop("sandboxId", stringSchema()),
+		prop("id", uuidSchema()),
+		prop("projectId", uuidSchema()),
+		prop("sandboxId", uuidSchema()),
 		prop("status", enumSchema("queued", "running", "succeeded", "failed", "canceled", "timed_out")),
 		prop("command", arraySchema(stringSchema())),
 		prop("timeoutSeconds", integerSchema()),
@@ -1452,7 +1456,7 @@ func executionTaskSchema(create bool) map[string]any {
 func artifactSchema(create bool) map[string]any {
 	required := requiredProps("kind", "name", "uri")
 	props := []schemaProp{
-		prop("taskId", stringSchema()),
+		prop("taskId", uuidSchema()),
 		prop("kind", enumSchema("file", "directory", "log", "report", "screenshot", "image", "link", "other")),
 		prop("name", stringSchema()),
 		prop("uri", stringSchema()),
@@ -1462,7 +1466,7 @@ func artifactSchema(create bool) map[string]any {
 	}
 	if !create {
 		required = requiredProps("id", "projectId", "sandboxId", "kind", "name", "uri")
-		props = append([]schemaProp{prop("id", stringSchema()), prop("projectId", stringSchema()), prop("sandboxId", stringSchema())}, props...)
+		props = append([]schemaProp{prop("id", uuidSchema()), prop("projectId", uuidSchema()), prop("sandboxId", uuidSchema())}, props...)
 		props = append(props, prop("retainedContent", schemaRef("ArtifactContent")), prop("createdAt", dateTimeSchema()), prop("updatedAt", dateTimeSchema()))
 	}
 	return objectSchema(required, props...)
@@ -1470,7 +1474,7 @@ func artifactSchema(create bool) map[string]any {
 
 func artifactContentSchema() map[string]any {
 	return objectSchema(requiredProps("artifactId", "sizeBytes", "sha256", "sourceUri", "storageProvider", "capturedAt"),
-		prop("artifactId", stringSchema()),
+		prop("artifactId", uuidSchema()),
 		prop("contentType", stringSchema()),
 		prop("sizeBytes", numberSchema()),
 		prop("sha256", stringSchema()),

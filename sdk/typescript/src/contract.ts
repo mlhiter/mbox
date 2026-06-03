@@ -48,7 +48,7 @@ export type SDKSchemaContractEntry = {
 }
 
 export type SDKSchemaPrimitiveType = "string" | "integer" | "number" | "boolean" | "object" | "array"
-export type SDKSchemaStringFormat = "date-time"
+export type SDKSchemaStringFormat = "date-time" | "uuid"
 
 export type SDKSchemaPropertyTypeContract = {
   property: string
@@ -276,6 +276,10 @@ function binaryRequest(): SDKRouteRequestContract {
 
 function dateTimeFormats(...properties: string[]): SDKSchemaPropertyFormatContract[] {
   return properties.map((property) => ({ property, format: "date-time" }))
+}
+
+function uuidFormats(...properties: string[]): SDKSchemaPropertyFormatContract[] {
+  return properties.map((property) => ({ property, format: "uuid" }))
 }
 
 export const SDK_ROUTE_CONTRACT = [
@@ -740,6 +744,7 @@ export const SDK_SCHEMA_CONTRACT = [
     required: ["kind"],
     properties: ["kind", "projectId", "sandboxId", "templateId"],
     enumProperties: [{ property: "kind", values: runtimeResourceOwnerKindValues }],
+    propertyFormats: uuidFormats("projectId", "sandboxId", "templateId"),
   },
   {
     schema: "RuntimeResourceObservation",
@@ -840,7 +845,7 @@ export const SDK_SCHEMA_CONTRACT = [
     ],
     enumProperties: [{ property: "status", values: executionTaskStatusValues }],
     propertyTypes: [{ property: "outputTruncated", type: "boolean" }],
-    propertyFormats: dateTimeFormats("startedAt", "finishedAt", "createdAt", "updatedAt"),
+    propertyFormats: [...uuidFormats("id", "projectId", "sandboxId"), ...dateTimeFormats("startedAt", "finishedAt", "createdAt", "updatedAt")],
     propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
     arrayItemTypes: [{ property: "command", type: "string" }],
   },
@@ -873,7 +878,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "message",
       "evidence",
     ],
-    propertyFormats: dateTimeFormats("deletedAt"),
+    propertyFormats: [...uuidFormats("sandboxId", "templateId", "projectId"), ...dateTimeFormats("deletedAt")],
     propertyRefs: [
       { property: "reason", ref: "RuntimeOrphanReason" },
       { property: "resource", ref: "RuntimeResource" },
@@ -937,7 +942,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "credentials",
       "notes",
     ],
-    propertyFormats: dateTimeFormats("generatedAt"),
+    propertyFormats: [...uuidFormats("projectId"), ...dateTimeFormats("generatedAt")],
     propertyRefs: [
       { property: "sandboxes", ref: "ProjectSandboxUsage" },
       { property: "runtimeSessions", ref: "ProjectSessionUsage" },
@@ -1010,6 +1015,7 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "sandboxStatus", values: sandboxStatusValues },
       { property: "policyEnforcement", values: projectPolicyEnforcementValues },
     ],
+    propertyFormats: uuidFormats("projectId", "templateId", "sandboxId"),
     propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
     arrayItemRefs: [
       { property: "previewPorts", ref: "BoundaryPort" },
@@ -1043,6 +1049,7 @@ export const SDK_SCHEMA_CONTRACT = [
     required: ["id", "name", "slug", "type", "secretRef"],
     properties: ["id", "name", "slug", "type", "target", "secretRef", "usage"],
     enumProperties: [{ property: "type", values: projectCredentialTypeValues }],
+    propertyFormats: uuidFormats("id"),
     arrayItemTypes: [{ property: "usage", type: "string" }],
   },
   {
@@ -1059,18 +1066,20 @@ export const SDK_SCHEMA_CONTRACT = [
       "createdAt",
       "updatedAt",
     ],
-    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
+    propertyFormats: [...uuidFormats("id", "defaultTemplateId"), ...dateTimeFormats("createdAt", "updatedAt")],
   },
   {
     schema: "ProjectCreate",
     required: ["name", "defaultNamespace"],
     properties: ["name", "slug", "repositoryUrl", "defaultNamespace", "metadata"],
+    absentProperties: ["id", "defaultTemplateId"],
   },
   {
     schema: "ProjectUpdate",
     properties: ["name", "repositoryUrl", "defaultNamespace", "defaultTemplateId", "metadata"],
     absentProperties: ["id", "slug"],
     nullableProperties: ["defaultTemplateId"],
+    propertyFormats: uuidFormats("defaultTemplateId"),
   },
   {
     schema: "ProjectPolicy",
@@ -1085,7 +1094,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "updatedAt",
     ],
     enumProperties: [{ property: "enforcement", values: projectPolicyEnforcementValues }],
-    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
+    propertyFormats: [...uuidFormats("projectId"), ...dateTimeFormats("createdAt", "updatedAt")],
     arrayItemTypes: [
       { property: "allowedImagePrefixes", type: "string" },
       { property: "allowedServiceAccounts", type: "string" },
@@ -1112,7 +1121,7 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "maxRetainedArtifactBytes", type: "integer" },
     ],
     enumProperties: [{ property: "enforcement", values: projectPolicyEnforcementValues }],
-    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
+    propertyFormats: [...uuidFormats("projectId"), ...dateTimeFormats("createdAt", "updatedAt")],
   },
   {
     schema: "ProjectQuotaPolicyUpsert",
@@ -1132,7 +1141,7 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "principalType", values: projectMemberPrincipalTypeValues },
       { property: "role", values: projectMemberRoleValues },
     ],
-    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
+    propertyFormats: [...uuidFormats("id", "projectId"), ...dateTimeFormats("createdAt", "updatedAt")],
   },
   {
     schema: "ProjectMemberCreate",
@@ -1246,6 +1255,7 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "caller", ref: "CallerInfo" },
       { property: "matchedMember", ref: "ProjectMember" },
     ],
+    propertyFormats: uuidFormats("projectId"),
     propertyTypes: [
       { property: "allowed", type: "boolean" },
       { property: "enforced", type: "boolean" },
@@ -1483,7 +1493,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "updatedAt",
     ],
     enumProperties: [{ property: "type", values: projectCredentialTypeValues }],
-    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
+    propertyFormats: [...uuidFormats("id", "projectId"), ...dateTimeFormats("createdAt", "updatedAt")],
     propertyRefs: [{ property: "secretRef", ref: "SecretRef" }],
     arrayItemTypes: [{ property: "usage", type: "string" }],
   },
@@ -1523,7 +1533,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "createdAt",
       "updatedAt",
     ],
-    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
+    propertyFormats: [...uuidFormats("id", "projectId"), ...dateTimeFormats("createdAt", "updatedAt")],
     arrayItemTypes: [{ property: "startupCommand", type: "string" }],
     arrayItemRefs: [
       { property: "exposedPorts", ref: "TemplatePort" },
@@ -1550,6 +1560,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "lifecyclePolicy",
       "metadata",
     ],
+    propertyFormats: uuidFormats("projectId"),
     arrayItemTypes: [{ property: "startupCommand", type: "string" }],
     arrayItemRefs: [
       { property: "exposedPorts", ref: "TemplatePort" },
@@ -1583,6 +1594,7 @@ export const SDK_SCHEMA_CONTRACT = [
   {
     schema: "TemplateValidationRunCreate",
     properties: ["projectId", "name", "metadata"],
+    propertyFormats: uuidFormats("projectId"),
   },
   {
     schema: "TemplateValidationRunDecision",
@@ -1629,7 +1641,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "deletedAt",
     ],
     enumProperties: [{ property: "status", values: sandboxStatusValues }],
-    propertyFormats: dateTimeFormats("createdAt", "updatedAt", "deletedAt"),
+    propertyFormats: [...uuidFormats("id", "projectId", "templateId"), ...dateTimeFormats("createdAt", "updatedAt", "deletedAt")],
     propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
     arrayItemRefs: [{ property: "ports", ref: "SandboxPort" }],
   },
@@ -1637,6 +1649,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "SandboxCreate",
     required: ["projectId", "name"],
     properties: ["projectId", "templateId", "name", "slug", "namespace", "serviceAccountName", "metadata"],
+    propertyFormats: uuidFormats("projectId", "templateId"),
   },
   {
     schema: "SandboxUpdate",
@@ -1678,7 +1691,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "createdAt",
       "updatedAt",
     ],
-    propertyFormats: dateTimeFormats("startedAt", "endedAt", "createdAt", "updatedAt"),
+    propertyFormats: [...uuidFormats("id", "projectId", "sandboxId"), ...dateTimeFormats("startedAt", "endedAt", "createdAt", "updatedAt")],
     enumProperties: [
       { property: "type", values: runtimeSessionTypeValues },
       { property: "status", values: runtimeSessionStatusValues },
@@ -1711,7 +1724,7 @@ export const SDK_SCHEMA_CONTRACT = [
     ],
     propertyTypes: [{ property: "sizeBytes", type: "number" }],
     enumProperties: [{ property: "kind", values: artifactKindValues }],
-    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
+    propertyFormats: [...uuidFormats("id", "projectId", "sandboxId", "taskId"), ...dateTimeFormats("createdAt", "updatedAt")],
     propertyRefs: [{ property: "retainedContent", ref: "ArtifactContent" }],
   },
   {
@@ -1720,6 +1733,7 @@ export const SDK_SCHEMA_CONTRACT = [
     properties: ["taskId", "kind", "name", "uri", "contentType", "sizeBytes", "metadata"],
     propertyTypes: [{ property: "sizeBytes", type: "number" }],
     enumProperties: [{ property: "kind", values: artifactKindValues }],
+    propertyFormats: uuidFormats("taskId"),
   },
   {
     schema: "ArtifactContent",
@@ -1727,7 +1741,7 @@ export const SDK_SCHEMA_CONTRACT = [
     properties: ["artifactId", "contentType", "sizeBytes", "sha256", "sourceUri", "storageProvider", "storageKey", "capturedAt"],
     propertyTypes: [{ property: "sizeBytes", type: "number" }],
     enumProperties: [{ property: "storageProvider", values: artifactStorageProviderValues }],
-    propertyFormats: dateTimeFormats("capturedAt"),
+    propertyFormats: [...uuidFormats("artifactId"), ...dateTimeFormats("capturedAt")],
   },
   {
     schema: "AuditEvent",
@@ -1744,7 +1758,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "metadata",
       "createdAt",
     ],
-    propertyFormats: dateTimeFormats("createdAt"),
+    propertyFormats: [...uuidFormats("id", "projectId", "resourceId"), ...dateTimeFormats("createdAt")],
     propertyRefs: [
       { property: "action", ref: "AuditEventAction" },
       { property: "metadata", ref: "AuditEventMetadata" },
@@ -1800,6 +1814,7 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "matchedMemberPrincipalType", values: projectMemberPrincipalTypeValues },
       { property: "matchedMemberRole", values: projectMemberRoleValues },
     ],
+    propertyFormats: uuidFormats("templateId", "sandboxId", "matchedMemberId"),
   },
 ] as const satisfies readonly SDKSchemaContractEntry[]
 
