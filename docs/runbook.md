@@ -206,6 +206,7 @@ go run ./cmd/mbox projects usage <project-id>
 go run ./cmd/mbox projects usage <project-id> --summary
 go run ./cmd/mbox projects audit-events <project-id> --action policy.denied --operation sandbox.launch --reason "active sandbox quota exceeded" --actor cli-smoke --source mbox-cli --filter-request-id cli-smoke-request --since 2026-05-30T00:00:00Z --until 2026-05-30T01:00:00Z
 go run ./cmd/mbox audit-events --project-id <project-id> --summary --since 2026-05-30T00:00:00Z --until 2026-05-30T01:00:00Z
+go run ./cmd/mbox projects audit-events <project-id> --summary --since 2026-05-30T00:00:00Z --until 2026-05-30T01:00:00Z
 go run ./cmd/mbox projects audit-events <project-id> --policy-denied-summary --operation sandbox.launch --since 2026-05-30T00:00:00Z --until 2026-05-30T01:00:00Z
 go run ./cmd/mbox projects policy <project-id> --summary
 go run ./cmd/mbox projects quota-policy <project-id>

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,36 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestHelpListsAuditSummaryFlags(t *testing.T) {
+	stderr := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: stderr})
+	if err := app.Run(context.Background(), []string{"help"}); err != nil {
+		t.Fatal(err)
+	}
+	output := stderr.String()
+	for _, expected := range []string{
+		"audit-events [--project-id PROJECT]",
+		"[--limit N] [--summary] [--policy-denied-summary]",
+		"projects audit-events <project-id>",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected help to include %q, got %q", expected, output)
+		}
+	}
+}
+
+func TestNoArgsPrintsHelpWithAuditSummaryFlags(t *testing.T) {
+	stderr := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: stderr})
+	err := app.Run(context.Background(), nil)
+	if err != flag.ErrHelp {
+		t.Fatalf("expected flag.ErrHelp, got %v", err)
+	}
+	if !strings.Contains(stderr.String(), "[--limit N] [--summary] [--policy-denied-summary]") {
+		t.Fatalf("expected no-args help to include audit summary flags, got %q", stderr.String())
+	}
+}
 
 func TestProjectsCreatePostsExpectedPayload(t *testing.T) {
 	var method string
@@ -1397,6 +1428,20 @@ func TestAuditEventsSummaryFlagsAreMutuallyExclusive(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "only one of --summary or --policy-denied-summary") {
 		t.Fatalf("expected mutually exclusive audit summary error, got %v", err)
+	}
+}
+
+func TestProjectsAuditEventsUsageListsSummaryFlags(t *testing.T) {
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", "http://127.0.0.1:1",
+		"projects",
+		"audit-events",
+	})
+	if err == nil ||
+		!strings.Contains(err.Error(), "projects audit-events <project-id>") ||
+		!strings.Contains(err.Error(), "[--summary] [--policy-denied-summary]") {
+		t.Fatalf("expected projects audit-events usage with summary flags, got %v", err)
 	}
 }
 
