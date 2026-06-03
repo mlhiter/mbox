@@ -1231,6 +1231,23 @@ assert.throws(
         issue.schema === "ProjectSandboxUsage" &&
         issue.property === "runningRequests" &&
         issue.expectedSchema === "SandboxResourceRequestUsage",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectSessionUsage.properties.active.type = "string"
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-type-mismatch" &&
+        issue.schema === "ProjectSessionUsage" &&
+        issue.property === "active" &&
+        issue.expectedType === "integer" &&
+        issue.actualType === "string",
     ),
 )
 assert.throws(
@@ -2327,6 +2344,7 @@ function schemaComponents() {
     "ProjectPolicyUpsert",
     "ProjectQuotaPolicy",
     "ProjectQuotaPolicyUpsert",
+    "ResourceUsageValue",
     "ProjectMember",
     "ProjectMemberCreate",
     "ProjectCredential",
@@ -2546,6 +2564,7 @@ function schemaComponents() {
       "memoryRequests",
       "storageRequests",
     ]),
+    ResourceUsageValue: objectSchema(["value", "count"]),
     ProjectCredentialUsage: objectSchema(["total", "git", "registry", "kubernetes", "ssh", "generic"]),
     BoundarySummary: objectSchema([
       "kind",
@@ -2867,6 +2886,29 @@ function schemaComponents() {
   schemas.SandboxResourceRequestUsage.properties.cpu = jsonRef("ResourceQuantityUsage")
   schemas.SandboxResourceRequestUsage.properties.memory = jsonRef("ResourceQuantityUsage")
   schemas.SandboxResourceRequestUsage.properties.storage = jsonRef("ResourceQuantityUsage")
+  for (const [schemaName, properties] of Object.entries({
+    ProjectSandboxUsage: [
+      "total",
+      "active",
+      "pending",
+      "running",
+      "stopped",
+      "failed",
+      "deleted",
+      "cleanupPending",
+    ],
+    SandboxResourceRequestUsage: ["count"],
+    ResourceQuantityUsage: ["declared", "missing", "invalid"],
+    ProjectSessionUsage: ["total", "active", "ended", "failed", "terminal", "ide", "notebook", "browser", "command", "custom"],
+    ProjectTaskUsage: ["total", "queued", "running", "succeeded", "failed", "canceled", "timedOut"],
+    ProjectTemplateUsage: ["projectScoped", "globalVisible"],
+    ProjectCredentialUsage: ["total", "git", "registry", "kubernetes", "ssh", "generic"],
+    ResourceUsageValue: ["count"],
+  })) {
+    for (const property of properties) {
+      schemas[schemaName].properties[property].type = "integer"
+    }
+  }
   schemas.ProjectTemplateUsage.properties.cpuRequests = arrayRef("ResourceUsageValue")
   schemas.ProjectTemplateUsage.properties.memoryRequests = arrayRef("ResourceUsageValue")
   schemas.ProjectTemplateUsage.properties.storageRequests = arrayRef("ResourceUsageValue")

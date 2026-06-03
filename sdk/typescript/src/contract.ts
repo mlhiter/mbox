@@ -1205,6 +1205,28 @@ export const SDK_SCHEMA_CONTRACT = [
       "activeRequests",
       "runningRequests",
     ],
+    properties: [
+      "total",
+      "active",
+      "pending",
+      "running",
+      "stopped",
+      "failed",
+      "deleted",
+      "cleanupPending",
+      "activeRequests",
+      "runningRequests",
+    ],
+    propertyTypes: [
+      { property: "total", type: "integer" },
+      { property: "active", type: "integer" },
+      { property: "pending", type: "integer" },
+      { property: "running", type: "integer" },
+      { property: "stopped", type: "integer" },
+      { property: "failed", type: "integer" },
+      { property: "deleted", type: "integer" },
+      { property: "cleanupPending", type: "integer" },
+    ],
     propertyRefs: [
       { property: "activeRequests", ref: "SandboxResourceRequestUsage" },
       { property: "runningRequests", ref: "SandboxResourceRequestUsage" },
@@ -1213,6 +1235,8 @@ export const SDK_SCHEMA_CONTRACT = [
   {
     schema: "SandboxResourceRequestUsage",
     required: ["count", "cpu", "memory", "storage"],
+    properties: ["count", "cpu", "memory", "storage"],
+    propertyTypes: [{ property: "count", type: "integer" }],
     propertyRefs: [
       { property: "cpu", ref: "ResourceQuantityUsage" },
       { property: "memory", ref: "ResourceQuantityUsage" },
@@ -1223,14 +1247,42 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "ResourceQuantityUsage",
     required: ["declared", "missing", "invalid"],
     properties: ["total", "declared", "missing", "invalid"],
+    propertyTypes: [
+      { property: "declared", type: "integer" },
+      { property: "missing", type: "integer" },
+      { property: "invalid", type: "integer" },
+    ],
   },
   {
     schema: "ProjectSessionUsage",
     required: ["total", "active", "ended", "failed", "terminal", "ide", "notebook", "browser", "command", "custom"],
+    properties: ["total", "active", "ended", "failed", "terminal", "ide", "notebook", "browser", "command", "custom"],
+    propertyTypes: [
+      { property: "total", type: "integer" },
+      { property: "active", type: "integer" },
+      { property: "ended", type: "integer" },
+      { property: "failed", type: "integer" },
+      { property: "terminal", type: "integer" },
+      { property: "ide", type: "integer" },
+      { property: "notebook", type: "integer" },
+      { property: "browser", type: "integer" },
+      { property: "command", type: "integer" },
+      { property: "custom", type: "integer" },
+    ],
   },
   {
     schema: "ProjectTaskUsage",
     required: ["total", "queued", "running", "succeeded", "failed", "canceled", "timedOut"],
+    properties: ["total", "queued", "running", "succeeded", "failed", "canceled", "timedOut"],
+    propertyTypes: [
+      { property: "total", type: "integer" },
+      { property: "queued", type: "integer" },
+      { property: "running", type: "integer" },
+      { property: "succeeded", type: "integer" },
+      { property: "failed", type: "integer" },
+      { property: "canceled", type: "integer" },
+      { property: "timedOut", type: "integer" },
+    ],
   },
   {
     schema: "ProjectArtifactUsage",
@@ -1253,6 +1305,10 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "ProjectTemplateUsage",
     required: ["projectScoped", "globalVisible"],
     properties: ["projectScoped", "globalVisible", "cpuRequests", "memoryRequests", "storageRequests"],
+    propertyTypes: [
+      { property: "projectScoped", type: "integer" },
+      { property: "globalVisible", type: "integer" },
+    ],
     arrayItemRefs: [
       { property: "cpuRequests", ref: "ResourceUsageValue" },
       { property: "memoryRequests", ref: "ResourceUsageValue" },
@@ -1262,6 +1318,21 @@ export const SDK_SCHEMA_CONTRACT = [
   {
     schema: "ProjectCredentialUsage",
     required: ["total", "git", "registry", "kubernetes", "ssh", "generic"],
+    properties: ["total", "git", "registry", "kubernetes", "ssh", "generic"],
+    propertyTypes: [
+      { property: "total", type: "integer" },
+      { property: "git", type: "integer" },
+      { property: "registry", type: "integer" },
+      { property: "kubernetes", type: "integer" },
+      { property: "ssh", type: "integer" },
+      { property: "generic", type: "integer" },
+    ],
+  },
+  {
+    schema: "ResourceUsageValue",
+    required: ["value", "count"],
+    properties: ["value", "count"],
+    propertyTypes: [{ property: "count", type: "integer" }],
   },
   {
     schema: "SecretRef",
