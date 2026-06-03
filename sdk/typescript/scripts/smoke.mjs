@@ -857,6 +857,23 @@ assert.throws(
         issue.reason === "missing-schema-property" &&
         issue.schema === "PolicyDeniedAuditMetadata" &&
         issue.property === "role",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.PolicyDeniedAuditMetadata.properties.operation.enum =
+      broken.components.schemas.PolicyDeniedAuditMetadata.properties.operation.enum.filter((value) => value !== "sandbox.launch")
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "PolicyDeniedAuditMetadata" &&
+        issue.property === "operation" &&
+        issue.enumValue === "sandbox.launch",
     ),
 )
 assert.throws(
@@ -2709,6 +2726,31 @@ function schemaComponents() {
   schemas.Artifact.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]
   schemas.ArtifactCreate.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]
   schemas.ArtifactContent.properties.storageProvider.enum = ["postgres", "filesystem", "s3"]
+  schemas.PolicyDeniedAuditMetadata.properties.operation.enum = [
+    "sandbox.launch",
+    "template.validation",
+    "project.policy.update",
+    "project.quota_policy.update",
+    "runtime.resolve",
+    "runtime.logs",
+    "runtime.events",
+    "runtime.ports",
+    "runtime.preview.proxy",
+    "runtime.terminal",
+    "runtime.session.create",
+    "runtime.session.end",
+    "execution.task.create",
+    "execution.task.cancel",
+    "execution.task.events",
+    "artifact.write",
+    "artifact.content.workspace.read",
+    "artifact.content.capture",
+    "artifact.content.upload",
+    "project.credential.create",
+    "project.credential.delete",
+    "project.member.create",
+    "project.member.delete",
+  ]
   schemas.RuntimeResourceOwner.properties.kind.enum = ["sandbox", "template"]
   schemas.RuntimeOrphanReason = {
     type: "string",

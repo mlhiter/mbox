@@ -163,6 +163,31 @@ const runtimeOrphanReasonValues = [
 ] as const
 const runtimeOrphanCleanupConfirmValues = ["delete-orphan-runtime-resource"] as const
 const runtimeResourceOwnerKindValues = ["sandbox", "template"] as const
+const policyDeniedOperationValues = [
+  "sandbox.launch",
+  "template.validation",
+  "project.policy.update",
+  "project.quota_policy.update",
+  "runtime.resolve",
+  "runtime.logs",
+  "runtime.events",
+  "runtime.ports",
+  "runtime.preview.proxy",
+  "runtime.terminal",
+  "runtime.session.create",
+  "runtime.session.end",
+  "execution.task.create",
+  "execution.task.cancel",
+  "execution.task.events",
+  "artifact.write",
+  "artifact.content.workspace.read",
+  "artifact.content.capture",
+  "artifact.content.upload",
+  "project.credential.create",
+  "project.credential.delete",
+  "project.member.create",
+  "project.member.delete",
+] as const
 
 function jsonResponse(schema: string, status = "200"): SDKRouteResponseContract {
   return { status, schema }
@@ -1498,6 +1523,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "principal",
       "role",
     ],
+    enumProperties: [{ property: "operation", values: policyDeniedOperationValues }],
   },
 ] as const satisfies readonly SDKSchemaContractEntry[]
 
