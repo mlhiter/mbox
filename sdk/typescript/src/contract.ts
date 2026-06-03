@@ -37,6 +37,7 @@ export type SDKSchemaContractEntry = {
   required?: readonly string[]
   properties?: readonly string[]
   absentProperties?: readonly string[]
+  nullableProperties?: readonly string[]
   propertyTypes?: readonly SDKSchemaPropertyTypeContract[]
   propertyFormats?: readonly SDKSchemaPropertyFormatContract[]
   enumProperties?: readonly SDKSchemaEnumPropertyContract[]
@@ -109,6 +110,7 @@ export type SDKOpenAPIAlignmentIssue = {
     | "missing-schema-required"
     | "missing-schema-property"
     | "unexpected-schema-property"
+    | "schema-property-nullable-mismatch"
     | "schema-property-type-mismatch"
     | "schema-property-format-mismatch"
     | "missing-schema-enum-value"
@@ -131,6 +133,8 @@ export type SDKOpenAPIAlignmentIssue = {
   required?: readonly string[]
   properties?: readonly string[]
   property?: string
+  expectedNullable?: boolean
+  actualNullable?: boolean
   expectedType?: SDKSchemaPrimitiveType
   actualType?: string
   expectedFormat?: SDKSchemaStringFormat
@@ -151,6 +155,7 @@ export type SDKOpenAPIAlignmentResult = {
   checkedSchemaRequired: number
   checkedSchemaProperties: number
   checkedSchemaAbsentProperties: number
+  checkedSchemaNullableProperties: number
   checkedSchemaPropertyTypes: number
   checkedSchemaPropertyFormats: number
   checkedSchemaEnumValues: number
@@ -1058,6 +1063,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "ProjectUpdate",
     properties: ["name", "repositoryUrl", "defaultNamespace", "defaultTemplateId", "metadata"],
     absentProperties: ["id", "slug"],
+    nullableProperties: ["defaultTemplateId"],
   },
   {
     schema: "ProjectPolicy",
@@ -1611,6 +1617,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "SandboxUpdate",
     properties: ["name", "status", "namespace", "serviceAccountName", "runtimeRef", "ports", "metadata"],
     absentProperties: ["projectId", "templateId", "slug"],
+    nullableProperties: ["runtimeRef"],
     enumProperties: [{ property: "status", values: sandboxStatusValues }],
     propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
     arrayItemRefs: [{ property: "ports", ref: "SandboxPort" }],
@@ -1791,6 +1798,7 @@ export function checkOpenAPIAlignment(
   let checkedSchemaRequired = 0
   let checkedSchemaProperties = 0
   let checkedSchemaAbsentProperties = 0
+  let checkedSchemaNullableProperties = 0
   let checkedSchemaPropertyTypes = 0
   let checkedSchemaPropertyFormats = 0
   let checkedSchemaEnumValues = 0
@@ -1868,6 +1876,19 @@ export function checkOpenAPIAlignment(
       checkedSchemaAbsentProperties += 1
       if (properties.has(property)) {
         missing.push({ ...schemaContract, reason: "unexpected-schema-property", property })
+      }
+    }
+    for (const property of schemaContract.nullableProperties ?? []) {
+      checkedSchemaNullableProperties += 1
+      const actualNullable = schemaPropertyNullable(schema, property)
+      if (actualNullable !== true) {
+        missing.push({
+          ...schemaContract,
+          reason: "schema-property-nullable-mismatch",
+          property,
+          expectedNullable: true,
+          actualNullable,
+        })
       }
     }
     for (const propertyType of schemaContract.propertyTypes ?? []) {
@@ -1978,6 +1999,7 @@ export function checkOpenAPIAlignment(
     checkedSchemaRequired,
     checkedSchemaProperties,
     checkedSchemaAbsentProperties,
+    checkedSchemaNullableProperties,
     checkedSchemaPropertyTypes,
     checkedSchemaPropertyFormats,
     checkedSchemaEnumValues,
@@ -2011,7 +2033,7 @@ export async function fetchAndAssertOpenAPIAlignment(
 
 function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
   if (result.ok) {
-    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaPropertyTypes} SDK schema property types, ${result.checkedSchemaPropertyFormats} SDK schema property formats, ${result.checkedSchemaEnumValues} SDK schema enum values, ${result.checkedSchemaPropertyRefs} SDK schema property refs, ${result.checkedSchemaArrayItemRefs} SDK schema array item refs, ${result.checkedSchemaArrayItemTypes} SDK schema array item types, and ${result.checkedSchemaArrayItemEnumValues} SDK schema array item enum values`
+    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaNullableProperties} SDK schema nullable properties, ${result.checkedSchemaPropertyTypes} SDK schema property types, ${result.checkedSchemaPropertyFormats} SDK schema property formats, ${result.checkedSchemaEnumValues} SDK schema enum values, ${result.checkedSchemaPropertyRefs} SDK schema property refs, ${result.checkedSchemaArrayItemRefs} SDK schema array item refs, ${result.checkedSchemaArrayItemTypes} SDK schema array item types, and ${result.checkedSchemaArrayItemEnumValues} SDK schema array item enum values`
   }
   const preview = result.missing
     .slice(0, 10)
@@ -2019,11 +2041,15 @@ function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
       if (issue.schema) {
         const property = issue.property ? `:${issue.property}` : ""
         const enumValue = issue.enumValue ? `=${issue.enumValue}` : ""
+        const nullableValue =
+          issue.expectedNullable !== undefined
+            ? ` expectedNullable=${String(issue.expectedNullable)} actualNullable=${String(issue.actualNullable ?? false)}`
+            : ""
         const typeValue = issue.expectedType ? ` expected=${issue.expectedType} actual=${issue.actualType ?? "unknown"}` : ""
         const formatValue = issue.expectedFormat
           ? ` expectedFormat=${issue.expectedFormat} actualFormat=${issue.actualFormat ?? "unknown"}`
           : ""
-        return `${issue.schema} (${issue.reason}${property}${enumValue}${typeValue}${formatValue})`
+        return `${issue.schema} (${issue.reason}${property}${enumValue}${nullableValue}${typeValue}${formatValue})`
       }
       if (issue.reason === "missing-sdk-route-coverage") {
         return `OpenAPI operation ${issue.method} ${issue.path} (${issue.reason})`
@@ -2308,6 +2334,14 @@ function schemaPropertyType(schema: Record<string, unknown>, property: string) {
     return undefined
   }
   return propertySchema.type
+}
+
+function schemaPropertyNullable(schema: Record<string, unknown>, property: string) {
+  if (!isRecord(schema.properties)) {
+    return false
+  }
+  const propertySchema = schema.properties[property]
+  return isRecord(propertySchema) && propertySchema.nullable === true
 }
 
 function schemaPropertyFormat(schema: Record<string, unknown>, property: string) {

@@ -1123,6 +1123,22 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    delete broken.components.schemas.SandboxUpdate.properties.runtimeRef.nullable
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-nullable-mismatch" &&
+        issue.schema === "SandboxUpdate" &&
+        issue.property === "runtimeRef" &&
+        issue.expectedNullable === true,
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.RuntimeSession.required = broken.components.schemas.RuntimeSession.required.filter(
       (name) => name !== "startedAt",
     )
@@ -3001,6 +3017,7 @@ function schemaComponents() {
   schemas.ProjectTemplateUsage.properties.cpuRequests = arrayRef("ResourceUsageValue")
   schemas.ProjectTemplateUsage.properties.memoryRequests = arrayRef("ResourceUsageValue")
   schemas.ProjectTemplateUsage.properties.storageRequests = arrayRef("ResourceUsageValue")
+  schemas.ProjectUpdate.properties.defaultTemplateId.nullable = true
   schemas.ProjectAuthorizationDecision.properties.caller = jsonRef("CallerInfo")
   schemas.ProjectAuthorizationDecision.properties.matchedMember = jsonRef("ProjectMember")
   schemas.ProjectAuthorizationDecision.properties.requiredRoles = arrayEnum(["owner", "operator", "viewer"])
@@ -3112,6 +3129,7 @@ function schemaComponents() {
   schemas.Sandbox.properties.runtimeRef = jsonRef("RuntimeRef")
   schemas.Sandbox.properties.ports = arrayRef("SandboxPort")
   schemas.SandboxUpdate.properties.runtimeRef = jsonRef("RuntimeRef")
+  schemas.SandboxUpdate.properties.runtimeRef.nullable = true
   schemas.SandboxUpdate.properties.ports = arrayRef("SandboxPort")
   schemas.TemplateValidationRun.properties.template = jsonRef("EnvironmentTemplate")
   schemas.TemplateValidationRun.properties.sandbox = jsonRef("Sandbox")
