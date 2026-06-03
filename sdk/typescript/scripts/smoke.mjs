@@ -1368,6 +1368,22 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.ProjectCredential.properties.secretRef = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "ProjectCredential" &&
+        issue.property === "secretRef" &&
+        issue.expectedSchema === "SecretRef",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.ProjectCredentialCreate.properties.type.enum = ["git", "registry", "ssh", "generic"]
     assertOpenAPIAlignment(broken)
   },
@@ -2491,6 +2507,8 @@ function schemaComponents() {
   schemas.ProjectMember.properties.role.enum = ["owner", "operator", "viewer"]
   schemas.ProjectMemberCreate.properties.principalType.enum = ["user", "service_account", "automation"]
   schemas.ProjectMemberCreate.properties.role.enum = ["owner", "operator", "viewer"]
+  schemas.ProjectCredential.properties.secretRef = jsonRef("SecretRef")
+  schemas.ProjectCredentialCreate.properties.secretRef = jsonRef("SecretRef")
   schemas.ProjectCredential.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
   schemas.ProjectCredentialCreate.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
   schemas.BoundarySummary.properties.kind.enum = ["template", "sandbox"]

@@ -1218,12 +1218,14 @@ export const SDK_SCHEMA_CONTRACT = [
       "updatedAt",
     ],
     enumProperties: [{ property: "type", values: projectCredentialTypeValues }],
+    propertyRefs: [{ property: "secretRef", ref: "SecretRef" }],
   },
   {
     schema: "ProjectCredentialCreate",
     required: ["name", "type", "secretRef"],
     properties: ["name", "slug", "type", "target", "secretRef", "usage", "metadata"],
     enumProperties: [{ property: "type", values: projectCredentialTypeValues }],
+    propertyRefs: [{ property: "secretRef", ref: "SecretRef" }],
   },
   {
     schema: "TemplatePort",

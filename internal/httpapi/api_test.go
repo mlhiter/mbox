@@ -429,6 +429,16 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(credentialRequired, "secretRef") {
 		t.Fatalf("expected ProjectCredential identity/secretRef required fields, got %#v", credentialSchema["required"])
 	}
+	if ref := schemaPropertyRef(credentialSchema, "secretRef"); ref != "#/components/schemas/SecretRef" {
+		t.Fatalf("expected ProjectCredential secretRef to reference SecretRef, got %q", ref)
+	}
+	credentialCreateSchema, ok := schemas["ProjectCredentialCreate"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ProjectCredentialCreate schema in %#v", schemas["ProjectCredentialCreate"])
+	}
+	if ref := schemaPropertyRef(credentialCreateSchema, "secretRef"); ref != "#/components/schemas/SecretRef" {
+		t.Fatalf("expected ProjectCredentialCreate secretRef to reference SecretRef, got %q", ref)
+	}
 	templateCreateSchema, ok := schemas["TemplateCreate"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected TemplateCreate schema in %#v", schemas["TemplateCreate"])
