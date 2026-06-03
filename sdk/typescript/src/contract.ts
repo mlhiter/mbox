@@ -1012,12 +1012,20 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "ProjectQuotaPolicy",
     required: ["projectId", "enforcement"],
     properties: ["projectId", "enforcement", "maxActiveSandboxes", "maxRetainedArtifactBytes", "createdAt", "updatedAt"],
+    propertyTypes: [
+      { property: "maxActiveSandboxes", type: "integer" },
+      { property: "maxRetainedArtifactBytes", type: "integer" },
+    ],
     enumProperties: [{ property: "enforcement", values: projectPolicyEnforcementValues }],
   },
   {
     schema: "ProjectQuotaPolicyUpsert",
     required: ["enforcement"],
     properties: ["enforcement", "maxActiveSandboxes", "maxRetainedArtifactBytes"],
+    propertyTypes: [
+      { property: "maxActiveSandboxes", type: "integer" },
+      { property: "maxRetainedArtifactBytes", type: "integer" },
+    ],
     enumProperties: [{ property: "enforcement", values: projectPolicyEnforcementValues }],
   },
   {

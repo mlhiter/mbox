@@ -940,6 +940,23 @@ assert.throws(
         issue.reason === "missing-schema-required" &&
         issue.schema === "ProjectQuotaPolicy" &&
         issue.property === "projectId",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectQuotaPolicyUpsert.properties.maxRetainedArtifactBytes.type = "string"
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-type-mismatch" &&
+        issue.schema === "ProjectQuotaPolicyUpsert" &&
+        issue.property === "maxRetainedArtifactBytes" &&
+        issue.expectedType === "integer" &&
+        issue.actualType === "string",
     ),
 )
 assert.throws(
@@ -2761,6 +2778,10 @@ function schemaComponents() {
   schemas.PolicyDeniedAuditMetadata.properties.incomingBytes.type = "integer"
   schemas.PolicyDeniedAuditMetadata.properties.maxActiveSandboxes.type = "integer"
   schemas.PolicyDeniedAuditMetadata.properties.maxRetainedArtifactBytes.type = "integer"
+  schemas.ProjectQuotaPolicy.properties.maxActiveSandboxes.type = "integer"
+  schemas.ProjectQuotaPolicy.properties.maxRetainedArtifactBytes.type = "integer"
+  schemas.ProjectQuotaPolicyUpsert.properties.maxActiveSandboxes.type = "integer"
+  schemas.ProjectQuotaPolicyUpsert.properties.maxRetainedArtifactBytes.type = "integer"
   schemas.APIInfo.properties.runtimeController = jsonRef("RuntimeInfo")
   schemas.APIInfo.properties.runtimeAccess = jsonRef("RuntimeInfo")
   schemas.APIInfo.properties.artifactContent = jsonRef("ArtifactInfo")
