@@ -1778,6 +1778,10 @@ export const SDK_SCHEMA_CONTRACT = [
       "principalType",
       "principal",
       "role",
+      "matchedMemberId",
+      "matchedMemberPrincipalType",
+      "matchedMemberPrincipal",
+      "matchedMemberRole",
     ],
     propertyTypes: [
       { property: "incomingBytes", type: "integer" },
@@ -1793,6 +1797,8 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "enforcement", values: projectPolicyEnforcementValues },
       { property: "principalType", values: projectMemberPrincipalTypeValues },
       { property: "role", values: projectMemberRoleValues },
+      { property: "matchedMemberPrincipalType", values: projectMemberPrincipalTypeValues },
+      { property: "matchedMemberRole", values: projectMemberRoleValues },
     ],
   },
 ] as const satisfies readonly SDKSchemaContractEntry[]

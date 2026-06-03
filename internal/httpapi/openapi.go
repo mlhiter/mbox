@@ -1318,6 +1318,10 @@ func policyDeniedAuditMetadataSchema() map[string]any {
 		prop("principalType", enumSchema("user", "service_account", "automation")),
 		prop("principal", stringSchema()),
 		prop("role", enumSchema("owner", "operator", "viewer")),
+		prop("matchedMemberId", stringSchema()),
+		prop("matchedMemberPrincipalType", enumSchema("user", "service_account", "automation")),
+		prop("matchedMemberPrincipal", stringSchema()),
+		prop("matchedMemberRole", enumSchema("owner", "operator", "viewer")),
 	)
 	schema["description"] = "Metadata shape for action=policy.denied. Current coverage is intentionally narrow: sandbox launch policy/quota/RBAC denials, template validation launch policy/RBAC denials, project policy/member/credential-management RBAC denials, runtime operation RBAC denials, artifact write RBAC denials, and retained artifact byte quota denials."
 	schema["additionalProperties"] = true

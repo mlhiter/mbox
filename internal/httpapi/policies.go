@@ -311,7 +311,8 @@ func projectPolicyViolations(
 }
 
 type policyDeniedError struct {
-	reason string
+	reason   string
+	metadata map[string]any
 }
 
 func (e policyDeniedError) Error() string {
@@ -320,6 +321,10 @@ func (e policyDeniedError) Error() string {
 
 func policyDeny(reason string) error {
 	return policyDeniedError{reason: reason}
+}
+
+func policyDenyWithMetadata(reason string, metadata map[string]any) error {
+	return policyDeniedError{reason: reason, metadata: metadata}
 }
 
 func writePolicyError(w http.ResponseWriter, err error) bool {
@@ -347,6 +352,11 @@ func (api *API) recordPolicyDeniedAuditEvent(
 	}
 	if metadata == nil {
 		metadata = map[string]any{}
+	}
+	for key, value := range denied.metadata {
+		if _, exists := metadata[key]; !exists {
+			metadata[key] = value
+		}
 	}
 	metadata["operation"] = operation
 	metadata["reason"] = denied.reason

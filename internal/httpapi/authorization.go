@@ -165,7 +165,19 @@ func (api *API) enforceProjectAuthorization(r *http.Request, projectID uuid.UUID
 	if len(decision.Notes) > 0 && strings.TrimSpace(decision.Notes[0]) != "" {
 		reason = "project RBAC denied: " + decision.Notes[0]
 	}
-	return policyDeny(reason)
+	return policyDenyWithMetadata(reason, projectAuthorizationPolicyDeniedMetadata(decision))
+}
+
+func projectAuthorizationPolicyDeniedMetadata(decision ProjectAuthorizationDecision) map[string]any {
+	if decision.MatchedMember == nil {
+		return nil
+	}
+	return map[string]any{
+		"matchedMemberId":            decision.MatchedMember.ID.String(),
+		"matchedMemberPrincipalType": decision.MatchedMember.PrincipalType,
+		"matchedMemberPrincipal":     decision.MatchedMember.Principal,
+		"matchedMemberRole":          decision.MatchedMember.Role,
+	}
 }
 
 func (api *API) projectAuthorizationActionEnforced(action string) bool {

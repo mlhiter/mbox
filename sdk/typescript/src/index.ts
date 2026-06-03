@@ -628,6 +628,10 @@ export type PolicyDeniedAuditMetadata = JSONObject & {
   principalType?: ProjectMemberPrincipalType
   principal?: string
   role?: ProjectMemberRole
+  matchedMemberId?: string
+  matchedMemberPrincipalType?: ProjectMemberPrincipalType
+  matchedMemberPrincipal?: string
+  matchedMemberRole?: ProjectMemberRole
 }
 
 export type AuditEvent = {

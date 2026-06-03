@@ -1224,6 +1224,15 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if _, ok := properties["role"].(map[string]any); !ok {
 		t.Fatalf("expected role policy denied metadata property, got %#v", properties["role"])
 	}
+	if _, ok := properties["matchedMemberId"].(map[string]any); !ok {
+		t.Fatalf("expected matchedMemberId policy denied metadata property, got %#v", properties["matchedMemberId"])
+	}
+	if _, ok := properties["matchedMemberPrincipal"].(map[string]any); !ok {
+		t.Fatalf("expected matchedMemberPrincipal policy denied metadata property, got %#v", properties["matchedMemberPrincipal"])
+	}
+	if _, ok := properties["matchedMemberRole"].(map[string]any); !ok {
+		t.Fatalf("expected matchedMemberRole policy denied metadata property, got %#v", properties["matchedMemberRole"])
+	}
 	policyKind, ok := properties["policyKind"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected policyKind property, got %#v", properties["policyKind"])
@@ -3125,7 +3134,7 @@ func TestProjectRBACEnforcementGatesPolicyManage(t *testing.T) {
 		ProjectRBAC:             ProjectRBACOptions{EnforcementEnabled: true},
 	})
 	project := store.mustProject(t)
-	_, err := store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
+	operator, err := store.CreateProjectMember(context.Background(), domain.ProjectMemberCreate{
 		ProjectID:     project.ID,
 		PrincipalType: domain.ProjectMemberPrincipalTypeAutomation,
 		Principal:     "operator-bot",
@@ -3175,7 +3184,11 @@ func TestProjectRBACEnforcementGatesPolicyManage(t *testing.T) {
 	}
 	if denialMetadata["authorizationAction"] != projectAuthorizationActionPolicyManage ||
 		denialMetadata["callerPrincipal"] != "operator-bot" ||
-		denialMetadata["policyKind"] != "launch" {
+		denialMetadata["policyKind"] != "launch" ||
+		denialMetadata["matchedMemberId"] != operator.ID.String() ||
+		denialMetadata["matchedMemberPrincipalType"] != string(domain.ProjectMemberPrincipalTypeAutomation) ||
+		denialMetadata["matchedMemberPrincipal"] != "operator-bot" ||
+		denialMetadata["matchedMemberRole"] != string(domain.ProjectMemberRoleOperator) {
 		t.Fatalf("unexpected policy.manage denial metadata: %#v", denialMetadata)
 	}
 

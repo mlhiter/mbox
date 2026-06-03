@@ -1739,9 +1739,10 @@ func TestAuditEventsPolicyDeniedSummaryUsesExistingFilters(t *testing.T) {
 						"callerMode": "trusted_header",
 						"callerPrincipalType": "automation",
 						"callerPrincipal": "ci-bot",
-						"principalType": "user",
-						"principal": "alice@example.com",
-						"role": "viewer"
+						"matchedMemberId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+						"matchedMemberPrincipalType": "automation",
+						"matchedMemberPrincipal": "ci-bot",
+						"matchedMemberRole": "viewer"
 					},
 					"createdAt": "2026-06-02T03:00:00Z"
 				},
@@ -1763,9 +1764,10 @@ func TestAuditEventsPolicyDeniedSummaryUsesExistingFilters(t *testing.T) {
 						"callerMode": "trusted_header",
 						"callerPrincipalType": "automation",
 						"callerPrincipal": "ci-bot",
-						"principalType": "user",
-						"principal": "alice@example.com",
-						"role": "viewer"
+						"matchedMemberId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+						"matchedMemberPrincipalType": "automation",
+						"matchedMemberPrincipal": "ci-bot",
+						"matchedMemberRole": "viewer"
 					},
 					"createdAt": "2026-06-02T02:30:00Z"
 				},
@@ -1807,8 +1809,8 @@ func TestAuditEventsPolicyDeniedSummaryUsesExistingFilters(t *testing.T) {
 	}
 	output := stdout.String()
 	if !strings.Contains(output, "POLICY DENIED SUMMARY") ||
-		!strings.Contains(output, "OPERATION\tREASON\tCOUNT\tLATEST\tPROJECTS\tPOLICY\tLIMITS\tBYTES\tAUTHZ ACTIONS\tCALLERS\tMEMBERS\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS") ||
-		!strings.Contains(output, "sandbox.launch\tactive sandbox quota exceeded\t2\t2026-06-02T03:00:00Z\tproject-1,project-2\tkind=quota enforcement=enforced\tmaxActiveSandboxes=1\t-\tsandbox.launch\tautomation:ci-bot (trusted_header)\tuser:alice@example.com role=viewer\tcli-smoke\tmbox-cli\tquota retry,smoke sandbox\tcli-retry-request,cli-smoke-request") {
+		!strings.Contains(output, "OPERATION\tREASON\tCOUNT\tLATEST\tPROJECTS\tPOLICY\tLIMITS\tBYTES\tAUTHZ ACTIONS\tCALLERS\tMATCHED MEMBERS\tMEMBERS\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS") ||
+		!strings.Contains(output, "sandbox.launch\tactive sandbox quota exceeded\t2\t2026-06-02T03:00:00Z\tproject-1,project-2\tkind=quota enforcement=enforced\tmaxActiveSandboxes=1\t-\tsandbox.launch\tautomation:ci-bot (trusted_header)\tautomation:ci-bot role=viewer id=aaaaaaaa...aaaa\t-\tcli-smoke\tmbox-cli\tquota retry,smoke sandbox\tcli-retry-request,cli-smoke-request") {
 		t.Fatalf("expected grouped policy denial summary, got %q", output)
 	}
 	if strings.Contains(output, `"items"`) || strings.Contains(output, "sandbox.created") || strings.Contains(output, "ignored sandbox") {
@@ -1885,8 +1887,56 @@ func TestAuditEventsPolicyDeniedSummaryShowsRetainedByteHints(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := stdout.String()
-	if !strings.Contains(output, "artifact.content.upload\tretained artifact quota exceeded\t1\t2026-06-02T03:00:00Z\tproject-1\tkind=quota enforcement=enforced\tmaxRetainedArtifactBytes=1024\tincomingBytes=256 retainedBytes=900\t-\t-\t-\t-\t-\treport\t-") {
+	if !strings.Contains(output, "artifact.content.upload\tretained artifact quota exceeded\t1\t2026-06-02T03:00:00Z\tproject-1\tkind=quota enforcement=enforced\tmaxRetainedArtifactBytes=1024\tincomingBytes=256 retainedBytes=900\t-\t-\t-\t-\t-\t-\treport\t-") {
 		t.Fatalf("expected retained-byte quota hints in policy denial summary, got %q", output)
+	}
+}
+
+func TestAuditEventsPolicyDeniedSummarySeparatesMatchedAndRequestedMembers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"items": [
+				{
+					"action": "policy.denied",
+					"projectId": "project-1",
+					"resourceType": "project-member",
+					"resourceName": "alice@example.com",
+					"metadata": {
+						"operation": "project.member.create",
+						"reason": "project RBAC denied: caller matches a project member, but the role is insufficient for this action",
+						"authorizationAction": "member.manage",
+						"callerMode": "trusted_header",
+						"callerPrincipalType": "automation",
+						"callerPrincipal": "operator-bot",
+						"matchedMemberId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+						"matchedMemberPrincipalType": "automation",
+						"matchedMemberPrincipal": "operator-bot",
+						"matchedMemberRole": "operator",
+						"principalType": "user",
+						"principal": "alice@example.com",
+						"role": "viewer"
+					},
+					"createdAt": "2026-06-02T03:00:00Z"
+				}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"audit-events",
+		"--policy-denied-summary",
+		"--operation", "project.member.create",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "project.member.create\tproject RBAC denied: caller matches a project member, but the role is insufficient for this action\t1\t2026-06-02T03:00:00Z\tproject-1\t-\t-\t-\tmember.manage\tautomation:operator-bot (trusted_header)\tautomation:operator-bot role=operator id=bbbbbbbb...bbbb\tuser:alice@example.com role=viewer\t-\t-\talice@example.com\t-") {
+		t.Fatalf("expected matched and requested member columns in policy denial summary, got %q", output)
 	}
 }
 
@@ -1918,9 +1968,10 @@ func TestProjectsAuditEventsPolicyDeniedSummaryCanResolveProjectNames(t *testing
 							"callerMode": "trusted_header",
 							"callerPrincipalType": "automation",
 							"callerPrincipal": "ci-bot",
-							"principalType": "user",
-							"principal": "alice@example.com",
-							"role": "viewer"
+							"matchedMemberId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+							"matchedMemberPrincipalType": "automation",
+							"matchedMemberPrincipal": "ci-bot",
+							"matchedMemberRole": "viewer"
 						},
 						"createdAt": "2026-06-02T03:00:00Z"
 					}
@@ -1952,7 +2003,7 @@ func TestProjectsAuditEventsPolicyDeniedSummaryCanResolveProjectNames(t *testing
 		t.Fatalf("unexpected requests: %#v", requests)
 	}
 	output := stdout.String()
-	if !strings.Contains(output, "sandbox.launch\tactive sandbox quota exceeded\t1\t2026-06-02T03:00:00Z\tRuntime Alpha (11111111...1111)\tkind=quota enforcement=enforced\tmaxActiveSandboxes=1\t-\tsandbox.launch\tautomation:ci-bot (trusted_header)\tuser:alice@example.com role=viewer\tcli-smoke\tmbox-cli\tsmoke sandbox\tcli-smoke-request") {
+	if !strings.Contains(output, "sandbox.launch\tactive sandbox quota exceeded\t1\t2026-06-02T03:00:00Z\tRuntime Alpha (11111111...1111)\tkind=quota enforcement=enforced\tmaxActiveSandboxes=1\t-\tsandbox.launch\tautomation:ci-bot (trusted_header)\tautomation:ci-bot role=viewer id=aaaaaaaa...aaaa\t-\tcli-smoke\tmbox-cli\tsmoke sandbox\tcli-smoke-request") {
 		t.Fatalf("expected resolved project name in policy denial summary output, got %q", output)
 	}
 	if strings.Contains(output, `"items"`) || strings.Contains(output, `"metadata"`) {

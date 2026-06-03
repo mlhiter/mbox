@@ -953,6 +953,7 @@ type policyDeniedSummaryRow struct {
 	Bytes                map[string]bool
 	AuthorizationActions map[string]bool
 	Callers              map[string]bool
+	MatchedMembers       map[string]bool
 	Members              map[string]bool
 	Actors               map[string]bool
 	Sources              map[string]bool
@@ -2299,13 +2300,13 @@ func writePolicyDeniedSummaryTable(w io.Writer, events []auditEventSummaryItem, 
 		}
 		return out.Flush()
 	}
-	if _, err := fmt.Fprintln(out, "OPERATION\tREASON\tCOUNT\tLATEST\tPROJECTS\tPOLICY\tLIMITS\tBYTES\tAUTHZ ACTIONS\tCALLERS\tMEMBERS\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS"); err != nil {
+	if _, err := fmt.Fprintln(out, "OPERATION\tREASON\tCOUNT\tLATEST\tPROJECTS\tPOLICY\tLIMITS\tBYTES\tAUTHZ ACTIONS\tCALLERS\tMATCHED MEMBERS\tMEMBERS\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS"); err != nil {
 		return err
 	}
 	for _, row := range rows {
 		if _, err := fmt.Fprintf(
 			out,
-			"%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			tableValue(row.Operation, "unknown"),
 			tableValue(row.Reason, "unspecified"),
 			row.Count,
@@ -2316,6 +2317,7 @@ func writePolicyDeniedSummaryTable(w io.Writer, events []auditEventSummaryItem, 
 			formatAuditSummarySet(row.Bytes),
 			formatAuditSummarySet(row.AuthorizationActions),
 			formatAuditSummarySet(row.Callers),
+			formatAuditSummarySet(row.MatchedMembers),
 			formatAuditSummarySet(row.Members),
 			formatAuditSummarySet(row.Actors),
 			formatAuditSummarySet(row.Sources),
@@ -2346,6 +2348,7 @@ func policyDeniedSummaryRows(events []auditEventSummaryItem) []policyDeniedSumma
 				Bytes:                map[string]bool{},
 				AuthorizationActions: map[string]bool{},
 				Callers:              map[string]bool{},
+				MatchedMembers:       map[string]bool{},
 				Members:              map[string]bool{},
 				Actors:               map[string]bool{},
 				Sources:              map[string]bool{},
@@ -2367,6 +2370,7 @@ func policyDeniedSummaryRows(events []auditEventSummaryItem) []policyDeniedSumma
 		}
 		addAuditSummaryValue(row.AuthorizationActions, metadata.AuthorizationAction)
 		addAuditSummaryValue(row.Callers, metadata.Caller)
+		addAuditSummaryValue(row.MatchedMembers, metadata.MatchedMember)
 		addAuditSummaryValue(row.Members, metadata.Member)
 		addAuditSummaryValue(row.Policies, metadata.Policy)
 		addAuditSummaryValue(row.Limits, metadata.Limits)
@@ -2400,6 +2404,7 @@ type policyDeniedSummaryMetadata struct {
 	RequestID           string
 	AuthorizationAction string
 	Caller              string
+	MatchedMember       string
 	Member              string
 	Policy              string
 	Limits              string
@@ -2417,6 +2422,7 @@ func policyDeniedMetadata(raw json.RawMessage) policyDeniedSummaryMetadata {
 		RequestID:           auditSummaryMetadataString(metadata, "requestId"),
 		AuthorizationAction: auditSummaryMetadataString(metadata, "authorizationAction"),
 		Caller:              policyDeniedSummaryCaller(metadata),
+		MatchedMember:       policyDeniedSummaryMatchedMember(metadata),
 		Member:              policyDeniedSummaryMember(metadata),
 		Policy:              policyDeniedSummaryPolicy(metadata),
 		Limits:              policyDeniedSummaryLimits(metadata),
@@ -2489,6 +2495,25 @@ func policyDeniedSummaryMember(metadata map[string]any) string {
 		return identity + " role=" + role
 	}
 	return identity
+}
+
+func policyDeniedSummaryMatchedMember(metadata map[string]any) string {
+	principalType := auditSummaryMetadataString(metadata, "matchedMemberPrincipalType")
+	principal := auditSummaryMetadataString(metadata, "matchedMemberPrincipal")
+	role := auditSummaryMetadataString(metadata, "matchedMemberRole")
+	memberID := auditSummaryMetadataString(metadata, "matchedMemberId")
+	if principalType == "" && principal == "" && role == "" && memberID == "" {
+		return ""
+	}
+	identity := policyDeniedPrincipalLabel(principalType, principal, "matched-member")
+	parts := []string{identity}
+	if role != "" {
+		parts = append(parts, "role="+role)
+	}
+	if memberID != "" {
+		parts = append(parts, "id="+shortRuntimeResourceID(memberID))
+	}
+	return strings.Join(parts, " ")
 }
 
 func policyDeniedPrincipalLabel(principalType string, principal string, fallback string) string {

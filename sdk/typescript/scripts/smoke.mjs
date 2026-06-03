@@ -1093,6 +1093,22 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.PolicyDeniedAuditMetadata.properties.matchedMemberRole.enum = ["owner", "operator"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "PolicyDeniedAuditMetadata" &&
+        issue.property === "matchedMemberRole" &&
+        issue.enumValue === "viewer",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.Sandbox.required = broken.components.schemas.Sandbox.required.filter((name) => name !== "status")
     assertOpenAPIAlignment(broken)
   },
@@ -2972,6 +2988,10 @@ function schemaComponents() {
       "principalType",
       "principal",
       "role",
+      "matchedMemberId",
+      "matchedMemberPrincipalType",
+      "matchedMemberPrincipal",
+      "matchedMemberRole",
     ]),
   })
   schemas.AuditEvent = objectSchema(["id", "action", "resourceType", "createdAt"], [
@@ -3268,6 +3288,12 @@ function schemaComponents() {
   schemas.PolicyDeniedAuditMetadata.properties.enforcement.enum = ["disabled", "enforced"]
   schemas.PolicyDeniedAuditMetadata.properties.principalType.enum = ["user", "service_account", "automation"]
   schemas.PolicyDeniedAuditMetadata.properties.role.enum = ["owner", "operator", "viewer"]
+  schemas.PolicyDeniedAuditMetadata.properties.matchedMemberPrincipalType.enum = [
+    "user",
+    "service_account",
+    "automation",
+  ]
+  schemas.PolicyDeniedAuditMetadata.properties.matchedMemberRole.enum = ["owner", "operator", "viewer"]
   schemas.RuntimeResourceOwner.properties.kind.enum = ["sandbox", "template"]
   schemas.RuntimeOrphanReason = {
     type: "string",
