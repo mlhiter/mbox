@@ -610,6 +610,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(previewPortsRequired, "items") {
 		t.Fatalf("expected PreviewPortsResult target/items required fields, got %#v", previewPortsResult["required"])
 	}
+	if ref := schemaPropertyRef(previewPortsResult, "target"); ref != "#/components/schemas/RuntimeTarget" {
+		t.Fatalf("expected PreviewPortsResult target to reference RuntimeTarget, got %q", ref)
+	}
 	if ref := schemaArrayItemRef(previewPortsResult, "items"); ref != "#/components/schemas/PreviewPort" {
 		t.Fatalf("expected PreviewPortsResult items to reference PreviewPort, got %q", ref)
 	}

@@ -1491,6 +1491,22 @@ assert.throws(
         issue.schema === "Sandbox" &&
         issue.property === "status" &&
         issue.enumValue === "stopped",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.PreviewPortsResult.properties.target = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "PreviewPortsResult" &&
+        issue.property === "target" &&
+        issue.expectedSchema === "RuntimeTarget",
     ),
 )
 assert.throws(
@@ -2635,6 +2651,7 @@ function schemaComponents() {
   schemas.RuntimeResourceObservation.properties.storage = arrayRef("RuntimeStorage")
   schemas.RuntimeTarget.properties.storage = arrayRef("RuntimeStorage")
   schemas.LogResult.properties.target = jsonRef("RuntimeTarget")
+  schemas.PreviewPortsResult.properties.target = jsonRef("RuntimeTarget")
   schemas.PreviewPortsResult.properties.items = arrayRef("PreviewPort")
   schemas.ExecutionTaskEvent.properties.task = jsonRef("ExecutionTask")
   schemas.CallerInfo.properties.mode.enum = ["anonymous", "shared_token", "trusted_header"]

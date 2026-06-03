@@ -1383,6 +1383,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "PreviewPortsResult",
     required: ["target", "items"],
     properties: ["target", "items"],
+    propertyRefs: [{ property: "target", ref: "RuntimeTarget" }],
     arrayItemRefs: [{ property: "items", ref: "PreviewPort" }],
   },
   {
