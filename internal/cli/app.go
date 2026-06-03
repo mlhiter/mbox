@@ -163,7 +163,7 @@ Commands:
   runtime resources [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary|--summary-table] [--resolve-project-names]
   runtime orphans [--namespace NAMESPACE] [--project-id PROJECT] [--kind KIND] [--summary-table] [--resolve-project-names]
   runtime cleanup-orphan --adapter ADAPTER --kind KIND --namespace NAMESPACE --name NAME --reason REASON --confirm delete-orphan-runtime-resource
-  audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--summary] [--policy-denied-summary]
+  audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--summary] [--policy-denied-summary] [--resolve-project-names]
   projects list
   projects create --name NAME --namespace NAMESPACE [--slug SLUG]
   projects get <project-id>
@@ -171,7 +171,7 @@ Commands:
   projects authorization <project-id> [--action ACTION] [--summary]
   projects members <project-id> [--summary]
   projects add-member <project-id> --principal PRINCIPAL --role owner|operator|viewer [--principal-type user|service_account|automation]
-  projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--summary] [--policy-denied-summary]
+  projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--summary] [--policy-denied-summary] [--resolve-project-names]
   projects policy <project-id> [--summary]
   projects set-policy <project-id> --enforcement disabled|enforced [--allowed-image-prefix PREFIX] [--allowed-service-account NAME] [--allowed-secret-ref NAME]
   projects quota-policy <project-id> [--summary]
@@ -531,6 +531,13 @@ func runtimeProjectNames(ctx context.Context, client *Client) (map[string]string
 	return names, nil
 }
 
+func auditProjectNames(ctx context.Context, client *Client, resolve bool) (map[string]string, error) {
+	if !resolve {
+		return nil, nil
+	}
+	return runtimeProjectNames(ctx, client)
+}
+
 func writeRuntimeResourceSummaryTable(w io.Writer, summary runtimeResourceSummaryTable, projectNames map[string]string) error {
 	out := bufio.NewWriter(w)
 	if _, err := fmt.Fprintln(out, "RUNTIME RESOURCES SUMMARY"); err != nil {
@@ -830,17 +837,21 @@ func (a *App) runAuditEvents(ctx context.Context, client *Client, args []string,
 	limit := fs.Int("limit", 0, "")
 	summary := fs.Bool("summary", false, "")
 	policyDeniedSummary := fs.Bool("policy-denied-summary", false, "")
+	resolveProjectNames := fs.Bool("resolve-project-names", false, "")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
 		if projectID != "" {
-			return usageError("usage: mbox projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--summary] [--policy-denied-summary]")
+			return usageError("usage: mbox projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--summary] [--policy-denied-summary] [--resolve-project-names]")
 		}
-		return usageError("usage: mbox audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--summary] [--policy-denied-summary]")
+		return usageError("usage: mbox audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--summary] [--policy-denied-summary] [--resolve-project-names]")
 	}
 	if *summary && *policyDeniedSummary {
 		return usageError("mbox audit-events accepts only one of --summary or --policy-denied-summary")
+	}
+	if *resolveProjectNames && !*summary && !*policyDeniedSummary {
+		return usageError("mbox audit-events --resolve-project-names requires --summary or --policy-denied-summary")
 	}
 	if *policyDeniedSummary && strings.TrimSpace(*action) != "" && strings.TrimSpace(*action) != "policy.denied" {
 		return usageError("mbox audit-events --policy-denied-summary requires action policy.denied")
@@ -897,14 +908,22 @@ func (a *App) runAuditEvents(ctx context.Context, client *Client, args []string,
 		if err := client.JSON(ctx, http.MethodGet, path, nil, &response); err != nil {
 			return err
 		}
-		return writeAuditSummaryTable(a.streams.Stdout, response.Items)
+		projectNames, err := auditProjectNames(ctx, client, *resolveProjectNames)
+		if err != nil {
+			return err
+		}
+		return writeAuditSummaryTable(a.streams.Stdout, response.Items, projectNames)
 	}
 	if *policyDeniedSummary {
 		var response auditEventListResponse
 		if err := client.JSON(ctx, http.MethodGet, path, nil, &response); err != nil {
 			return err
 		}
-		return writePolicyDeniedSummaryTable(a.streams.Stdout, response.Items)
+		projectNames, err := auditProjectNames(ctx, client, *resolveProjectNames)
+		if err != nil {
+			return err
+		}
+		return writePolicyDeniedSummaryTable(a.streams.Stdout, response.Items, projectNames)
 	}
 	return a.get(ctx, client, path)
 }
@@ -2088,7 +2107,7 @@ func formatBool(value bool) string {
 	return "false"
 }
 
-func writeAuditSummaryTable(w io.Writer, events []auditEventSummaryItem) error {
+func writeAuditSummaryTable(w io.Writer, events []auditEventSummaryItem, projectNames map[string]string) error {
 	out := bufio.NewWriter(w)
 	if _, err := fmt.Fprintln(out, "AUDIT SUMMARY"); err != nil {
 		return err
@@ -2111,7 +2130,7 @@ func writeAuditSummaryTable(w io.Writer, events []auditEventSummaryItem) error {
 			row.Count,
 			formatAuditSummaryTime(row.Latest),
 			formatAuditSummarySet(row.ResourceTypes),
-			formatAuditSummarySet(row.ProjectIDs),
+			formatAuditProjectSet(row.ProjectIDs, projectNames),
 			formatAuditSummarySet(row.Actors),
 			formatAuditSummarySet(row.Sources),
 			formatAuditSummarySet(row.RequestIDs),
@@ -2168,7 +2187,7 @@ func auditSummaryRows(events []auditEventSummaryItem) []auditSummaryRow {
 	return rows
 }
 
-func writePolicyDeniedSummaryTable(w io.Writer, events []auditEventSummaryItem) error {
+func writePolicyDeniedSummaryTable(w io.Writer, events []auditEventSummaryItem, projectNames map[string]string) error {
 	out := bufio.NewWriter(w)
 	if _, err := fmt.Fprintln(out, "POLICY DENIED SUMMARY"); err != nil {
 		return err
@@ -2191,7 +2210,7 @@ func writePolicyDeniedSummaryTable(w io.Writer, events []auditEventSummaryItem) 
 			tableValue(row.Reason, "unspecified"),
 			row.Count,
 			formatAuditSummaryTime(row.Latest),
-			formatAuditSummarySet(row.ProjectIDs),
+			formatAuditProjectSet(row.ProjectIDs, projectNames),
 			formatAuditSummarySet(row.Actors),
 			formatAuditSummarySet(row.Sources),
 			formatAuditSummarySet(row.Resources),
@@ -2295,6 +2314,21 @@ func formatAuditSummarySet(values map[string]bool) string {
 	items := make([]string, 0, len(values))
 	for value := range values {
 		items = append(items, value)
+	}
+	sort.Strings(items)
+	if len(items) > 3 {
+		return strings.Join(items[:3], ",") + fmt.Sprintf(",+%d", len(items)-3)
+	}
+	return strings.Join(items, ",")
+}
+
+func formatAuditProjectSet(values map[string]bool, projectNames map[string]string) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	items := make([]string, 0, len(values))
+	for value := range values {
+		items = append(items, displayRuntimeProjectID(value, projectNames, ""))
 	}
 	sort.Strings(items)
 	if len(items) > 3 {
@@ -2621,7 +2655,7 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 		return a.post(ctx, client, "/v1/projects/"+url.PathEscape(projectID)+"/members", payload)
 	case "audit-events":
 		if len(args) < 2 {
-			return usageError("usage: mbox projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--summary] [--policy-denied-summary]")
+			return usageError("usage: mbox projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--summary] [--policy-denied-summary] [--resolve-project-names]")
 		}
 		return a.runAuditEvents(ctx, client, args[2:], args[1])
 	case "policy":

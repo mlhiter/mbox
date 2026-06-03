@@ -23,7 +23,7 @@ func TestHelpListsAuditSummaryFlags(t *testing.T) {
 	output := stderr.String()
 	for _, expected := range []string{
 		"audit-events [--project-id PROJECT]",
-		"[--limit N] [--summary] [--policy-denied-summary]",
+		"[--limit N] [--summary] [--policy-denied-summary] [--resolve-project-names]",
 		"projects audit-events <project-id>",
 	} {
 		if !strings.Contains(output, expected) {
@@ -39,7 +39,7 @@ func TestNoArgsPrintsHelpWithAuditSummaryFlags(t *testing.T) {
 	if err != flag.ErrHelp {
 		t.Fatalf("expected flag.ErrHelp, got %v", err)
 	}
-	if !strings.Contains(stderr.String(), "[--limit N] [--summary] [--policy-denied-summary]") {
+	if !strings.Contains(stderr.String(), "[--limit N] [--summary] [--policy-denied-summary] [--resolve-project-names]") {
 		t.Fatalf("expected no-args help to include audit summary flags, got %q", stderr.String())
 	}
 }
@@ -1443,6 +1443,70 @@ func TestAuditEventsSummaryUsesExistingFilters(t *testing.T) {
 	}
 }
 
+func TestAuditEventsSummaryCanResolveProjectNames(t *testing.T) {
+	var requests []string
+	projectID := "11111111-1111-4111-8111-111111111111"
+	unknownProjectID := "22222222-2222-4222-8222-222222222222"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/audit-events":
+			_, _ = w.Write([]byte(`{
+				"items": [
+					{
+						"action": "sandbox.created",
+						"projectId": "` + projectID + `",
+						"resourceType": "sandbox",
+						"actor": "alice",
+						"source": "mbox-cli",
+						"metadata": {"requestId": "req-create-1"},
+						"createdAt": "2026-06-02T03:00:00Z"
+					},
+					{
+						"action": "sandbox.created",
+						"projectId": "` + unknownProjectID + `",
+						"resourceType": "sandbox",
+						"actor": "bob",
+						"source": "sdk",
+						"metadata": {"requestId": "req-create-2"},
+						"createdAt": "2026-06-02T02:30:00Z"
+					}
+				]
+			}`))
+		case "/v1/projects":
+			_, _ = w.Write([]byte(`{"items":[{"id":"` + projectID + `","name":"Runtime Alpha"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"audit-events",
+		"--summary",
+		"--resolve-project-names",
+		"--limit", "20",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(requests, ",") != "GET /v1/audit-events?limit=20,GET /v1/projects" {
+		t.Fatalf("unexpected requests: %#v", requests)
+	}
+	output := stdout.String()
+	expectedProjects := unknownProjectID + ",Runtime Alpha (11111111...1111)"
+	if !strings.Contains(output, "sandbox.created\t2\t2026-06-02T03:00:00Z\tsandbox\t"+expectedProjects+"\talice,bob\tmbox-cli,sdk\treq-create-1,req-create-2") {
+		t.Fatalf("expected resolved project names in audit summary output, got %q", output)
+	}
+	if strings.Contains(output, `"items"`) || strings.Contains(output, `"metadata"`) {
+		t.Fatalf("expected human summary output without raw audit JSON, got %q", output)
+	}
+}
+
 func TestProjectsAuditEventsSummaryUsesProjectRoute(t *testing.T) {
 	var method string
 	var uri string
@@ -1581,6 +1645,62 @@ func TestProjectsAuditEventsPolicyDeniedSummaryUsesProjectRoute(t *testing.T) {
 	}
 }
 
+func TestProjectsAuditEventsPolicyDeniedSummaryCanResolveProjectNames(t *testing.T) {
+	var requests []string
+	projectID := "11111111-1111-4111-8111-111111111111"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/projects/" + projectID + "/audit-events":
+			_, _ = w.Write([]byte(`{
+				"items": [
+					{
+						"action": "policy.denied",
+						"projectId": "` + projectID + `",
+						"resourceType": "sandbox",
+						"resourceName": "smoke sandbox",
+						"actor": "cli-smoke",
+						"source": "mbox-cli",
+						"metadata": {"operation": "sandbox.launch", "reason": "active sandbox quota exceeded", "requestId": "cli-smoke-request"},
+						"createdAt": "2026-06-02T03:00:00Z"
+					}
+				]
+			}`))
+		case "/v1/projects":
+			_, _ = w.Write([]byte(`{"items":[{"id":"` + projectID + `","name":"Runtime Alpha"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"projects", "audit-events", projectID,
+		"--policy-denied-summary",
+		"--resolve-project-names",
+		"--operation", "sandbox.launch",
+		"--limit", "3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedRequests := "GET /v1/projects/" + projectID + "/audit-events?action=policy.denied&limit=3&operation=sandbox.launch,GET /v1/projects"
+	if strings.Join(requests, ",") != expectedRequests {
+		t.Fatalf("unexpected requests: %#v", requests)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "sandbox.launch\tactive sandbox quota exceeded\t1\t2026-06-02T03:00:00Z\tRuntime Alpha (11111111...1111)\tcli-smoke\tmbox-cli\tsmoke sandbox\tcli-smoke-request") {
+		t.Fatalf("expected resolved project name in policy denial summary output, got %q", output)
+	}
+	if strings.Contains(output, `"items"`) || strings.Contains(output, `"metadata"`) {
+		t.Fatalf("expected human summary output without raw audit JSON, got %q", output)
+	}
+}
+
 func TestAuditEventsPolicyDeniedSummaryRejectsNonPolicyAction(t *testing.T) {
 	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
 	err := app.Run(context.Background(), []string{
@@ -1607,6 +1727,18 @@ func TestAuditEventsSummaryFlagsAreMutuallyExclusive(t *testing.T) {
 	}
 }
 
+func TestAuditEventsResolveProjectNamesRequiresSummary(t *testing.T) {
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", "http://127.0.0.1:1",
+		"audit-events",
+		"--resolve-project-names",
+	})
+	if err == nil || !strings.Contains(err.Error(), "--resolve-project-names requires --summary or --policy-denied-summary") {
+		t.Fatalf("expected resolve-project-names summary error, got %v", err)
+	}
+}
+
 func TestProjectsAuditEventsUsageListsSummaryFlags(t *testing.T) {
 	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
 	err := app.Run(context.Background(), []string{
@@ -1616,7 +1748,7 @@ func TestProjectsAuditEventsUsageListsSummaryFlags(t *testing.T) {
 	})
 	if err == nil ||
 		!strings.Contains(err.Error(), "projects audit-events <project-id>") ||
-		!strings.Contains(err.Error(), "[--summary] [--policy-denied-summary]") {
+		!strings.Contains(err.Error(), "[--summary] [--policy-denied-summary] [--resolve-project-names]") {
 		t.Fatalf("expected projects audit-events usage with summary flags, got %v", err)
 	}
 }
