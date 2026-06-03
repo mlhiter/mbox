@@ -61,6 +61,7 @@ export type SDKOpenAPIAlignmentIssue = {
     | "missing-response"
     | "missing-response-content"
     | "missing-response-schema"
+    | "missing-response-required"
     | "response-schema-mismatch"
     | "response-list-item-mismatch"
     | "response-binary-mismatch"
@@ -1552,6 +1553,7 @@ function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
           issue.mediaType ? `media=${issue.mediaType}` : undefined,
           issue.expectedSchema ? `expected=${issue.expectedSchema}` : undefined,
           issue.actualSchema ? `actual=${issue.actualSchema}` : undefined,
+          issue.property ? `property=${issue.property}` : undefined,
         ].filter(Boolean)
         return `${String(issue.sdk)}: ${issue.method} ${issue.path} (${issue.reason}${
           parts.length ? ` ${parts.join(",")}` : ""
@@ -1740,6 +1742,16 @@ function checkRouteResponse(
     }
   }
   if (expected.listItem) {
+    const required = stringSet(schema.required)
+    if (!required.has("items")) {
+      missing.push({
+        ...route,
+        reason: "missing-response-required",
+        responseStatus: status,
+        mediaType,
+        property: "items",
+      })
+    }
     const actualSchema = listItemRefName(schema)
     if (actualSchema !== expected.listItem) {
       missing.push({

@@ -9,7 +9,7 @@ export type JSONValue =
 export type JSONObject = { [key: string]: JSONValue }
 
 export type ListResponse<T> = {
-  items?: T[]
+  items: T[]
 }
 
 export type HealthResult = {

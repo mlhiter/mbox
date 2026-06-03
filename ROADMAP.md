@@ -278,6 +278,7 @@ Current status:
 - Done: SDK/OpenAPI runtime log schema guard now covers `LogResult` target/log fields for SDK runtime log clients.
 - Done: SDK/OpenAPI API info schema guard now covers runtime/artifact capability and compatibility sub-schemas used by CLI/SDK preflight.
 - Done: SDK/OpenAPI base response schema guard now covers public health and shared error response fields used by clients.
+- Done: SDK/OpenAPI list response guard now checks SDK list helpers publish required `items` arrays, matching the SDK `ListResponse<T>` contract.
 - Done: Web project inspector audit ergonomics now surfaces member-management denial metadata for requested member principal type, principal, and role as debugging context without treating audit metadata as trusted identity.
 - Done: Web project inspector member-management ergonomics now supports registering and removing project member records for starter RBAC, including refreshed authorization/audit visibility and a front-end guard against removing the last visible owner, without adding login, invites, or broader route-level RBAC.
 - Remaining: broader route-level user/project RBAC enforcement beyond the current disabled-by-default `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, `credential.manage`, and `member.manage` starters, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
@@ -445,6 +446,7 @@ First slice status:
 93. Done: SDK/OpenAPI runtime log schema alignment guards `LogResult` required target/log fields, so SDK runtime log readers fail fast on published response drift without changing runtime behavior.
 94. Done: SDK/OpenAPI API info schema alignment guards `RuntimeInfo`, `ArtifactInfo`, and `Compatibility` fields used by CLI/SDK capability and compatibility preflight.
 95. Done: SDK/OpenAPI base response schema alignment guards `/healthz` status and shared `Error.error` fields used by SDK health and API error handling.
-96. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+96. Done: SDK/OpenAPI list response alignment requires route-backed list helpers to publish an `items` array, matching the SDK `ListResponse<T>` type for project, audit, template, sandbox, runtime event, session, task, and artifact lists.
+97. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

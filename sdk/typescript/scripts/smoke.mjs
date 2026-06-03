@@ -817,6 +817,21 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.paths["/v1/projects"].get.responses["200"].content["application/json"].schema.required = []
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-response-required" &&
+        issue.sdk === "listProjects" &&
+        issue.property === "items",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     delete broken.components.schemas.PolicyDeniedAuditMetadata.properties.policyKind
     assertOpenAPIAlignment(broken)
   },
