@@ -948,6 +948,9 @@ type policyDeniedSummaryRow struct {
 	Reason               string
 	Count                int
 	Latest               time.Time
+	Policies             map[string]bool
+	Limits               map[string]bool
+	Bytes                map[string]bool
 	AuthorizationActions map[string]bool
 	Callers              map[string]bool
 	Members              map[string]bool
@@ -2295,18 +2298,21 @@ func writePolicyDeniedSummaryTable(w io.Writer, events []auditEventSummaryItem, 
 		}
 		return out.Flush()
 	}
-	if _, err := fmt.Fprintln(out, "OPERATION\tREASON\tCOUNT\tLATEST\tPROJECTS\tAUTHZ ACTIONS\tCALLERS\tMEMBERS\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS"); err != nil {
+	if _, err := fmt.Fprintln(out, "OPERATION\tREASON\tCOUNT\tLATEST\tPROJECTS\tPOLICY\tLIMITS\tBYTES\tAUTHZ ACTIONS\tCALLERS\tMEMBERS\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS"); err != nil {
 		return err
 	}
 	for _, row := range rows {
 		if _, err := fmt.Fprintf(
 			out,
-			"%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			tableValue(row.Operation, "unknown"),
 			tableValue(row.Reason, "unspecified"),
 			row.Count,
 			formatAuditSummaryTime(row.Latest),
 			formatAuditProjectSet(row.ProjectIDs, projectNames),
+			formatAuditSummarySet(row.Policies),
+			formatAuditSummarySet(row.Limits),
+			formatAuditSummarySet(row.Bytes),
 			formatAuditSummarySet(row.AuthorizationActions),
 			formatAuditSummarySet(row.Callers),
 			formatAuditSummarySet(row.Members),
@@ -2334,6 +2340,9 @@ func policyDeniedSummaryRows(events []auditEventSummaryItem) []policyDeniedSumma
 			row = &policyDeniedSummaryRow{
 				Operation:            metadata.Operation,
 				Reason:               metadata.Reason,
+				Policies:             map[string]bool{},
+				Limits:               map[string]bool{},
+				Bytes:                map[string]bool{},
 				AuthorizationActions: map[string]bool{},
 				Callers:              map[string]bool{},
 				Members:              map[string]bool{},
@@ -2358,6 +2367,9 @@ func policyDeniedSummaryRows(events []auditEventSummaryItem) []policyDeniedSumma
 		addAuditSummaryValue(row.AuthorizationActions, metadata.AuthorizationAction)
 		addAuditSummaryValue(row.Callers, metadata.Caller)
 		addAuditSummaryValue(row.Members, metadata.Member)
+		addAuditSummaryValue(row.Policies, metadata.Policy)
+		addAuditSummaryValue(row.Limits, metadata.Limits)
+		addAuditSummaryValue(row.Bytes, metadata.Bytes)
 		addAuditSummaryValue(row.Resources, resource)
 		addAuditSummaryValue(row.RequestIDs, metadata.RequestID)
 		addAuditSummaryValue(row.ProjectIDs, event.ProjectID)
@@ -2388,6 +2400,9 @@ type policyDeniedSummaryMetadata struct {
 	AuthorizationAction string
 	Caller              string
 	Member              string
+	Policy              string
+	Limits              string
+	Bytes               string
 }
 
 func policyDeniedMetadata(raw json.RawMessage) policyDeniedSummaryMetadata {
@@ -2402,7 +2417,43 @@ func policyDeniedMetadata(raw json.RawMessage) policyDeniedSummaryMetadata {
 		AuthorizationAction: auditSummaryMetadataString(metadata, "authorizationAction"),
 		Caller:              policyDeniedSummaryCaller(metadata),
 		Member:              policyDeniedSummaryMember(metadata),
+		Policy:              policyDeniedSummaryPolicy(metadata),
+		Limits:              policyDeniedSummaryLimits(metadata),
+		Bytes:               policyDeniedSummaryBytes(metadata),
 	}
+}
+
+func policyDeniedSummaryPolicy(metadata map[string]any) string {
+	parts := []string{}
+	if policyKind := auditSummaryMetadataString(metadata, "policyKind"); policyKind != "" {
+		parts = append(parts, "kind="+policyKind)
+	}
+	if enforcement := auditSummaryMetadataString(metadata, "enforcement"); enforcement != "" {
+		parts = append(parts, "enforcement="+enforcement)
+	}
+	return strings.Join(parts, " ")
+}
+
+func policyDeniedSummaryLimits(metadata map[string]any) string {
+	parts := []string{}
+	if value := auditSummaryMetadataString(metadata, "maxActiveSandboxes"); value != "" {
+		parts = append(parts, "maxActiveSandboxes="+value)
+	}
+	if value := auditSummaryMetadataString(metadata, "maxRetainedArtifactBytes"); value != "" {
+		parts = append(parts, "maxRetainedArtifactBytes="+value)
+	}
+	return strings.Join(parts, " ")
+}
+
+func policyDeniedSummaryBytes(metadata map[string]any) string {
+	parts := []string{}
+	if value := auditSummaryMetadataString(metadata, "incomingBytes"); value != "" {
+		parts = append(parts, "incomingBytes="+value)
+	}
+	if value := auditSummaryMetadataString(metadata, "retainedBytes"); value != "" {
+		parts = append(parts, "retainedBytes="+value)
+	}
+	return strings.Join(parts, " ")
 }
 
 func policyDeniedSummaryCaller(metadata map[string]any) string {

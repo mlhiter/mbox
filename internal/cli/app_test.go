@@ -1658,6 +1658,9 @@ func TestAuditEventsPolicyDeniedSummaryUsesExistingFilters(t *testing.T) {
 						"operation": "sandbox.launch",
 						"reason": "active sandbox quota exceeded",
 						"requestId": "cli-smoke-request",
+						"policyKind": "quota",
+						"enforcement": "enforced",
+						"maxActiveSandboxes": 1,
 						"authorizationAction": "sandbox.launch",
 						"callerMode": "trusted_header",
 						"callerPrincipalType": "automation",
@@ -1679,6 +1682,9 @@ func TestAuditEventsPolicyDeniedSummaryUsesExistingFilters(t *testing.T) {
 						"operation": "sandbox.launch",
 						"reason": "active sandbox quota exceeded",
 						"requestId": "cli-retry-request",
+						"policyKind": "quota",
+						"enforcement": "enforced",
+						"maxActiveSandboxes": 1,
 						"authorizationAction": "sandbox.launch",
 						"callerMode": "trusted_header",
 						"callerPrincipalType": "automation",
@@ -1727,8 +1733,8 @@ func TestAuditEventsPolicyDeniedSummaryUsesExistingFilters(t *testing.T) {
 	}
 	output := stdout.String()
 	if !strings.Contains(output, "POLICY DENIED SUMMARY") ||
-		!strings.Contains(output, "OPERATION\tREASON\tCOUNT\tLATEST\tPROJECTS\tAUTHZ ACTIONS\tCALLERS\tMEMBERS\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS") ||
-		!strings.Contains(output, "sandbox.launch\tactive sandbox quota exceeded\t2\t2026-06-02T03:00:00Z\tproject-1,project-2\tsandbox.launch\tautomation:ci-bot (trusted_header)\tuser:alice@example.com role=viewer\tcli-smoke\tmbox-cli\tquota retry,smoke sandbox\tcli-retry-request,cli-smoke-request") {
+		!strings.Contains(output, "OPERATION\tREASON\tCOUNT\tLATEST\tPROJECTS\tPOLICY\tLIMITS\tBYTES\tAUTHZ ACTIONS\tCALLERS\tMEMBERS\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS") ||
+		!strings.Contains(output, "sandbox.launch\tactive sandbox quota exceeded\t2\t2026-06-02T03:00:00Z\tproject-1,project-2\tkind=quota enforcement=enforced\tmaxActiveSandboxes=1\t-\tsandbox.launch\tautomation:ci-bot (trusted_header)\tuser:alice@example.com role=viewer\tcli-smoke\tmbox-cli\tquota retry,smoke sandbox\tcli-retry-request,cli-smoke-request") {
 		t.Fatalf("expected grouped policy denial summary, got %q", output)
 	}
 	if strings.Contains(output, `"items"`) || strings.Contains(output, "sandbox.created") || strings.Contains(output, "ignored sandbox") {
@@ -1768,6 +1774,48 @@ func TestProjectsAuditEventsPolicyDeniedSummaryUsesProjectRoute(t *testing.T) {
 	}
 }
 
+func TestAuditEventsPolicyDeniedSummaryShowsRetainedByteHints(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"items": [
+				{
+					"action": "policy.denied",
+					"projectId": "project-1",
+					"resourceType": "artifact",
+					"resourceName": "report",
+					"metadata": {
+						"operation": "artifact.content.upload",
+						"reason": "retained artifact quota exceeded",
+						"policyKind": "quota",
+						"enforcement": "enforced",
+						"maxRetainedArtifactBytes": 1024,
+						"retainedBytes": 900,
+						"incomingBytes": 256
+					},
+					"createdAt": "2026-06-02T03:00:00Z"
+				}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"audit-events",
+		"--policy-denied-summary",
+		"--operation", "artifact.content.upload",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "artifact.content.upload\tretained artifact quota exceeded\t1\t2026-06-02T03:00:00Z\tproject-1\tkind=quota enforcement=enforced\tmaxRetainedArtifactBytes=1024\tincomingBytes=256 retainedBytes=900\t-\t-\t-\t-\t-\treport\t-") {
+		t.Fatalf("expected retained-byte quota hints in policy denial summary, got %q", output)
+	}
+}
+
 func TestProjectsAuditEventsPolicyDeniedSummaryCanResolveProjectNames(t *testing.T) {
 	var requests []string
 	projectID := "11111111-1111-4111-8111-111111111111"
@@ -1789,6 +1837,9 @@ func TestProjectsAuditEventsPolicyDeniedSummaryCanResolveProjectNames(t *testing
 							"operation": "sandbox.launch",
 							"reason": "active sandbox quota exceeded",
 							"requestId": "cli-smoke-request",
+							"policyKind": "quota",
+							"enforcement": "enforced",
+							"maxActiveSandboxes": 1,
 							"authorizationAction": "sandbox.launch",
 							"callerMode": "trusted_header",
 							"callerPrincipalType": "automation",
@@ -1827,7 +1878,7 @@ func TestProjectsAuditEventsPolicyDeniedSummaryCanResolveProjectNames(t *testing
 		t.Fatalf("unexpected requests: %#v", requests)
 	}
 	output := stdout.String()
-	if !strings.Contains(output, "sandbox.launch\tactive sandbox quota exceeded\t1\t2026-06-02T03:00:00Z\tRuntime Alpha (11111111...1111)\tsandbox.launch\tautomation:ci-bot (trusted_header)\tuser:alice@example.com role=viewer\tcli-smoke\tmbox-cli\tsmoke sandbox\tcli-smoke-request") {
+	if !strings.Contains(output, "sandbox.launch\tactive sandbox quota exceeded\t1\t2026-06-02T03:00:00Z\tRuntime Alpha (11111111...1111)\tkind=quota enforcement=enforced\tmaxActiveSandboxes=1\t-\tsandbox.launch\tautomation:ci-bot (trusted_header)\tuser:alice@example.com role=viewer\tcli-smoke\tmbox-cli\tsmoke sandbox\tcli-smoke-request") {
 		t.Fatalf("expected resolved project name in policy denial summary output, got %q", output)
 	}
 	if strings.Contains(output, `"items"`) || strings.Contains(output, `"metadata"`) {
