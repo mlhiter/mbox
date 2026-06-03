@@ -3412,7 +3412,7 @@ func (a *App) runSession(ctx context.Context, client *Client, args []string) err
 
 func (a *App) runTask(ctx context.Context, client *Client, args []string) error {
 	if len(args) == 0 {
-		return usageError("usage: mbox tasks list|create|get|cancel|watch|wait|artifacts")
+		return usageError(tasksUsage)
 	}
 	switch args[0] {
 	case "list":
@@ -3451,9 +3451,11 @@ func (a *App) runTask(ctx context.Context, client *Client, args []string) error 
 		}
 		return a.post(ctx, client, "/v1/sandboxes/"+url.PathEscape(sandboxID)+"/tasks", payload)
 	default:
-		return usageError("usage: mbox tasks list|create|get|cancel|watch|wait|artifacts")
+		return usageError(tasksUsage)
 	}
 }
+
+const tasksUsage = "usage: mbox tasks list|create|run|get|cancel|watch|wait|artifacts"
 
 func (a *App) parseTaskCreatePayload(args []string, commandName string) (string, map[string]any, error) {
 	if len(args) < 1 {

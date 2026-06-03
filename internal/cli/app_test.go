@@ -187,6 +187,24 @@ func TestAuthCallerSummaryUsesCallerRoute(t *testing.T) {
 	}
 }
 
+func TestTasksUsageListsRunSubcommand(t *testing.T) {
+	for _, args := range [][]string{
+		{"tasks"},
+		{"tasks", "mystery"},
+	} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+			err := app.Run(context.Background(), args)
+			if err == nil {
+				t.Fatal("expected tasks usage error")
+			}
+			if !strings.Contains(err.Error(), "usage: mbox tasks list|create|run|get|cancel|watch|wait|artifacts") {
+				t.Fatalf("expected tasks usage to list run subcommand, got %v", err)
+			}
+		})
+	}
+}
+
 func TestCompatSucceedsForCompatibleInfo(t *testing.T) {
 	var method string
 	var path string
