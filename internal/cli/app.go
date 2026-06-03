@@ -197,7 +197,7 @@ Commands:
   sessions create <sandbox-id> --type TYPE [--client CLIENT]
   sessions get|end <session-id>
   tasks list <sandbox-id>
-  tasks create <sandbox-id> --arg sh --arg -lc --arg 'echo ok' [--timeout 60]
+  tasks create <sandbox-id> (--arg ARG...|--command CMD|--command-json JSON) [--timeout 60]
   tasks run <sandbox-id> [--timeout 60] [--interval 1500ms] [--wait-timeout 5m] [--require-success] -- sh -lc 'echo ok'
   tasks get|cancel|watch <task-id>
   tasks artifacts <task-id>
@@ -3456,10 +3456,11 @@ func (a *App) runTask(ctx context.Context, client *Client, args []string) error 
 }
 
 const tasksUsage = "usage: mbox tasks list|create|run|get|cancel|watch|wait|artifacts"
+const taskCreateUsage = "usage: mbox tasks create <sandbox-id> (--arg ARG...|--command CMD|--command-json JSON) [--timeout 60]"
 
 func (a *App) parseTaskCreatePayload(args []string, commandName string) (string, map[string]any, error) {
 	if len(args) < 1 {
-		return "", nil, usageError("usage: mbox " + commandName + " <sandbox-id> --command 'sh -lc echo-ok'")
+		return "", nil, usageError(taskCommandUsage(commandName))
 	}
 	sandboxID := args[0]
 	fs := flag.NewFlagSet(commandName, flag.ContinueOnError)
@@ -3479,7 +3480,7 @@ func (a *App) parseTaskCreatePayload(args []string, commandName string) (string,
 		return "", nil, err
 	}
 	if len(positionalCommand) != 0 {
-		return "", nil, usageError("usage: mbox " + commandName + " <sandbox-id> --command 'sh -lc echo-ok'")
+		return "", nil, usageError(taskCommandUsage(commandName))
 	}
 	parsedCommand, err := parseCommandFlags(commandArgs, *command, *commandJSON)
 	if err != nil {
@@ -3491,6 +3492,13 @@ func (a *App) parseTaskCreatePayload(args []string, commandName string) (string,
 	}
 	SetRaw(payload, "metadata", rawMetadata)
 	return sandboxID, payload, nil
+}
+
+func taskCommandUsage(commandName string) string {
+	if commandName == "tasks create" {
+		return taskCreateUsage
+	}
+	return "usage: mbox " + commandName + " <sandbox-id> --command 'sh -lc echo-ok'"
 }
 
 func (a *App) runTaskWait(ctx context.Context, client *Client, args []string) error {

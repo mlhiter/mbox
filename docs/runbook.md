@@ -311,6 +311,8 @@ go run ./cmd/mbox tasks watch <task-id>
 go run ./cmd/mbox artifacts content <artifact-id>
 ```
 
+`tasks create` accepts repeated `--arg`, comma-split `--command`, or JSON-array `--command-json` command input. Use an explicit shell argv such as `["sh","-lc","pwd && echo task-ok"]` when shell parsing is needed.
+
 The CLI should remain a thin HTTP client. It must not write to Postgres directly or operate Kubernetes resources directly.
 
 `sandboxes wait` polls the public sandbox record until it reaches the requested status, defaulting to `running`. Add `--require-runtime-ref` when a script is about to call runtime routes, so a sandbox that reports `running` before the runtime reference is visible keeps polling until the reference appears. The command prints the final sandbox JSON on success; if the sandbox reaches `failed` or `deleted` while waiting for another status, it prints that final JSON and exits nonzero.

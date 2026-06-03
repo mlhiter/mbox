@@ -205,6 +205,31 @@ func TestTasksUsageListsRunSubcommand(t *testing.T) {
 	}
 }
 
+func TestTasksCreateUsageListsCommandInputModes(t *testing.T) {
+	for _, args := range [][]string{
+		{"tasks", "create"},
+		{"tasks", "create", "sandbox-1", "unexpected"},
+	} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+			err := app.Run(context.Background(), args)
+			if err == nil {
+				t.Fatal("expected tasks create usage error")
+			}
+			for _, expected := range []string{
+				"usage: mbox tasks create <sandbox-id>",
+				"--arg ARG",
+				"--command CMD",
+				"--command-json JSON",
+			} {
+				if !strings.Contains(err.Error(), expected) {
+					t.Fatalf("expected tasks create usage to include %q, got %v", expected, err)
+				}
+			}
+		})
+	}
+}
+
 func TestCompatSucceedsForCompatibleInfo(t *testing.T) {
 	var method string
 	var path string

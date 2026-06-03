@@ -456,6 +456,7 @@ First slice status:
 100. Done: SDK/OpenAPI property-ref alignment guards selected runtime inventory, log/task event, and runtime orphan/cleanup nested schema references, including `$ref`-backed orphan reason enums, so generated-client preparation catches object-ref drift without changing runtime audit or cleanup behavior.
 101. Done: SDK/OpenAPI project usage schema-ref alignment guards `ProjectUsage` usage buckets, sandbox active/running request totals, and CPU/memory/storage quantity references, keeping per-project product-record usage contracts generated-client ready without adding live metrics, billing, quota reservation, or capacity semantics.
 102. Done: CLI tasks usage alignment now lists the implemented `tasks run` subcommand in task-group usage errors, keeping one-shot execution discoverable outside the top-level help without changing task execution behavior.
-103. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+103. Done: CLI `tasks create` usage alignment now advertises repeated `--arg`, comma-split `--command`, and JSON-array `--command-json` input modes, keeping existing task creation ergonomics discoverable without changing task execution semantics.
+104. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.
