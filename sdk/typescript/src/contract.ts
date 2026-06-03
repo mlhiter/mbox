@@ -37,9 +37,17 @@ export type SDKSchemaContractEntry = {
   required?: readonly string[]
   properties?: readonly string[]
   absentProperties?: readonly string[]
+  propertyTypes?: readonly SDKSchemaPropertyTypeContract[]
   enumProperties?: readonly SDKSchemaEnumPropertyContract[]
   propertyRefs?: readonly SDKSchemaPropertyRefContract[]
   arrayItemRefs?: readonly SDKSchemaArrayItemRefContract[]
+}
+
+export type SDKSchemaPrimitiveType = "string" | "integer" | "number" | "boolean" | "object" | "array"
+
+export type SDKSchemaPropertyTypeContract = {
+  property: string
+  type: SDKSchemaPrimitiveType
 }
 
 export type SDKSchemaEnumPropertyContract = {
@@ -82,6 +90,7 @@ export type SDKOpenAPIAlignmentIssue = {
     | "missing-schema-required"
     | "missing-schema-property"
     | "unexpected-schema-property"
+    | "schema-property-type-mismatch"
     | "missing-schema-enum-value"
     | "schema-property-ref-mismatch"
     | "schema-array-item-ref-mismatch"
@@ -100,6 +109,8 @@ export type SDKOpenAPIAlignmentIssue = {
   required?: readonly string[]
   properties?: readonly string[]
   property?: string
+  expectedType?: SDKSchemaPrimitiveType
+  actualType?: string
   enumValue?: string
 }
 
@@ -116,6 +127,7 @@ export type SDKOpenAPIAlignmentResult = {
   checkedSchemaRequired: number
   checkedSchemaProperties: number
   checkedSchemaAbsentProperties: number
+  checkedSchemaPropertyTypes: number
   checkedSchemaEnumValues: number
   checkedSchemaPropertyRefs: number
   checkedSchemaArrayItemRefs: number
@@ -1524,6 +1536,11 @@ export const SDK_SCHEMA_CONTRACT = [
       "principal",
       "role",
     ],
+    propertyTypes: [
+      { property: "incomingBytes", type: "integer" },
+      { property: "maxActiveSandboxes", type: "integer" },
+      { property: "maxRetainedArtifactBytes", type: "integer" },
+    ],
     enumProperties: [
       { property: "operation", values: policyDeniedOperationValues },
       { property: "authorizationAction", values: projectAuthorizationActionValues },
@@ -1564,6 +1581,7 @@ export function checkOpenAPIAlignment(
   let checkedSchemaRequired = 0
   let checkedSchemaProperties = 0
   let checkedSchemaAbsentProperties = 0
+  let checkedSchemaPropertyTypes = 0
   let checkedSchemaEnumValues = 0
   let checkedSchemaPropertyRefs = 0
   let checkedSchemaArrayItemRefs = 0
@@ -1639,6 +1657,19 @@ export function checkOpenAPIAlignment(
         missing.push({ ...schemaContract, reason: "unexpected-schema-property", property })
       }
     }
+    for (const propertyType of schemaContract.propertyTypes ?? []) {
+      checkedSchemaPropertyTypes += 1
+      const actualType = schemaPropertyType(schema, propertyType.property)
+      if (actualType !== propertyType.type) {
+        missing.push({
+          ...schemaContract,
+          reason: "schema-property-type-mismatch",
+          property: propertyType.property,
+          expectedType: propertyType.type,
+          actualType,
+        })
+      }
+    }
     for (const enumProperty of schemaContract.enumProperties ?? []) {
       const values = schemaPropertyEnumValues(schema, enumProperty.property, componentSchemas)
       for (const value of enumProperty.values) {
@@ -1694,6 +1725,7 @@ export function checkOpenAPIAlignment(
     checkedSchemaRequired,
     checkedSchemaProperties,
     checkedSchemaAbsentProperties,
+    checkedSchemaPropertyTypes,
     checkedSchemaEnumValues,
     checkedSchemaPropertyRefs,
     checkedSchemaArrayItemRefs,
@@ -1723,7 +1755,7 @@ export async function fetchAndAssertOpenAPIAlignment(
 
 function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
   if (result.ok) {
-    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaEnumValues} SDK schema enum values, ${result.checkedSchemaPropertyRefs} SDK schema property refs, and ${result.checkedSchemaArrayItemRefs} SDK schema array item refs`
+    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaPropertyTypes} SDK schema property types, ${result.checkedSchemaEnumValues} SDK schema enum values, ${result.checkedSchemaPropertyRefs} SDK schema property refs, and ${result.checkedSchemaArrayItemRefs} SDK schema array item refs`
   }
   const preview = result.missing
     .slice(0, 10)
@@ -1731,7 +1763,8 @@ function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
       if (issue.schema) {
         const property = issue.property ? `:${issue.property}` : ""
         const enumValue = issue.enumValue ? `=${issue.enumValue}` : ""
-        return `${issue.schema} (${issue.reason}${property}${enumValue})`
+        const typeValue = issue.expectedType ? ` expected=${issue.expectedType} actual=${issue.actualType ?? "unknown"}` : ""
+        return `${issue.schema} (${issue.reason}${property}${enumValue}${typeValue})`
       }
       if (issue.reason === "missing-sdk-route-coverage") {
         return `OpenAPI operation ${issue.method} ${issue.path} (${issue.reason})`
@@ -2005,6 +2038,17 @@ function schemaPropertyEnumValues(
   const resolvedSchema =
     refName && componentSchemas && isRecord(componentSchemas[refName]) ? componentSchemas[refName] : propertySchema
   return stringSet(resolvedSchema.enum)
+}
+
+function schemaPropertyType(schema: Record<string, unknown>, property: string) {
+  if (!isRecord(schema.properties)) {
+    return undefined
+  }
+  const propertySchema = schema.properties[property]
+  if (!isRecord(propertySchema) || typeof propertySchema.type !== "string") {
+    return undefined
+  }
+  return propertySchema.type
 }
 
 function schemaPropertyRefName(schema: Record<string, unknown>, property: string) {

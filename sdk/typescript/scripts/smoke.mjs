@@ -908,6 +908,23 @@ assert.throws(
         issue.schema === "PolicyDeniedAuditMetadata" &&
         issue.property === "enforcement" &&
         issue.enumValue === "enforced",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.PolicyDeniedAuditMetadata.properties.incomingBytes.type = "string"
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-type-mismatch" &&
+        issue.schema === "PolicyDeniedAuditMetadata" &&
+        issue.property === "incomingBytes" &&
+        issue.expectedType === "integer" &&
+        issue.actualType === "string",
     ),
 )
 assert.throws(
@@ -2741,6 +2758,9 @@ function schemaComponents() {
   ])
   schemas.AuditEvent.properties.action = jsonRef("AuditEventAction")
   schemas.AuditEvent.properties.metadata = jsonRef("AuditEventMetadata")
+  schemas.PolicyDeniedAuditMetadata.properties.incomingBytes.type = "integer"
+  schemas.PolicyDeniedAuditMetadata.properties.maxActiveSandboxes.type = "integer"
+  schemas.PolicyDeniedAuditMetadata.properties.maxRetainedArtifactBytes.type = "integer"
   schemas.APIInfo.properties.runtimeController = jsonRef("RuntimeInfo")
   schemas.APIInfo.properties.runtimeAccess = jsonRef("RuntimeInfo")
   schemas.APIInfo.properties.artifactContent = jsonRef("ArtifactInfo")
