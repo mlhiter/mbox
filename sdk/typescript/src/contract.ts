@@ -628,6 +628,11 @@ export const SDK_SCHEMA_CONTRACT = [
     properties: ["namespace", "podName", "container", "phase", "selector", "commands", "storage"],
   },
   {
+    schema: "LogResult",
+    required: ["target", "logs"],
+    properties: ["target", "logs"],
+  },
+  {
     schema: "RuntimeEvent",
     properties: ["type", "reason", "message", "count", "firstTimestamp", "lastTimestamp"],
   },

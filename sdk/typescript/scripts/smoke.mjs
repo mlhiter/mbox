@@ -969,6 +969,23 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.LogResult.required = broken.components.schemas.LogResult.required.filter(
+      (name) => name !== "logs",
+    )
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-required" &&
+        issue.schema === "LogResult" &&
+        issue.property === "logs",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.ExecutionTask.required = broken.components.schemas.ExecutionTask.required.filter(
       (name) => name !== "outputTruncated",
     )
@@ -1738,6 +1755,7 @@ function schemaComponents() {
       "commands",
       "storage",
     ]),
+    LogResult: objectSchema(["target", "logs"]),
     RuntimeEvent: objectSchema([], [
       "type",
       "reason",
