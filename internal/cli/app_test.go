@@ -1166,6 +1166,108 @@ func TestProjectsAuditEventsUsesProjectAuditEventsRoute(t *testing.T) {
 	}
 }
 
+func TestAuditEventsSummaryUsesExistingFilters(t *testing.T) {
+	var method string
+	var uri string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		uri = r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"items": [
+				{
+					"action": "sandbox.created",
+					"resourceType": "sandbox",
+					"resourceName": "smoke sandbox",
+					"actor": "alice",
+					"source": "mbox-cli",
+					"createdAt": "2026-06-02T03:00:00Z"
+				},
+				{
+					"action": "sandbox.created",
+					"resourceType": "sandbox",
+					"resourceName": "retry sandbox",
+					"actor": "bob",
+					"source": "sdk",
+					"createdAt": "2026-06-02T02:30:00Z"
+				},
+				{
+					"action": "artifact.content.uploaded",
+					"resourceType": "artifact",
+					"resourceName": "report",
+					"actor": "alice",
+					"source": "mbox-cli",
+					"createdAt": "2026-06-02T04:00:00Z"
+				}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"audit-events",
+		"--project-id", "project-1",
+		"--summary",
+		"--actor", "alice",
+		"--source", "mbox-cli",
+		"--limit", "20",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || uri != "/v1/audit-events?actor=alice&limit=20&projectId=project-1&source=mbox-cli" {
+		t.Fatalf("unexpected request %s %s", method, uri)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"AUDIT SUMMARY",
+		"ACTION\tCOUNT\tLATEST\tRESOURCE TYPES\tACTORS\tSOURCES",
+		"sandbox.created\t2\t2026-06-02T03:00:00Z\tsandbox\talice,bob\tmbox-cli,sdk",
+		"artifact.content.uploaded\t1\t2026-06-02T04:00:00Z\tartifact\talice\tmbox-cli",
+		"Summary\tread-only over returned best-effort audit events; not a transactional audit log or trusted identity source",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in audit summary output, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"items"`) || strings.Contains(output, `"metadata"`) {
+		t.Fatalf("expected human summary output without raw audit JSON, got %q", output)
+	}
+}
+
+func TestProjectsAuditEventsSummaryUsesProjectRoute(t *testing.T) {
+	var method string
+	var uri string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		uri = r.URL.RequestURI()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"projects", "audit-events", "project-1",
+		"--summary",
+		"--limit", "3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || uri != "/v1/projects/project-1/audit-events?limit=3" {
+		t.Fatalf("unexpected request %s %s", method, uri)
+	}
+	if !strings.Contains(stdout.String(), "AUDIT SUMMARY\n  (none)\n") {
+		t.Fatalf("expected empty audit summary, got %q", stdout.String())
+	}
+}
+
 func TestAuditEventsPolicyDeniedSummaryUsesExistingFilters(t *testing.T) {
 	var method string
 	var uri string
@@ -1282,6 +1384,19 @@ func TestAuditEventsPolicyDeniedSummaryRejectsNonPolicyAction(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "requires action policy.denied") {
 		t.Fatalf("expected policy denied summary action error, got %v", err)
+	}
+}
+
+func TestAuditEventsSummaryFlagsAreMutuallyExclusive(t *testing.T) {
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", "http://127.0.0.1:1",
+		"audit-events",
+		"--summary",
+		"--policy-denied-summary",
+	})
+	if err == nil || !strings.Contains(err.Error(), "only one of --summary or --policy-denied-summary") {
+		t.Fatalf("expected mutually exclusive audit summary error, got %v", err)
 	}
 }
 

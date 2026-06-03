@@ -808,15 +808,19 @@ func (a *App) runAuditEvents(ctx context.Context, client *Client, args []string,
 	since := fs.String("since", "", "")
 	until := fs.String("until", "", "")
 	limit := fs.Int("limit", 0, "")
+	summary := fs.Bool("summary", false, "")
 	policyDeniedSummary := fs.Bool("policy-denied-summary", false, "")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
 		if projectID != "" {
-			return usageError("usage: mbox projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--policy-denied-summary]")
+			return usageError("usage: mbox projects audit-events <project-id> [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--summary] [--policy-denied-summary]")
 		}
-		return usageError("usage: mbox audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--policy-denied-summary]")
+		return usageError("usage: mbox audit-events [--project-id PROJECT] [--action ACTION] [--resource-type TYPE] [--resource-id ID] [--actor ACTOR] [--source SOURCE] [--filter-request-id ID] [--operation OPERATION] [--reason REASON] [--since RFC3339] [--until RFC3339] [--limit N] [--summary] [--policy-denied-summary]")
+	}
+	if *summary && *policyDeniedSummary {
+		return usageError("mbox audit-events accepts only one of --summary or --policy-denied-summary")
 	}
 	if *policyDeniedSummary && strings.TrimSpace(*action) != "" && strings.TrimSpace(*action) != "policy.denied" {
 		return usageError("mbox audit-events --policy-denied-summary requires action policy.denied")
@@ -868,6 +872,13 @@ func (a *App) runAuditEvents(ctx context.Context, client *Client, args []string,
 	if encoded := values.Encode(); encoded != "" {
 		path += "?" + encoded
 	}
+	if *summary {
+		var response auditEventListResponse
+		if err := client.JSON(ctx, http.MethodGet, path, nil, &response); err != nil {
+			return err
+		}
+		return writeAuditSummaryTable(a.streams.Stdout, response.Items)
+	}
 	if *policyDeniedSummary {
 		var response auditEventListResponse
 		if err := client.JSON(ctx, http.MethodGet, path, nil, &response); err != nil {
@@ -900,6 +911,15 @@ type policyDeniedSummaryRow struct {
 	Actors    map[string]bool
 	Sources   map[string]bool
 	Resources map[string]bool
+}
+
+type auditSummaryRow struct {
+	Action        string
+	Count         int
+	Latest        time.Time
+	ResourceTypes map[string]bool
+	Actors        map[string]bool
+	Sources       map[string]bool
 }
 
 type boundarySummary struct {
@@ -2041,6 +2061,80 @@ func formatBool(value bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+func writeAuditSummaryTable(w io.Writer, events []auditEventSummaryItem) error {
+	out := bufio.NewWriter(w)
+	if _, err := fmt.Fprintln(out, "AUDIT SUMMARY"); err != nil {
+		return err
+	}
+	rows := auditSummaryRows(events)
+	if len(rows) == 0 {
+		if _, err := fmt.Fprintln(out, "  (none)"); err != nil {
+			return err
+		}
+		return out.Flush()
+	}
+	if _, err := fmt.Fprintln(out, "ACTION\tCOUNT\tLATEST\tRESOURCE TYPES\tACTORS\tSOURCES"); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if _, err := fmt.Fprintf(
+			out,
+			"%s\t%d\t%s\t%s\t%s\t%s\n",
+			tableValue(row.Action, "unknown"),
+			row.Count,
+			formatAuditSummaryTime(row.Latest),
+			formatAuditSummarySet(row.ResourceTypes),
+			formatAuditSummarySet(row.Actors),
+			formatAuditSummarySet(row.Sources),
+		); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(out, "\nSummary\tread-only over returned best-effort audit events; not a transactional audit log or trusted identity source"); err != nil {
+		return err
+	}
+	return out.Flush()
+}
+
+func auditSummaryRows(events []auditEventSummaryItem) []auditSummaryRow {
+	groups := map[string]*auditSummaryRow{}
+	for _, event := range events {
+		action := strings.TrimSpace(event.Action)
+		key := action
+		row, ok := groups[key]
+		if !ok {
+			row = &auditSummaryRow{
+				Action:        action,
+				ResourceTypes: map[string]bool{},
+				Actors:        map[string]bool{},
+				Sources:       map[string]bool{},
+			}
+			groups[key] = row
+		}
+		row.Count++
+		if event.CreatedAt.After(row.Latest) {
+			row.Latest = event.CreatedAt
+		}
+		addAuditSummaryValue(row.ResourceTypes, event.ResourceType)
+		addAuditSummaryValue(row.Actors, event.Actor)
+		addAuditSummaryValue(row.Sources, event.Source)
+	}
+	rows := make([]auditSummaryRow, 0, len(groups))
+	for _, row := range groups {
+		rows = append(rows, *row)
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Count != rows[j].Count {
+			return rows[i].Count > rows[j].Count
+		}
+		if !rows[i].Latest.Equal(rows[j].Latest) {
+			return rows[i].Latest.After(rows[j].Latest)
+		}
+		return rows[i].Action < rows[j].Action
+	})
+	return rows
 }
 
 func writePolicyDeniedSummaryTable(w io.Writer, events []auditEventSummaryItem) error {

@@ -264,6 +264,7 @@ Current status:
 - Done: CLI project credential-reference summary renders the existing read-only `/v1/projects/{projectID}/credentials` response as type, usage, Secret-reference counts, and rows for operator triage, preserving default JSON output and avoiding secret-value storage, exposure, or runtime mounting semantics.
 - Done: CLI project policy and quota-policy summaries render the existing read-only launch-policy and quota-policy responses as compact operator text, preserving default JSON output and avoiding broader RBAC, credential mounting, billing, capacity reservation, or live Kubernetes metrics semantics.
 - Done: CLI template and sandbox boundary summaries render existing read-only boundary responses as compact operator text, preserving default JSON output and avoiding secret-value access, broader RBAC, credential mounting, custom NetworkPolicy projection, or live utilization semantics.
+- Done: CLI audit-event summary renders returned best-effort audit rows by action, resource type, actor, and source for first-pass operator triage while preserving default JSON output and the existing audit model.
 - Done: OpenAPI and SDK schema alignment now publish structured boundary summary/check/credential-reference schemas and guard their required fields, properties, and enum values without expanding boundary summaries into secret access, full RBAC, billing, capacity, or live utilization semantics.
 - Done: SDK/OpenAPI reverse route-coverage guard for published operations, with explicit non-helper exceptions for terminal WebSocket and preview proxy pass-through routes.
 - Done: SDK/OpenAPI `PolicyDeniedAuditMetadata` schema guard now covers policy/quota denial metadata fields used by operator audit rendering.
@@ -447,6 +448,7 @@ First slice status:
 94. Done: SDK/OpenAPI API info schema alignment guards `RuntimeInfo`, `ArtifactInfo`, and `Compatibility` fields used by CLI/SDK capability and compatibility preflight.
 95. Done: SDK/OpenAPI base response schema alignment guards `/healthz` status and shared `Error.error` fields used by SDK health and API error handling.
 96. Done: SDK/OpenAPI list response alignment requires route-backed list helpers to publish an `items` array, matching the SDK `ListResponse<T>` type for project, audit, template, sandbox, runtime event, session, task, and artifact lists.
-97. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+97. Done: CLI audit ergonomics add `audit-events --summary` and `projects audit-events --summary`, grouping returned rows by action with resource-type, actor, source, count, and latest-time columns over the existing read-only audit feed.
+98. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

@@ -205,6 +205,7 @@ go run ./cmd/mbox projects list
 go run ./cmd/mbox projects usage <project-id>
 go run ./cmd/mbox projects usage <project-id> --summary
 go run ./cmd/mbox projects audit-events <project-id> --action policy.denied --operation sandbox.launch --reason "active sandbox quota exceeded" --actor cli-smoke --source mbox-cli --filter-request-id cli-smoke-request --since 2026-05-30T00:00:00Z --until 2026-05-30T01:00:00Z
+go run ./cmd/mbox audit-events --project-id <project-id> --summary --since 2026-05-30T00:00:00Z --until 2026-05-30T01:00:00Z
 go run ./cmd/mbox projects audit-events <project-id> --policy-denied-summary --operation sandbox.launch --since 2026-05-30T00:00:00Z --until 2026-05-30T01:00:00Z
 go run ./cmd/mbox projects policy <project-id> --summary
 go run ./cmd/mbox projects quota-policy <project-id>
@@ -236,7 +237,7 @@ Project member commands manage product records for `user`, `service_account`, or
 
 Every API response includes `X-Mbox-Request-ID`. Pass `--request-id <id>` or set `MBOX_REQUEST_ID` when a script needs to correlate command output with server logs and `audit_events.metadata.requestId`. Use `--filter-request-id <id>` on `audit-events` or `projects audit-events` when reading the feed back for one script or agent run. Use `--operation <operation>` and `--reason <reason>` when narrowing typed metadata, especially `policy.denied` operations such as `sandbox.launch` and denial reasons such as `active sandbox quota exceeded`. Use inclusive RFC3339 `--since` / `--until` windows when operators need to inspect a known run interval.
 
-Use `--policy-denied-summary` on `audit-events` or `projects audit-events` when the raw feed is too noisy for first-pass triage. The CLI still reads the existing audit list route, forces `action=policy.denied`, preserves the other filters, and groups returned rows by `metadata.operation` and `metadata.reason` with counts, latest timestamp, actors, sources, and resources. This is a read-only operator summary over best-effort product audit records; it does not add a new audit model, trusted identity source, or strong transactional audit guarantee.
+Use `--summary` on `audit-events` or `projects audit-events` when the raw feed is too noisy for first-pass triage by action. The CLI still reads the existing audit list route, preserves filters, and groups returned rows by action with count, latest timestamp, resource types, actors, and sources. Use `--policy-denied-summary` when the operator specifically wants policy-denial grouping by `metadata.operation` and `metadata.reason`; that mode forces `action=policy.denied`. These are read-only operator summaries over best-effort product audit records; they do not add a new audit model, trusted identity source, or strong transactional audit guarantee.
 
 For the starter API token model, start the API with `MBOX_API_TOKEN` and pass the same value as `MBOX_TOKEN` or `--token`:
 
