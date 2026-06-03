@@ -276,6 +276,7 @@ Current status:
 - Done: SDK/OpenAPI artifact schema guard now covers artifact response/create and retained-content metadata fields for SDK artifact clients without expanding artifact storage semantics.
 - Done: SDK/OpenAPI project schema guard now covers project response/create/update fields and catches immutable project update-field drift.
 - Done: SDK/OpenAPI runtime log schema guard now covers `LogResult` target/log fields for SDK runtime log clients.
+- Done: SDK/OpenAPI API info schema guard now covers runtime/artifact capability and compatibility sub-schemas used by CLI/SDK preflight.
 - Done: Web project inspector audit ergonomics now surfaces member-management denial metadata for requested member principal type, principal, and role as debugging context without treating audit metadata as trusted identity.
 - Done: Web project inspector member-management ergonomics now supports registering and removing project member records for starter RBAC, including refreshed authorization/audit visibility and a front-end guard against removing the last visible owner, without adding login, invites, or broader route-level RBAC.
 - Remaining: broader route-level user/project RBAC enforcement beyond the current disabled-by-default `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, `credential.manage`, and `member.manage` starters, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
@@ -441,6 +442,7 @@ First slice status:
 91. Done: CLI boundary ergonomics add `templates boundary <template-id> --summary` and `sandboxes boundary <sandbox-id> --summary`, rendering namespace, runtime identity, policy, credential, projection, runtime-ref, and check status fields as compact text while preserving JSON output for scripts.
 92. Done: SDK/OpenAPI boundary schema alignment structures `BoundarySummary`, `BoundaryCheck`, `BoundaryPort`, and `BoundaryCredentialRef` schemas and adds guard coverage for boundary kind, check status, policy enforcement, sandbox status, and credential type values.
 93. Done: SDK/OpenAPI runtime log schema alignment guards `LogResult` required target/log fields, so SDK runtime log readers fail fast on published response drift without changing runtime behavior.
-94. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+94. Done: SDK/OpenAPI API info schema alignment guards `RuntimeInfo`, `ArtifactInfo`, and `Compatibility` fields used by CLI/SDK capability and compatibility preflight.
+95. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

@@ -940,6 +940,21 @@ export const SDK_SCHEMA_CONTRACT = [
     ],
   },
   {
+    schema: "RuntimeInfo",
+    required: ["enabled"],
+    properties: ["enabled", "adapter"],
+  },
+  {
+    schema: "ArtifactInfo",
+    required: ["retainedContentEnabled", "storageProvider", "maxBytes"],
+    properties: ["retainedContentEnabled", "storageProvider", "maxBytes"],
+  },
+  {
+    schema: "Compatibility",
+    required: ["minimumCliApiVersion", "minimumSdkApiVersion"],
+    properties: ["minimumCliApiVersion", "minimumSdkApiVersion"],
+  },
+  {
     schema: "TrustedPrincipalHeaderInfo",
     required: ["enabled"],
     properties: ["enabled", "principalHeader", "principalTypeHeader"],

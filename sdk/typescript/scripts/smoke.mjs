@@ -1067,6 +1067,23 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.Compatibility.required = broken.components.schemas.Compatibility.required.filter(
+      (name) => name !== "minimumSdkApiVersion",
+    )
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-required" &&
+        issue.schema === "Compatibility" &&
+        issue.property === "minimumSdkApiVersion",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.CallerInfo.properties.mode.enum = ["anonymous", "shared_token"]
     assertOpenAPIAlignment(broken)
   },
@@ -2095,6 +2112,9 @@ function schemaComponents() {
     ]),
     TrustedPrincipalHeaderInfo: objectSchema(["enabled"], ["principalHeader", "principalTypeHeader"]),
     ProjectRBACInfo: objectSchema(["enforcementEnabled", "enforcedActions"]),
+    RuntimeInfo: objectSchema(["enabled"], ["adapter"]),
+    ArtifactInfo: objectSchema(["retainedContentEnabled", "storageProvider", "maxBytes"]),
+    Compatibility: objectSchema(["minimumCliApiVersion", "minimumSdkApiVersion"]),
     ProjectPolicy: objectSchema(["projectId", "enforcement"], [
       "allowedImagePrefixes",
       "allowedServiceAccounts",
