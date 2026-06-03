@@ -904,13 +904,14 @@ type auditEventSummaryItem struct {
 }
 
 type policyDeniedSummaryRow struct {
-	Operation string
-	Reason    string
-	Count     int
-	Latest    time.Time
-	Actors    map[string]bool
-	Sources   map[string]bool
-	Resources map[string]bool
+	Operation  string
+	Reason     string
+	Count      int
+	Latest     time.Time
+	Actors     map[string]bool
+	Sources    map[string]bool
+	Resources  map[string]bool
+	RequestIDs map[string]bool
 }
 
 type auditSummaryRow struct {
@@ -920,6 +921,7 @@ type auditSummaryRow struct {
 	ResourceTypes map[string]bool
 	Actors        map[string]bool
 	Sources       map[string]bool
+	RequestIDs    map[string]bool
 }
 
 type boundarySummary struct {
@@ -2075,19 +2077,20 @@ func writeAuditSummaryTable(w io.Writer, events []auditEventSummaryItem) error {
 		}
 		return out.Flush()
 	}
-	if _, err := fmt.Fprintln(out, "ACTION\tCOUNT\tLATEST\tRESOURCE TYPES\tACTORS\tSOURCES"); err != nil {
+	if _, err := fmt.Fprintln(out, "ACTION\tCOUNT\tLATEST\tRESOURCE TYPES\tACTORS\tSOURCES\tREQUEST IDS"); err != nil {
 		return err
 	}
 	for _, row := range rows {
 		if _, err := fmt.Fprintf(
 			out,
-			"%s\t%d\t%s\t%s\t%s\t%s\n",
+			"%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
 			tableValue(row.Action, "unknown"),
 			row.Count,
 			formatAuditSummaryTime(row.Latest),
 			formatAuditSummarySet(row.ResourceTypes),
 			formatAuditSummarySet(row.Actors),
 			formatAuditSummarySet(row.Sources),
+			formatAuditSummarySet(row.RequestIDs),
 		); err != nil {
 			return err
 		}
@@ -2110,6 +2113,7 @@ func auditSummaryRows(events []auditEventSummaryItem) []auditSummaryRow {
 				ResourceTypes: map[string]bool{},
 				Actors:        map[string]bool{},
 				Sources:       map[string]bool{},
+				RequestIDs:    map[string]bool{},
 			}
 			groups[key] = row
 		}
@@ -2120,6 +2124,7 @@ func auditSummaryRows(events []auditEventSummaryItem) []auditSummaryRow {
 		addAuditSummaryValue(row.ResourceTypes, event.ResourceType)
 		addAuditSummaryValue(row.Actors, event.Actor)
 		addAuditSummaryValue(row.Sources, event.Source)
+		addAuditSummaryValue(row.RequestIDs, auditSummaryRequestID(event.Metadata))
 	}
 	rows := make([]auditSummaryRow, 0, len(groups))
 	for _, row := range groups {
@@ -2149,13 +2154,13 @@ func writePolicyDeniedSummaryTable(w io.Writer, events []auditEventSummaryItem) 
 		}
 		return out.Flush()
 	}
-	if _, err := fmt.Fprintln(out, "OPERATION\tREASON\tCOUNT\tLATEST\tACTORS\tSOURCES\tRESOURCES"); err != nil {
+	if _, err := fmt.Fprintln(out, "OPERATION\tREASON\tCOUNT\tLATEST\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS"); err != nil {
 		return err
 	}
 	for _, row := range rows {
 		if _, err := fmt.Fprintf(
 			out,
-			"%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
 			tableValue(row.Operation, "unknown"),
 			tableValue(row.Reason, "unspecified"),
 			row.Count,
@@ -2163,6 +2168,7 @@ func writePolicyDeniedSummaryTable(w io.Writer, events []auditEventSummaryItem) 
 			formatAuditSummarySet(row.Actors),
 			formatAuditSummarySet(row.Sources),
 			formatAuditSummarySet(row.Resources),
+			formatAuditSummarySet(row.RequestIDs),
 		); err != nil {
 			return err
 		}
@@ -2181,11 +2187,12 @@ func policyDeniedSummaryRows(events []auditEventSummaryItem) []policyDeniedSumma
 		row, ok := groups[key]
 		if !ok {
 			row = &policyDeniedSummaryRow{
-				Operation: operation,
-				Reason:    reason,
-				Actors:    map[string]bool{},
-				Sources:   map[string]bool{},
-				Resources: map[string]bool{},
+				Operation:  operation,
+				Reason:     reason,
+				Actors:     map[string]bool{},
+				Sources:    map[string]bool{},
+				Resources:  map[string]bool{},
+				RequestIDs: map[string]bool{},
 			}
 			groups[key] = row
 		}
@@ -2200,6 +2207,7 @@ func policyDeniedSummaryRows(events []auditEventSummaryItem) []policyDeniedSumma
 			resource = strings.TrimSpace(event.ResourceType)
 		}
 		addAuditSummaryValue(row.Resources, resource)
+		addAuditSummaryValue(row.RequestIDs, auditSummaryRequestID(event.Metadata))
 	}
 	rows := make([]policyDeniedSummaryRow, 0, len(groups))
 	for _, row := range groups {
@@ -2226,6 +2234,14 @@ func policyDeniedMetadata(raw json.RawMessage) (string, string) {
 		return "", ""
 	}
 	return auditSummaryMetadataString(metadata, "operation"), auditSummaryMetadataString(metadata, "reason")
+}
+
+func auditSummaryRequestID(raw json.RawMessage) string {
+	var metadata map[string]any
+	if len(raw) == 0 || json.Unmarshal(raw, &metadata) != nil {
+		return ""
+	}
+	return auditSummaryMetadataString(metadata, "requestId")
 }
 
 func auditSummaryMetadataString(metadata map[string]any, key string) string {
