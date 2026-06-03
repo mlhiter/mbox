@@ -3584,6 +3584,9 @@ func (a *App) waitForTaskValue(ctx context.Context, client *Client, taskID strin
 	for {
 		var task map[string]any
 		if err := client.JSON(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(taskID), nil, &task); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, fmt.Errorf("timed out waiting for task %s", taskID)
+			}
 			return nil, err
 		}
 		if isTerminalTaskStatus(task["status"]) {
