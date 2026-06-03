@@ -1400,6 +1400,22 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.TemplateValidationRun.properties.template = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "TemplateValidationRun" &&
+        issue.property === "template" &&
+        issue.expectedSchema === "EnvironmentTemplate",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.TemplateValidationRunDecision.properties.status.enum = ["passed"]
     assertOpenAPIAlignment(broken)
   },
@@ -2511,6 +2527,8 @@ function schemaComponents() {
   schemas.ProjectCredentialCreate.properties.secretRef = jsonRef("SecretRef")
   schemas.ProjectCredential.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
   schemas.ProjectCredentialCreate.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
+  schemas.TemplateValidationRun.properties.template = jsonRef("EnvironmentTemplate")
+  schemas.TemplateValidationRun.properties.sandbox = jsonRef("Sandbox")
   schemas.BoundarySummary.properties.kind.enum = ["template", "sandbox"]
   schemas.BoundarySummary.properties.sandboxStatus.enum = ["pending", "running", "stopped", "failed", "deleted"]
   schemas.BoundarySummary.properties.policyEnforcement.enum = ["disabled", "enforced"]

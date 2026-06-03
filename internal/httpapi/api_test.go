@@ -455,6 +455,18 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok || templateUpdateProperties["projectId"] != nil || templateUpdateProperties["slug"] != nil {
 		t.Fatalf("expected TemplateUpdate to omit projectId/slug update fields, got %#v", templateUpdateSchema["properties"])
 	}
+	templateValidationRun, ok := schemas["TemplateValidationRun"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected TemplateValidationRun schema in %#v", schemas["TemplateValidationRun"])
+	}
+	for property, expectedRef := range map[string]string{
+		"template": "#/components/schemas/EnvironmentTemplate",
+		"sandbox":  "#/components/schemas/Sandbox",
+	} {
+		if ref := schemaPropertyRef(templateValidationRun, property); ref != expectedRef {
+			t.Fatalf("expected TemplateValidationRun %s to reference %s, got %q", property, expectedRef, ref)
+		}
+	}
 	projectSchema, ok := schemas["Project"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected Project schema in %#v", schemas["Project"])

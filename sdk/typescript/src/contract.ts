@@ -1310,6 +1310,10 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "TemplateValidationRun",
     required: ["template", "sandbox"],
     properties: ["template", "sandbox"],
+    propertyRefs: [
+      { property: "template", ref: "EnvironmentTemplate" },
+      { property: "sandbox", ref: "Sandbox" },
+    ],
   },
   {
     schema: "RuntimeRef",
