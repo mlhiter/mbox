@@ -1248,6 +1248,23 @@ assert.throws(
         issue.property === "active" &&
         issue.expectedType === "integer" &&
         issue.actualType === "string",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectArtifactUsage.properties.retainedBytes.type = "string"
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-type-mismatch" &&
+        issue.schema === "ProjectArtifactUsage" &&
+        issue.property === "retainedBytes" &&
+        issue.expectedType === "integer" &&
+        issue.actualType === "string",
     ),
 )
 assert.throws(
@@ -2901,6 +2918,20 @@ function schemaComponents() {
     ResourceQuantityUsage: ["declared", "missing", "invalid"],
     ProjectSessionUsage: ["total", "active", "ended", "failed", "terminal", "ide", "notebook", "browser", "command", "custom"],
     ProjectTaskUsage: ["total", "queued", "running", "succeeded", "failed", "canceled", "timedOut"],
+    ProjectArtifactUsage: [
+      "total",
+      "retainedContent",
+      "referencedBytes",
+      "retainedBytes",
+      "file",
+      "directory",
+      "log",
+      "report",
+      "screenshot",
+      "image",
+      "link",
+      "other",
+    ],
     ProjectTemplateUsage: ["projectScoped", "globalVisible"],
     ProjectCredentialUsage: ["total", "git", "registry", "kubernetes", "ssh", "generic"],
     ResourceUsageValue: ["count"],
