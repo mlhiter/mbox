@@ -2007,6 +2007,7 @@ func writeProjectAuthorizationSummary(w io.Writer, decision projectAuthorization
 		{"Caller", projectAuthorizationCallerLabel(decision.Caller)},
 		{"Matched member", projectAuthorizationMemberLabel(decision.MatchedMember)},
 		{"Member records", strconv.Itoa(decision.MemberCount)},
+		{"Operator hint", projectAuthorizationOperatorHint(decision)},
 		{"Available actions", formatStringList(decision.AvailableActions)},
 	}
 	for _, row := range rows {
@@ -2039,6 +2040,32 @@ func projectAuthorizationDecisionLabel(decision projectAuthorizationSummaryDecis
 		parts = append(parts, "not route enforced")
 	}
 	return strings.Join(parts, " / ")
+}
+
+func projectAuthorizationOperatorHint(decision projectAuthorizationSummaryDecision) string {
+	if decision.Allowed {
+		if decision.Enforced {
+			return "caller matches a required project member role; this action is route-enforced"
+		}
+		return "caller matches a required project member role; this action is preflight-only"
+	}
+	if !decision.Enforced && strings.TrimSpace(decision.Evaluation) == "not_enforceable" {
+		if !decision.Caller.RBACTrusted {
+			return "preflight only: enable trusted principal headers and project RBAC enforcement before this action can be enforced"
+		}
+		return "preflight only: route-level enforcement is disabled for this action"
+	}
+	if !decision.Caller.RBACTrusted {
+		return "denied: caller is not a trusted project identity"
+	}
+	if decision.MatchedMember == nil {
+		if decision.MemberCount == 0 {
+			return "denied: project has no member role records"
+		}
+		return "denied: no project member matches the trusted caller"
+	}
+	required := formatStringList(decision.RequiredRoles)
+	return fmt.Sprintf("denied: matched member role %s is not one of %s", tableValue(decision.MatchedMember.Role, "unknown"), required)
 }
 
 func projectAuthorizationCallerLabel(caller projectAuthorizationSummaryCaller) string {

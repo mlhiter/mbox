@@ -2113,6 +2113,7 @@ func TestProjectAuthorizationSummaryUsesPreflightRoute(t *testing.T) {
 		"Caller\tuser:alice@example.com (trusted_header, authenticated, rbac trusted, roles enforced)",
 		"Matched member\tuser:alice@example.com role=owner id=member-1",
 		"Member records\t2",
+		"Operator hint\tcaller matches a required project member role; this action is route-enforced",
 		"Available actions\tproject.view,member.manage",
 		"- caller matches a project member role and this action is route-enforced",
 	} {
@@ -2122,6 +2123,90 @@ func TestProjectAuthorizationSummaryUsesPreflightRoute(t *testing.T) {
 	}
 	if strings.Contains(output, `"projectId"`) || strings.Contains(output, `"matchedMember"`) {
 		t.Fatalf("expected human summary output without raw authorization JSON, got %q", output)
+	}
+}
+
+func TestProjectAuthorizationOperatorHintExplainsDecisionStates(t *testing.T) {
+	cases := []struct {
+		name     string
+		decision projectAuthorizationSummaryDecision
+		want     string
+	}{
+		{
+			name: "allowed route enforced",
+			decision: projectAuthorizationSummaryDecision{
+				Allowed:  true,
+				Enforced: true,
+			},
+			want: "caller matches a required project member role; this action is route-enforced",
+		},
+		{
+			name: "allowed preflight only",
+			decision: projectAuthorizationSummaryDecision{
+				Allowed: true,
+			},
+			want: "caller matches a required project member role; this action is preflight-only",
+		},
+		{
+			name: "not enforceable untrusted",
+			decision: projectAuthorizationSummaryDecision{
+				Evaluation: "not_enforceable",
+			},
+			want: "preflight only: enable trusted principal headers and project RBAC enforcement before this action can be enforced",
+		},
+		{
+			name: "enforced untrusted",
+			decision: projectAuthorizationSummaryDecision{
+				Enforced:   true,
+				Evaluation: "denied",
+			},
+			want: "denied: caller is not a trusted project identity",
+		},
+		{
+			name: "trusted no member records",
+			decision: projectAuthorizationSummaryDecision{
+				Enforced:   true,
+				Evaluation: "denied",
+				Caller: projectAuthorizationSummaryCaller{
+					RBACTrusted: true,
+				},
+			},
+			want: "denied: project has no member role records",
+		},
+		{
+			name: "trusted no matching member",
+			decision: projectAuthorizationSummaryDecision{
+				Enforced:    true,
+				Evaluation:  "denied",
+				MemberCount: 2,
+				Caller: projectAuthorizationSummaryCaller{
+					RBACTrusted: true,
+				},
+			},
+			want: "denied: no project member matches the trusted caller",
+		},
+		{
+			name: "role insufficient",
+			decision: projectAuthorizationSummaryDecision{
+				Enforced:      true,
+				Evaluation:    "denied",
+				RequiredRoles: []string{"owner"},
+				Caller: projectAuthorizationSummaryCaller{
+					RBACTrusted: true,
+				},
+				MatchedMember: &projectAuthorizationSummaryMember{
+					Role: "operator",
+				},
+			},
+			want: "denied: matched member role operator is not one of owner",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := projectAuthorizationOperatorHint(tt.decision); got != tt.want {
+				t.Fatalf("expected %q, got %q", tt.want, got)
+			}
+		})
 	}
 }
 
