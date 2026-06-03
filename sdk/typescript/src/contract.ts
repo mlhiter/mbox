@@ -663,6 +663,15 @@ export const SDK_SCHEMA_CONTRACT = [
       "quantityIssues",
       "storage",
     ],
+    propertyTypes: [
+      { property: "observedResources", type: "integer" },
+      { property: "desiredPods", type: "integer" },
+      { property: "observedPods", type: "integer" },
+      { property: "runningPods", type: "integer" },
+      { property: "containersReady", type: "integer" },
+      { property: "containersTotal", type: "integer" },
+      { property: "restartCount", type: "integer" },
+    ],
     arrayItemRefs: [
       { property: "quantityIssues", ref: "RuntimeQuantityIssue" },
       { property: "storage", ref: "RuntimeStorageSummary" },
@@ -677,6 +686,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeStorageSummary",
     required: ["phase", "count"],
     properties: ["phase", "count", "capacity"],
+    propertyTypes: [{ property: "count", type: "integer" }],
   },
   {
     schema: "RuntimeResource",
