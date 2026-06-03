@@ -944,15 +944,18 @@ type auditEventSummaryItem struct {
 }
 
 type policyDeniedSummaryRow struct {
-	Operation  string
-	Reason     string
-	Count      int
-	Latest     time.Time
-	Actors     map[string]bool
-	Sources    map[string]bool
-	Resources  map[string]bool
-	RequestIDs map[string]bool
-	ProjectIDs map[string]bool
+	Operation            string
+	Reason               string
+	Count                int
+	Latest               time.Time
+	AuthorizationActions map[string]bool
+	Callers              map[string]bool
+	Members              map[string]bool
+	Actors               map[string]bool
+	Sources              map[string]bool
+	Resources            map[string]bool
+	RequestIDs           map[string]bool
+	ProjectIDs           map[string]bool
 }
 
 type auditSummaryRow struct {
@@ -2199,18 +2202,21 @@ func writePolicyDeniedSummaryTable(w io.Writer, events []auditEventSummaryItem, 
 		}
 		return out.Flush()
 	}
-	if _, err := fmt.Fprintln(out, "OPERATION\tREASON\tCOUNT\tLATEST\tPROJECTS\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS"); err != nil {
+	if _, err := fmt.Fprintln(out, "OPERATION\tREASON\tCOUNT\tLATEST\tPROJECTS\tAUTHZ ACTIONS\tCALLERS\tMEMBERS\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS"); err != nil {
 		return err
 	}
 	for _, row := range rows {
 		if _, err := fmt.Fprintf(
 			out,
-			"%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			tableValue(row.Operation, "unknown"),
 			tableValue(row.Reason, "unspecified"),
 			row.Count,
 			formatAuditSummaryTime(row.Latest),
 			formatAuditProjectSet(row.ProjectIDs, projectNames),
+			formatAuditSummarySet(row.AuthorizationActions),
+			formatAuditSummarySet(row.Callers),
+			formatAuditSummarySet(row.Members),
 			formatAuditSummarySet(row.Actors),
 			formatAuditSummarySet(row.Sources),
 			formatAuditSummarySet(row.Resources),
@@ -2228,18 +2234,21 @@ func policyDeniedSummaryRows(events []auditEventSummaryItem) []policyDeniedSumma
 		if strings.TrimSpace(event.Action) != "policy.denied" {
 			continue
 		}
-		operation, reason := policyDeniedMetadata(event.Metadata)
-		key := operation + "\x00" + reason
+		metadata := policyDeniedMetadata(event.Metadata)
+		key := metadata.Operation + "\x00" + metadata.Reason
 		row, ok := groups[key]
 		if !ok {
 			row = &policyDeniedSummaryRow{
-				Operation:  operation,
-				Reason:     reason,
-				Actors:     map[string]bool{},
-				Sources:    map[string]bool{},
-				Resources:  map[string]bool{},
-				RequestIDs: map[string]bool{},
-				ProjectIDs: map[string]bool{},
+				Operation:            metadata.Operation,
+				Reason:               metadata.Reason,
+				AuthorizationActions: map[string]bool{},
+				Callers:              map[string]bool{},
+				Members:              map[string]bool{},
+				Actors:               map[string]bool{},
+				Sources:              map[string]bool{},
+				Resources:            map[string]bool{},
+				RequestIDs:           map[string]bool{},
+				ProjectIDs:           map[string]bool{},
 			}
 			groups[key] = row
 		}
@@ -2253,8 +2262,11 @@ func policyDeniedSummaryRows(events []auditEventSummaryItem) []policyDeniedSumma
 		if resource == "" {
 			resource = strings.TrimSpace(event.ResourceType)
 		}
+		addAuditSummaryValue(row.AuthorizationActions, metadata.AuthorizationAction)
+		addAuditSummaryValue(row.Callers, metadata.Caller)
+		addAuditSummaryValue(row.Members, metadata.Member)
 		addAuditSummaryValue(row.Resources, resource)
-		addAuditSummaryValue(row.RequestIDs, auditSummaryRequestID(event.Metadata))
+		addAuditSummaryValue(row.RequestIDs, metadata.RequestID)
 		addAuditSummaryValue(row.ProjectIDs, event.ProjectID)
 	}
 	rows := make([]policyDeniedSummaryRow, 0, len(groups))
@@ -2276,12 +2288,77 @@ func policyDeniedSummaryRows(events []auditEventSummaryItem) []policyDeniedSumma
 	return rows
 }
 
-func policyDeniedMetadata(raw json.RawMessage) (string, string) {
+type policyDeniedSummaryMetadata struct {
+	Operation           string
+	Reason              string
+	RequestID           string
+	AuthorizationAction string
+	Caller              string
+	Member              string
+}
+
+func policyDeniedMetadata(raw json.RawMessage) policyDeniedSummaryMetadata {
 	var metadata map[string]any
 	if len(raw) == 0 || json.Unmarshal(raw, &metadata) != nil {
-		return "", ""
+		return policyDeniedSummaryMetadata{}
 	}
-	return auditSummaryMetadataString(metadata, "operation"), auditSummaryMetadataString(metadata, "reason")
+	return policyDeniedSummaryMetadata{
+		Operation:           auditSummaryMetadataString(metadata, "operation"),
+		Reason:              auditSummaryMetadataString(metadata, "reason"),
+		RequestID:           auditSummaryMetadataString(metadata, "requestId"),
+		AuthorizationAction: auditSummaryMetadataString(metadata, "authorizationAction"),
+		Caller:              policyDeniedSummaryCaller(metadata),
+		Member:              policyDeniedSummaryMember(metadata),
+	}
+}
+
+func policyDeniedSummaryCaller(metadata map[string]any) string {
+	mode := auditSummaryMetadataString(metadata, "callerMode")
+	principalType := auditSummaryMetadataString(metadata, "callerPrincipalType")
+	principal := auditSummaryMetadataString(metadata, "callerPrincipal")
+	if mode == "" && principalType == "" && principal == "" {
+		return ""
+	}
+	identity := policyDeniedPrincipalLabel(principalType, principal, "caller")
+	if identity == "" {
+		return ""
+	}
+	if mode != "" {
+		return identity + " (" + mode + ")"
+	}
+	return identity
+}
+
+func policyDeniedSummaryMember(metadata map[string]any) string {
+	principalType := auditSummaryMetadataString(metadata, "principalType")
+	principal := auditSummaryMetadataString(metadata, "principal")
+	role := auditSummaryMetadataString(metadata, "role")
+	if principalType == "" && principal == "" && role == "" {
+		return ""
+	}
+	identity := policyDeniedPrincipalLabel(principalType, principal, "member")
+	if identity == "" {
+		return "role=" + role
+	}
+	if role != "" {
+		return identity + " role=" + role
+	}
+	return identity
+}
+
+func policyDeniedPrincipalLabel(principalType string, principal string, fallback string) string {
+	principalType = strings.TrimSpace(principalType)
+	principal = strings.TrimSpace(principal)
+	if principal != "" && principalType != "" {
+		return principalType + ":" + principal
+	}
+	if principal != "" {
+		return principal
+	}
+	if principalType != "" {
+		return principalType
+	}
+	return fallback
 }
 
 func auditSummaryRequestID(raw json.RawMessage) string {
