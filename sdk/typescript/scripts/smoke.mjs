@@ -1313,6 +1313,23 @@ assert.throws(
         issue.property === "runningPods" &&
         issue.expectedType === "integer" &&
         issue.actualType === "string",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeResourceObservation.properties.podCount.type = "string"
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-type-mismatch" &&
+        issue.schema === "RuntimeResourceObservation" &&
+        issue.property === "podCount" &&
+        issue.expectedType === "integer" &&
+        issue.actualType === "string",
     ),
 )
 assert.throws(
@@ -2883,6 +2900,16 @@ function schemaComponents() {
     schemas.RuntimeWorkloadSummary.properties[property].type = "integer"
   }
   schemas.RuntimeStorageSummary.properties.count.type = "integer"
+  for (const property of [
+    "replicas",
+    "podCount",
+    "runningPodCount",
+    "containersReady",
+    "containersTotal",
+    "restartCount",
+  ]) {
+    schemas.RuntimeResourceObservation.properties[property].type = "integer"
+  }
   schemas.RuntimeResourceSummary.properties.byKind = arrayRef("RuntimeResourceCount")
   schemas.RuntimeResourceSummary.properties.byNamespace = arrayRef("RuntimeResourceCount")
   schemas.RuntimeResourceSummary.properties.byOwner = arrayRef("RuntimeResourceCount")

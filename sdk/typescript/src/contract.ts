@@ -722,6 +722,14 @@ export const SDK_SCHEMA_CONTRACT = [
       "readyCondition",
       "message",
     ],
+    propertyTypes: [
+      { property: "replicas", type: "integer" },
+      { property: "podCount", type: "integer" },
+      { property: "runningPodCount", type: "integer" },
+      { property: "containersReady", type: "integer" },
+      { property: "containersTotal", type: "integer" },
+      { property: "restartCount", type: "integer" },
+    ],
     arrayItemRefs: [{ property: "storage", ref: "RuntimeStorage" }],
   },
   {
