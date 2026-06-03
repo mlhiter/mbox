@@ -1381,6 +1381,21 @@ assert.throws(
         issue.property === "slug",
     ),
 )
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.Error.required = []
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-required" &&
+        issue.schema === "Error" &&
+        issue.property === "error",
+    ),
+)
 assert.equal(assertOpenAPIAlignment(buildOpenAPIWithIntentionalSDKExceptions()).ok, true)
 
 console.log("SDK smoke passed")
@@ -1722,6 +1737,8 @@ function schemaComponents() {
     schemas[name] = { type: "object", properties: {}, required: [] }
   }
   Object.assign(schemas, {
+    Health: objectSchema(["status"]),
+    Error: objectSchema(["error"]),
     RuntimeResourceList: objectSchema(["adapter", "checkedAt", "summary", "items"]),
     RuntimeResourceSummary: objectSchema(["total", "byKind", "byNamespace", "byOwner", "byProject", "workload"]),
     RuntimeResourceCount: objectSchema(["name", "count"]),

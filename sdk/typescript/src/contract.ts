@@ -536,6 +536,16 @@ export const SDK_ROUTE_CONTRACT = [
 
 export const SDK_SCHEMA_CONTRACT = [
   {
+    schema: "Health",
+    required: ["status"],
+    properties: ["status"],
+  },
+  {
+    schema: "Error",
+    required: ["error"],
+    properties: ["error"],
+  },
+  {
     schema: "RuntimeResourceList",
     required: ["adapter", "checkedAt", "summary", "items"],
     properties: ["adapter", "checkedAt", "summary", "items"],

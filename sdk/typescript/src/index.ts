@@ -12,6 +12,10 @@ export type ListResponse<T> = {
   items?: T[]
 }
 
+export type HealthResult = {
+  status: string
+}
+
 export type APIInfo = {
   name: string
   apiVersion: string
@@ -1112,7 +1116,7 @@ export class MboxClient {
   }
 
   health(options?: RequestOptions) {
-    return this.request<{ status?: string }>("/healthz", options)
+    return this.request<HealthResult>("/healthz", options)
   }
 
   info(options?: RequestOptions) {
