@@ -1224,6 +1224,26 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if _, ok := properties["role"].(map[string]any); !ok {
 		t.Fatalf("expected role policy denied metadata property, got %#v", properties["role"])
 	}
+	policyKind, ok := properties["policyKind"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected policyKind property, got %#v", properties["policyKind"])
+	}
+	policyKinds, ok := policyKind["enum"].([]any)
+	if !ok ||
+		!anySliceContainsString(policyKinds, "launch") ||
+		!anySliceContainsString(policyKinds, "quota") {
+		t.Fatalf("expected policy denied policyKind enum, got %#v", policyKind["enum"])
+	}
+	enforcement, ok := properties["enforcement"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected enforcement property, got %#v", properties["enforcement"])
+	}
+	enforcements, ok := enforcement["enum"].([]any)
+	if !ok ||
+		!anySliceContainsString(enforcements, "disabled") ||
+		!anySliceContainsString(enforcements, "enforced") {
+		t.Fatalf("expected policy denied enforcement enum, got %#v", enforcement["enum"])
+	}
 	operation, ok := properties["operation"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected operation property, got %#v", properties["operation"])

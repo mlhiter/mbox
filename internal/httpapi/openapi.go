@@ -62,6 +62,11 @@ var knownPolicyDeniedOperations = []string{
 	"project.member.delete",
 }
 
+var knownPolicyDeniedPolicyKinds = []string{
+	"launch",
+	"quota",
+}
+
 type openAPIDocument map[string]any
 
 func (api *API) getOpenAPI(w http.ResponseWriter, _ *http.Request) {
@@ -1303,8 +1308,8 @@ func policyDeniedAuditMetadataSchema() map[string]any {
 		prop("callerPrincipal", stringSchema()),
 		prop("artifactKind", stringSchema()),
 		prop("incomingBytes", integerSchema()),
-		prop("policyKind", stringSchema()),
-		prop("enforcement", stringSchema()),
+		prop("policyKind", enumSchema(knownPolicyDeniedPolicyKinds...)),
+		prop("enforcement", enumSchema("disabled", "enforced")),
 		prop("maxActiveSandboxes", integerSchema()),
 		prop("maxRetainedArtifactBytes", integerSchema()),
 		prop("type", stringSchema()),

@@ -175,6 +175,7 @@ const runtimeOrphanReasonValues = [
 ] as const
 const runtimeOrphanCleanupConfirmValues = ["delete-orphan-runtime-resource"] as const
 const runtimeResourceOwnerKindValues = ["sandbox", "template"] as const
+const policyDeniedPolicyKindValues = ["launch", "quota"] as const
 const policyDeniedOperationValues = [
   "sandbox.launch",
   "template.validation",
@@ -1528,6 +1529,8 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "authorizationAction", values: projectAuthorizationActionValues },
       { property: "callerMode", values: callerAuthModeValues },
       { property: "callerPrincipalType", values: callerPrincipalTypeValues },
+      { property: "policyKind", values: policyDeniedPolicyKindValues },
+      { property: "enforcement", values: projectPolicyEnforcementValues },
       { property: "principalType", values: projectMemberPrincipalTypeValues },
       { property: "role", values: projectMemberRoleValues },
     ],

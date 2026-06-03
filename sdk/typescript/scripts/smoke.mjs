@@ -874,6 +874,40 @@ assert.throws(
         issue.schema === "PolicyDeniedAuditMetadata" &&
         issue.property === "operation" &&
         issue.enumValue === "sandbox.launch",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.PolicyDeniedAuditMetadata.properties.policyKind.enum =
+      broken.components.schemas.PolicyDeniedAuditMetadata.properties.policyKind.enum.filter((value) => value !== "quota")
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "PolicyDeniedAuditMetadata" &&
+        issue.property === "policyKind" &&
+        issue.enumValue === "quota",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.PolicyDeniedAuditMetadata.properties.enforcement.enum =
+      broken.components.schemas.PolicyDeniedAuditMetadata.properties.enforcement.enum.filter((value) => value !== "enforced")
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "PolicyDeniedAuditMetadata" &&
+        issue.property === "enforcement" &&
+        issue.enumValue === "enforced",
     ),
 )
 assert.throws(
@@ -2855,6 +2889,8 @@ function schemaComponents() {
     "service_account",
     "automation",
   ]
+  schemas.PolicyDeniedAuditMetadata.properties.policyKind.enum = ["launch", "quota"]
+  schemas.PolicyDeniedAuditMetadata.properties.enforcement.enum = ["disabled", "enforced"]
   schemas.PolicyDeniedAuditMetadata.properties.principalType.enum = ["user", "service_account", "automation"]
   schemas.PolicyDeniedAuditMetadata.properties.role.enum = ["owner", "operator", "viewer"]
   schemas.RuntimeResourceOwner.properties.kind.enum = ["sandbox", "template"]

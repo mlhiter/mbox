@@ -601,6 +601,8 @@ export type PolicyDeniedOperation =
   | "project.member.create"
   | "project.member.delete"
 
+export type PolicyDeniedPolicyKind = "launch" | "quota"
+
 export type PolicyDeniedAuditMetadata = JSONObject & {
   operation: PolicyDeniedOperation
   reason: string
@@ -616,8 +618,8 @@ export type PolicyDeniedAuditMetadata = JSONObject & {
   callerPrincipal?: string
   artifactKind?: string
   incomingBytes?: number
-  policyKind?: string
-  enforcement?: string
+  policyKind?: PolicyDeniedPolicyKind
+  enforcement?: ProjectPolicyEnforcement
   maxActiveSandboxes?: number
   maxRetainedArtifactBytes?: number
   type?: string
