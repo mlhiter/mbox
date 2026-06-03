@@ -1369,6 +1369,23 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.ArtifactContent.properties.sizeBytes.type = "string"
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-type-mismatch" &&
+        issue.schema === "ArtifactContent" &&
+        issue.property === "sizeBytes" &&
+        issue.expectedType === "number" &&
+        issue.actualType === "string",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.Project.required = broken.components.schemas.Project.required.filter(
       (name) => name !== "defaultNamespace",
     )
@@ -2884,6 +2901,9 @@ function schemaComponents() {
   schemas.ExecutionTaskEvent.properties.type.enum = ["snapshot", "status", "output", "done"]
   schemas.ExecutionTaskEvent.properties.stream.enum = ["stdout", "stderr"]
   schemas.Artifact.properties.retainedContent = jsonRef("ArtifactContent")
+  schemas.Artifact.properties.sizeBytes.type = "number"
+  schemas.ArtifactCreate.properties.sizeBytes.type = "number"
+  schemas.ArtifactContent.properties.sizeBytes.type = "number"
   schemas.Artifact.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]
   schemas.ArtifactCreate.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]
   schemas.ArtifactContent.properties.storageProvider.enum = ["postgres", "filesystem", "s3"]

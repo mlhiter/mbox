@@ -1480,6 +1480,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "createdAt",
       "updatedAt",
     ],
+    propertyTypes: [{ property: "sizeBytes", type: "number" }],
     enumProperties: [{ property: "kind", values: artifactKindValues }],
     propertyRefs: [{ property: "retainedContent", ref: "ArtifactContent" }],
   },
@@ -1487,12 +1488,14 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "ArtifactCreate",
     required: ["kind", "name", "uri"],
     properties: ["taskId", "kind", "name", "uri", "contentType", "sizeBytes", "metadata"],
+    propertyTypes: [{ property: "sizeBytes", type: "number" }],
     enumProperties: [{ property: "kind", values: artifactKindValues }],
   },
   {
     schema: "ArtifactContent",
     required: ["artifactId", "sizeBytes", "sha256", "sourceUri", "storageProvider", "capturedAt"],
     properties: ["artifactId", "contentType", "sizeBytes", "sha256", "sourceUri", "storageProvider", "storageKey", "capturedAt"],
+    propertyTypes: [{ property: "sizeBytes", type: "number" }],
     enumProperties: [{ property: "storageProvider", values: artifactStorageProviderValues }],
   },
   {
