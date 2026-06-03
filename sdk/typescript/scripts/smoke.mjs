@@ -1279,6 +1279,23 @@ assert.throws(
         issue.schema === "RuntimeResourceSummary" &&
         issue.property === "byProject" &&
         issue.expectedSchema === "RuntimeResourceCount",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeResourceCount.properties.count.type = "string"
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-type-mismatch" &&
+        issue.schema === "RuntimeResourceCount" &&
+        issue.property === "count" &&
+        issue.expectedType === "integer" &&
+        issue.actualType === "string",
     ),
 )
 assert.throws(
@@ -2835,6 +2852,8 @@ function schemaComponents() {
   schemas.RuntimeResourceList.properties.summary = jsonRef("RuntimeResourceSummary")
   schemas.RuntimeResourceList.properties.items = arrayRef("RuntimeResource")
   schemas.RuntimeResourceSummary.properties.workload = jsonRef("RuntimeWorkloadSummary")
+  schemas.RuntimeResourceSummary.properties.total.type = "integer"
+  schemas.RuntimeResourceCount.properties.count.type = "integer"
   schemas.RuntimeResourceSummary.properties.byKind = arrayRef("RuntimeResourceCount")
   schemas.RuntimeResourceSummary.properties.byNamespace = arrayRef("RuntimeResourceCount")
   schemas.RuntimeResourceSummary.properties.byOwner = arrayRef("RuntimeResourceCount")

@@ -623,6 +623,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeResourceSummary",
     required: ["total", "byKind", "byNamespace", "byOwner", "byProject", "workload"],
     properties: ["total", "byKind", "byNamespace", "byOwner", "byProject", "workload"],
+    propertyTypes: [{ property: "total", type: "integer" }],
     propertyRefs: [{ property: "workload", ref: "RuntimeWorkloadSummary" }],
     arrayItemRefs: [
       { property: "byKind", ref: "RuntimeResourceCount" },
@@ -635,6 +636,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeResourceCount",
     required: ["name", "count"],
     properties: ["name", "count"],
+    propertyTypes: [{ property: "count", type: "integer" }],
   },
   {
     schema: "RuntimeWorkloadSummary",
