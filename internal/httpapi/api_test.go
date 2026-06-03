@@ -815,6 +815,18 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if usageProperties["sandboxes"] == nil || usageProperties["templates"] == nil || usageProperties["artifacts"] == nil {
 		t.Fatalf("expected ProjectUsage resource properties, got %#v", usageProperties)
 	}
+	for property, expectedRef := range map[string]string{
+		"sandboxes":       "#/components/schemas/ProjectSandboxUsage",
+		"runtimeSessions": "#/components/schemas/ProjectSessionUsage",
+		"executionTasks":  "#/components/schemas/ProjectTaskUsage",
+		"artifacts":       "#/components/schemas/ProjectArtifactUsage",
+		"templates":       "#/components/schemas/ProjectTemplateUsage",
+		"credentials":     "#/components/schemas/ProjectCredentialUsage",
+	} {
+		if ref := schemaPropertyRef(projectUsage, property); ref != expectedRef {
+			t.Fatalf("expected ProjectUsage %s to reference %s, got %q", property, expectedRef, ref)
+		}
+	}
 	sandboxUsage, ok := schemas["ProjectSandboxUsage"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected ProjectSandboxUsage schema in %#v", schemas["ProjectSandboxUsage"])
@@ -825,6 +837,20 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	}
 	if sandboxProperties["activeRequests"] == nil || sandboxProperties["runningRequests"] == nil {
 		t.Fatalf("expected sandbox request usage properties, got %#v", sandboxProperties)
+	}
+	for _, property := range []string{"activeRequests", "runningRequests"} {
+		if ref := schemaPropertyRef(sandboxUsage, property); ref != "#/components/schemas/SandboxResourceRequestUsage" {
+			t.Fatalf("expected ProjectSandboxUsage %s to reference SandboxResourceRequestUsage, got %q", property, ref)
+		}
+	}
+	requestUsage, ok := schemas["SandboxResourceRequestUsage"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected SandboxResourceRequestUsage schema in %#v", schemas["SandboxResourceRequestUsage"])
+	}
+	for _, property := range []string{"cpu", "memory", "storage"} {
+		if ref := schemaPropertyRef(requestUsage, property); ref != "#/components/schemas/ResourceQuantityUsage" {
+			t.Fatalf("expected SandboxResourceRequestUsage %s to reference ResourceQuantityUsage, got %q", property, ref)
+		}
 	}
 	quantityUsage, ok := schemas["ResourceQuantityUsage"].(map[string]any)
 	if !ok {

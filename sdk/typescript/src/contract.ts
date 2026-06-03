@@ -816,6 +816,14 @@ export const SDK_SCHEMA_CONTRACT = [
       "credentials",
       "notes",
     ],
+    propertyRefs: [
+      { property: "sandboxes", ref: "ProjectSandboxUsage" },
+      { property: "runtimeSessions", ref: "ProjectSessionUsage" },
+      { property: "executionTasks", ref: "ProjectTaskUsage" },
+      { property: "artifacts", ref: "ProjectArtifactUsage" },
+      { property: "templates", ref: "ProjectTemplateUsage" },
+      { property: "credentials", ref: "ProjectCredentialUsage" },
+    ],
   },
   {
     schema: "BoundarySummary",
@@ -1111,10 +1119,19 @@ export const SDK_SCHEMA_CONTRACT = [
       "activeRequests",
       "runningRequests",
     ],
+    propertyRefs: [
+      { property: "activeRequests", ref: "SandboxResourceRequestUsage" },
+      { property: "runningRequests", ref: "SandboxResourceRequestUsage" },
+    ],
   },
   {
     schema: "SandboxResourceRequestUsage",
     required: ["count", "cpu", "memory", "storage"],
+    propertyRefs: [
+      { property: "cpu", ref: "ResourceQuantityUsage" },
+      { property: "memory", ref: "ResourceQuantityUsage" },
+      { property: "storage", ref: "ResourceQuantityUsage" },
+    ],
   },
   {
     schema: "ResourceQuantityUsage",

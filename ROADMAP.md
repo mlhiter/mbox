@@ -454,6 +454,7 @@ First slice status:
 98. Done: SDK/OpenAPI array item-ref alignment guards selected runtime nested arrays, including runtime target storage, runtime inventory workload storage/issues, and preview port result items, so SDK runtime clients fail fast on published nested-array schema drift.
 99. Done: CLI audit help/usage alignment advertises `--summary` alongside `--policy-denied-summary` for both global and project-scoped audit-event commands, so the new read-only summary mode is discoverable from help and early usage errors.
 100. Done: SDK/OpenAPI property-ref alignment guards selected runtime inventory, log/task event, and runtime orphan/cleanup nested schema references, including `$ref`-backed orphan reason enums, so generated-client preparation catches object-ref drift without changing runtime audit or cleanup behavior.
-101. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+101. Done: SDK/OpenAPI project usage schema-ref alignment guards `ProjectUsage` usage buckets, sandbox active/running request totals, and CPU/memory/storage quantity references, keeping per-project product-record usage contracts generated-client ready without adding live metrics, billing, quota reservation, or capacity semantics.
+102. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

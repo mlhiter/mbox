@@ -1028,6 +1028,54 @@ assert.throws(
         issue.schema === "RuntimeOrphan" &&
         issue.property === "resource" &&
         issue.expectedSchema === "RuntimeResource",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectUsage.properties.sandboxes = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "ProjectUsage" &&
+        issue.property === "sandboxes" &&
+        issue.expectedSchema === "ProjectSandboxUsage",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectSandboxUsage.properties.runningRequests = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "ProjectSandboxUsage" &&
+        issue.property === "runningRequests" &&
+        issue.expectedSchema === "SandboxResourceRequestUsage",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.SandboxResourceRequestUsage.properties.storage = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "SandboxResourceRequestUsage" &&
+        issue.property === "storage" &&
+        issue.expectedSchema === "ResourceQuantityUsage",
     ),
 )
 assert.throws(
@@ -2314,6 +2362,17 @@ function schemaComponents() {
     "source",
     "metadata",
   ])
+  schemas.ProjectUsage.properties.sandboxes = jsonRef("ProjectSandboxUsage")
+  schemas.ProjectUsage.properties.runtimeSessions = jsonRef("ProjectSessionUsage")
+  schemas.ProjectUsage.properties.executionTasks = jsonRef("ProjectTaskUsage")
+  schemas.ProjectUsage.properties.artifacts = jsonRef("ProjectArtifactUsage")
+  schemas.ProjectUsage.properties.templates = jsonRef("ProjectTemplateUsage")
+  schemas.ProjectUsage.properties.credentials = jsonRef("ProjectCredentialUsage")
+  schemas.ProjectSandboxUsage.properties.activeRequests = jsonRef("SandboxResourceRequestUsage")
+  schemas.ProjectSandboxUsage.properties.runningRequests = jsonRef("SandboxResourceRequestUsage")
+  schemas.SandboxResourceRequestUsage.properties.cpu = jsonRef("ResourceQuantityUsage")
+  schemas.SandboxResourceRequestUsage.properties.memory = jsonRef("ResourceQuantityUsage")
+  schemas.SandboxResourceRequestUsage.properties.storage = jsonRef("ResourceQuantityUsage")
   schemas.ProjectAuthorizationDecision.properties.action.enum = [
     "project.view",
     "project.manage",
