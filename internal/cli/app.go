@@ -184,7 +184,7 @@ Commands:
   templates get <template-id>
   templates boundary <template-id> [--project-id PROJECT] [--summary]
   templates validate <template-id> --project-id PROJECT [--name NAME]
-  templates validate-run <template-id> --project-id PROJECT [--name NAME] [--wait-timeout 5m] [--task-timeout 60] [--require-success] -- sh -lc 'echo ok'
+  templates validate-run <template-id> --project-id PROJECT [--name NAME] [--wait-timeout 5m] [--task-timeout 60] [--require-success] (--arg ARG...|--command CMD|--command-json JSON|-- COMMAND...)
   templates delete <template-id>
   templates decide-validation <template-id> <sandbox-id> --status passed|failed
   sandboxes list [--project-id PROJECT]
@@ -3057,7 +3057,7 @@ type templateValidateRunInput struct {
 
 func (a *App) parseTemplateValidateRun(args []string) (templateValidateRunInput, error) {
 	if len(args) < 1 {
-		return templateValidateRunInput{}, usageError("usage: mbox templates validate-run <template-id> --project-id PROJECT [--name NAME] [--wait-timeout 5m] [--task-timeout 60] [--require-success] -- sh -lc 'echo ok'")
+		return templateValidateRunInput{}, usageError(templateValidateRunUsage)
 	}
 	input := templateValidateRunInput{TemplateID: args[0]}
 	fs := flag.NewFlagSet("templates validate-run", flag.ContinueOnError)
@@ -3089,7 +3089,7 @@ func (a *App) parseTemplateValidateRun(args []string) (templateValidateRunInput,
 		parsedCommand = positionalCommand
 	}
 	if len(parsedCommand) == 0 {
-		return templateValidateRunInput{}, usageError("usage: mbox templates validate-run <template-id> --project-id PROJECT [--name NAME] [--wait-timeout 5m] [--task-timeout 60] [--require-success] -- sh -lc 'echo ok'")
+		return templateValidateRunInput{}, usageError(templateValidateRunUsage)
 	}
 	if *taskTimeoutSeconds <= 0 {
 		return templateValidateRunInput{}, usageError("task-timeout must be greater than zero")
@@ -3124,6 +3124,8 @@ func (a *App) parseTemplateValidateRun(args []string) (templateValidateRunInput,
 	input.TaskMetadata = rawTaskMetadata
 	return input, nil
 }
+
+const templateValidateRunUsage = "usage: mbox templates validate-run <template-id> --project-id PROJECT [--name NAME] [--wait-timeout 5m] [--task-timeout 60] [--require-success] (--arg ARG...|--command CMD|--command-json JSON|-- COMMAND...)"
 
 func validationSandboxID(validation map[string]any) (string, error) {
 	sandbox, ok := validation["sandbox"].(map[string]any)

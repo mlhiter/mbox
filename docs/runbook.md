@@ -304,6 +304,7 @@ For runtime-enabled sandboxes, the CLI maps to the same lower-level primitives a
 go run ./cmd/mbox runtime resources --namespace <namespace>
 go run ./cmd/mbox templates create --project-id <project-id> --name "BusyBox" --image busybox:1.36 --arg sh --arg -c --arg 'tail -f /dev/null' --working-dir /workspace
 go run ./cmd/mbox templates validate-run <template-id> --project-id <project-id> --wait-timeout 5m --require-success -- sh -lc 'pwd && echo template-ok'
+go run ./cmd/mbox templates validate-run <template-id> --project-id <project-id> --wait-timeout 5m --command-json '["sh","-lc","pwd && echo template-ok"]'
 go run ./cmd/mbox sessions list <sandbox-id>
 go run ./cmd/mbox tasks create <sandbox-id> --arg sh --arg -lc --arg 'pwd && echo task-ok'
 go run ./cmd/mbox tasks wait <task-id> --timeout 2m
@@ -311,7 +312,7 @@ go run ./cmd/mbox tasks watch <task-id>
 go run ./cmd/mbox artifacts content <artifact-id>
 ```
 
-`tasks create` accepts repeated `--arg`, comma-split `--command`, or JSON-array `--command-json` command input. Use an explicit shell argv such as `["sh","-lc","pwd && echo task-ok"]` when shell parsing is needed.
+`tasks create` and `templates validate-run` accept repeated `--arg`, comma-split `--command`, or JSON-array `--command-json` command input. `templates validate-run` also accepts positional command arguments after `--`. Use an explicit shell argv such as `["sh","-lc","pwd && echo task-ok"]` when shell parsing is needed.
 
 The CLI should remain a thin HTTP client. It must not write to Postgres directly or operate Kubernetes resources directly.
 

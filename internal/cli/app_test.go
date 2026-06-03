@@ -230,6 +230,32 @@ func TestTasksCreateUsageListsCommandInputModes(t *testing.T) {
 	}
 }
 
+func TestTemplatesValidateRunUsageListsCommandInputModes(t *testing.T) {
+	for _, args := range [][]string{
+		{"templates", "validate-run"},
+		{"templates", "validate-run", "template-1", "--project-id", "project-1"},
+	} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+			err := app.Run(context.Background(), args)
+			if err == nil {
+				t.Fatal("expected templates validate-run usage error")
+			}
+			for _, expected := range []string{
+				"usage: mbox templates validate-run <template-id>",
+				"--arg ARG",
+				"--command CMD",
+				"--command-json JSON",
+				"-- COMMAND",
+			} {
+				if !strings.Contains(err.Error(), expected) {
+					t.Fatalf("expected templates validate-run usage to include %q, got %v", expected, err)
+				}
+			}
+		})
+	}
+}
+
 func TestCompatSucceedsForCompatibleInfo(t *testing.T) {
 	var method string
 	var path string
