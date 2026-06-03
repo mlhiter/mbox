@@ -1663,6 +1663,9 @@ function schemaComponents() {
     "TemplateCreate",
     "TemplateUpdate",
     "BoundarySummary",
+    "BoundaryCheck",
+    "BoundaryPort",
+    "BoundaryCredentialRef",
     "TemplateValidationRun",
     "TemplateValidationRunCreate",
     "TemplateValidationRunDecision",
@@ -1869,6 +1872,49 @@ function schemaComponents() {
       "storageRequests",
     ]),
     ProjectCredentialUsage: objectSchema(["total", "git", "registry", "kubernetes", "ssh", "generic"]),
+    BoundarySummary: objectSchema([
+      "kind",
+      "templateId",
+      "templateName",
+      "serviceAccountTokenAutomount",
+      "image",
+      "workingDir",
+      "envVarCount",
+      "secretProjection",
+      "networkPolicy",
+      "networkPolicyProjection",
+      "lifecyclePolicyProjection",
+      "policyEnforcement",
+      "credentialProjection",
+      "controllerPermissions",
+      "runtimeAccess",
+      "cleanup",
+      "checks",
+    ], [
+      "projectId",
+      "projectName",
+      "sandboxId",
+      "sandboxName",
+      "sandboxStatus",
+      "namespace",
+      "serviceAccountName",
+      "runtimeRef",
+      "resourceRequests",
+      "storageRequest",
+      "previewPorts",
+      "secretRefs",
+      "lifecyclePolicy",
+      "allowedImagePrefixes",
+      "allowedServiceAccounts",
+      "allowedSecretRefs",
+      "credentialRefs",
+    ]),
+    BoundaryCheck: objectSchema(["id", "label", "status", "message"], ["evidence"]),
+    BoundaryPort: objectSchema(["name", "port", "protocol"]),
+    BoundaryCredentialRef: objectSchema(["id", "name", "slug", "type", "secretRef"], [
+      "target",
+      "usage",
+    ]),
     SecretRef: objectSchema(["name"], ["key"]),
     ProjectCredential: objectSchema(["id", "projectId", "name", "slug", "type", "secretRef"], [
       "target",
@@ -2146,6 +2192,11 @@ function schemaComponents() {
   schemas.ProjectMemberCreate.properties.role.enum = ["owner", "operator", "viewer"]
   schemas.ProjectCredential.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
   schemas.ProjectCredentialCreate.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
+  schemas.BoundarySummary.properties.kind.enum = ["template", "sandbox"]
+  schemas.BoundarySummary.properties.sandboxStatus.enum = ["pending", "running", "stopped", "failed", "deleted"]
+  schemas.BoundarySummary.properties.policyEnforcement.enum = ["disabled", "enforced"]
+  schemas.BoundaryCheck.properties.status.enum = ["pass", "warn", "fail"]
+  schemas.BoundaryCredentialRef.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
   schemas.TemplateValidationRunDecision.properties.status.enum = ["passed", "failed"]
   schemas.Sandbox.properties.status.enum = ["pending", "running", "stopped", "failed", "deleted"]
   schemas.SandboxUpdate.properties.status.enum = ["pending", "running", "stopped", "failed", "deleted"]

@@ -563,7 +563,10 @@ func openAPIComponents() map[string]any {
 			"TemplateValidationRunCreate":   objectSchema(nil, prop("projectId", stringSchema()), prop("name", stringSchema()), prop("metadata", objectAnySchema())),
 			"TemplateValidationRunDecision": objectSchema(requiredProps("status"), prop("status", enumSchema("passed", "failed"))),
 			"TemplateValidationRun":         objectSchema(requiredProps("template", "sandbox"), prop("template", schemaRef("EnvironmentTemplate")), prop("sandbox", schemaRef("Sandbox"))),
-			"BoundarySummary":               looseObjectSchema("Read-only runtime boundary summary."),
+			"BoundarySummary":               boundarySummarySchema(),
+			"BoundaryCheck":                 boundaryCheckSchema(),
+			"BoundaryPort":                  objectSchema(requiredProps("name", "port", "protocol"), prop("name", stringSchema()), prop("port", integerSchema()), prop("protocol", stringSchema())),
+			"BoundaryCredentialRef":         boundaryCredentialRefSchema(),
 			"Sandbox":                       sandboxSchema(false),
 			"SandboxCreate":                 sandboxSchema(true),
 			"SandboxUpdate":                 sandboxUpdateSchema(),
@@ -975,6 +978,69 @@ func projectCredentialUsageSchema() map[string]any {
 		prop("kubernetes", integerSchema()),
 		prop("ssh", integerSchema()),
 		prop("generic", integerSchema()),
+	)
+}
+
+func boundarySummarySchema() map[string]any {
+	schema := objectSchema(requiredProps("kind", "templateId", "templateName", "serviceAccountTokenAutomount", "image", "workingDir", "envVarCount", "secretProjection", "networkPolicy", "networkPolicyProjection", "lifecyclePolicyProjection", "policyEnforcement", "credentialProjection", "controllerPermissions", "runtimeAccess", "cleanup", "checks"),
+		prop("kind", enumSchema("template", "sandbox")),
+		prop("projectId", stringSchema()),
+		prop("projectName", stringSchema()),
+		prop("templateId", stringSchema()),
+		prop("templateName", stringSchema()),
+		prop("sandboxId", stringSchema()),
+		prop("sandboxName", stringSchema()),
+		prop("sandboxStatus", enumSchema("pending", "running", "stopped", "failed", "deleted")),
+		prop("namespace", stringSchema()),
+		prop("serviceAccountName", stringSchema()),
+		prop("serviceAccountTokenAutomount", boolSchema()),
+		prop("runtimeRef", schemaRef("RuntimeRef")),
+		prop("image", stringSchema()),
+		prop("workingDir", stringSchema()),
+		prop("resourceRequests", objectAnySchema()),
+		prop("storageRequest", stringSchema()),
+		prop("previewPorts", arraySchema(schemaRef("BoundaryPort"))),
+		prop("envVarCount", integerSchema()),
+		prop("secretRefs", arraySchema(schemaRef("SecretRef"))),
+		prop("secretProjection", stringSchema()),
+		prop("networkPolicy", stringSchema()),
+		prop("networkPolicyProjection", stringSchema()),
+		prop("lifecyclePolicy", objectAnySchema()),
+		prop("lifecyclePolicyProjection", stringSchema()),
+		prop("policyEnforcement", enumSchema("disabled", "enforced")),
+		prop("allowedImagePrefixes", arraySchema(stringSchema())),
+		prop("allowedServiceAccounts", arraySchema(stringSchema())),
+		prop("allowedSecretRefs", arraySchema(stringSchema())),
+		prop("credentialRefs", arraySchema(schemaRef("BoundaryCredentialRef"))),
+		prop("credentialProjection", stringSchema()),
+		prop("controllerPermissions", arraySchema(stringSchema())),
+		prop("runtimeAccess", arraySchema(stringSchema())),
+		prop("cleanup", arraySchema(stringSchema())),
+		prop("checks", arraySchema(schemaRef("BoundaryCheck"))),
+	)
+	schema["description"] = "Read-only runtime safety boundary summary for a template or sandbox. It exposes namespace, runtime identity, policy, credential-reference, projection, runtime access, cleanup, and check status fields; it is not secret-value access, full RBAC, billing, capacity, or live utilization."
+	return schema
+}
+
+func boundaryCheckSchema() map[string]any {
+	return objectSchema(requiredProps("id", "label", "status", "message"),
+		prop("id", stringSchema()),
+		prop("label", stringSchema()),
+		prop("status", enumSchema("pass", "warn", "fail")),
+		prop("message", stringSchema()),
+		prop("evidence", arraySchema(stringSchema())),
+	)
+}
+
+func boundaryCredentialRefSchema() map[string]any {
+	return objectSchema(requiredProps("id", "name", "slug", "type", "secretRef"),
+		prop("id", stringSchema()),
+		prop("name", stringSchema()),
+		prop("slug", stringSchema()),
+		prop("type", enumSchema("git", "registry", "kubernetes", "ssh", "generic")),
+		prop("target", stringSchema()),
+		prop("secretRef", stringSchema()),
+		prop("usage", arraySchema(stringSchema())),
 	)
 }
 

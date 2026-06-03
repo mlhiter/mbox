@@ -379,10 +379,21 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected schemas object, got %#v", components["schemas"])
 	}
-	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "SecretRef", "ProjectCredential", "ProjectCredentialCreate", "TemplatePort", "EnvironmentTemplate", "TemplateCreate", "TemplateUpdate", "RuntimeRef", "SandboxPort", "Sandbox", "SandboxCreate", "SandboxUpdate", "PreviewPort", "PreviewPortsResult", "RuntimeSession", "RuntimeSessionCreate", "ExecutionTask", "ExecutionTaskCreate", "ExecutionTaskEvent", "Artifact", "ArtifactCreate", "ArtifactContent", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "Error"} {
+	for _, name := range []string{"APIInfo", "TrustedPrincipalHeaderInfo", "ProjectRBACInfo", "CallerInfo", "Project", "ProjectAuthorizationDecision", "ProjectPolicy", "ProjectPolicyUpsert", "ProjectQuotaPolicy", "ProjectQuotaPolicyUpsert", "ProjectMember", "ProjectMemberCreate", "SecretRef", "ProjectCredential", "ProjectCredentialCreate", "TemplatePort", "EnvironmentTemplate", "TemplateCreate", "TemplateUpdate", "BoundarySummary", "BoundaryCheck", "BoundaryPort", "BoundaryCredentialRef", "RuntimeRef", "SandboxPort", "Sandbox", "SandboxCreate", "SandboxUpdate", "PreviewPort", "PreviewPortsResult", "RuntimeSession", "RuntimeSessionCreate", "ExecutionTask", "ExecutionTaskCreate", "ExecutionTaskEvent", "Artifact", "ArtifactCreate", "ArtifactContent", "ProjectUsage", "ProjectSandboxUsage", "SandboxResourceRequestUsage", "ResourceQuantityUsage", "Error"} {
 		if _, ok := schemas[name]; !ok {
 			t.Fatalf("expected schema %s in OpenAPI components", name)
 		}
+	}
+	boundarySchema, ok := schemas["BoundarySummary"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected BoundarySummary schema in %#v", schemas["BoundarySummary"])
+	}
+	boundaryRequired, ok := boundarySchema["required"].([]any)
+	if !ok ||
+		!anySliceContainsString(boundaryRequired, "kind") ||
+		!anySliceContainsString(boundaryRequired, "templateId") ||
+		!anySliceContainsString(boundaryRequired, "checks") {
+		t.Fatalf("expected BoundarySummary kind/templateId/checks required fields, got %#v", boundarySchema["required"])
 	}
 	for _, name := range []string{"ProjectPolicy", "ProjectQuotaPolicy"} {
 		schema, ok := schemas[name].(map[string]any)
