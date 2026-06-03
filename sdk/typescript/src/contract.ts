@@ -839,6 +839,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "updatedAt",
     ],
     enumProperties: [{ property: "status", values: executionTaskStatusValues }],
+    propertyTypes: [{ property: "outputTruncated", type: "boolean" }],
     propertyFormats: dateTimeFormats("startedAt", "finishedAt", "createdAt", "updatedAt"),
     propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
     arrayItemTypes: [{ property: "command", type: "string" }],
@@ -853,6 +854,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeOrphanAudit",
     required: ["adapter", "checkedAt", "resourceCount", "orphanCount", "expectedClean", "items"],
     properties: ["adapter", "checkedAt", "namespace", "resourceCount", "orphanCount", "expectedClean", "items"],
+    propertyTypes: [{ property: "expectedClean", type: "boolean" }],
     propertyFormats: dateTimeFormats("checkedAt"),
     arrayItemRefs: [{ property: "items", ref: "RuntimeOrphan" }],
   },
@@ -891,6 +893,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeOrphanCleanupRequest",
     required: ["resource", "reason", "confirm", "deleteOrphan"],
     properties: ["resource", "reason", "confirm", "deleteOrphan"],
+    propertyTypes: [{ property: "deleteOrphan", type: "boolean" }],
     propertyRefs: [
       { property: "resource", ref: "ManagedResourceRef" },
       { property: "reason", ref: "RuntimeOrphanReason" },
@@ -904,6 +907,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeOrphanCleanupResult",
     required: ["deleted", "resource", "reason", "message"],
     properties: ["deleted", "resource", "reason", "message"],
+    propertyTypes: [{ property: "deleted", type: "boolean" }],
     propertyRefs: [
       { property: "resource", ref: "ManagedResourceRef" },
       { property: "reason", ref: "RuntimeOrphanReason" },
@@ -1175,16 +1179,19 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "projectRbac", ref: "ProjectRBACInfo" },
       { property: "compatibility", ref: "Compatibility" },
     ],
+    propertyTypes: [{ property: "authenticationRequired", type: "boolean" }],
   },
   {
     schema: "RuntimeInfo",
     required: ["enabled"],
     properties: ["enabled", "adapter"],
+    propertyTypes: [{ property: "enabled", type: "boolean" }],
   },
   {
     schema: "ArtifactInfo",
     required: ["retainedContentEnabled", "storageProvider", "maxBytes"],
     properties: ["retainedContentEnabled", "storageProvider", "maxBytes"],
+    propertyTypes: [{ property: "retainedContentEnabled", type: "boolean" }],
   },
   {
     schema: "Compatibility",
@@ -1195,11 +1202,13 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "TrustedPrincipalHeaderInfo",
     required: ["enabled"],
     properties: ["enabled", "principalHeader", "principalTypeHeader"],
+    propertyTypes: [{ property: "enabled", type: "boolean" }],
   },
   {
     schema: "ProjectRBACInfo",
     required: ["enforcementEnabled", "enforcedActions"],
     properties: ["enforcementEnabled", "enforcedActions"],
+    propertyTypes: [{ property: "enforcementEnabled", type: "boolean" }],
     arrayItemEnumProperties: [{ property: "enforcedActions", values: projectAuthorizationActionValues }],
   },
   {
@@ -1237,6 +1246,10 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "caller", ref: "CallerInfo" },
       { property: "matchedMember", ref: "ProjectMember" },
     ],
+    propertyTypes: [
+      { property: "allowed", type: "boolean" },
+      { property: "enforced", type: "boolean" },
+    ],
     arrayItemTypes: [{ property: "notes", type: "string" }],
     arrayItemEnumProperties: [
       { property: "requiredRoles", values: projectMemberRoleValues },
@@ -1268,6 +1281,12 @@ export const SDK_SCHEMA_CONTRACT = [
     enumProperties: [
       { property: "mode", values: callerAuthModeValues },
       { property: "principalType", values: callerPrincipalTypeValues },
+    ],
+    propertyTypes: [
+      { property: "authenticated", type: "boolean" },
+      { property: "authenticationRequired", type: "boolean" },
+      { property: "rbacTrusted", type: "boolean" },
+      { property: "projectRolesEnforced", type: "boolean" },
     ],
     arrayItemTypes: [{ property: "notes", type: "string" }],
   },
@@ -1632,6 +1651,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "PreviewPort",
     required: ["name", "port", "protocol", "available"],
     properties: ["name", "port", "protocol", "previewUrl", "available", "message"],
+    propertyTypes: [{ property: "available", type: "boolean" }],
   },
   {
     schema: "PreviewPortsResult",

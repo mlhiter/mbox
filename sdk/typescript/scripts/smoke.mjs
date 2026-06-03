@@ -1585,6 +1585,22 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.CallerInfo.properties.rbacTrusted = { type: "string" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-type-mismatch" &&
+        issue.schema === "CallerInfo" &&
+        issue.property === "rbacTrusted" &&
+        issue.expectedType === "boolean",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.ProjectAuthorizationDecision.properties.caller = { type: "object" }
     assertOpenAPIAlignment(broken)
   },
@@ -2975,12 +2991,17 @@ function schemaComponents() {
   schemas.ProjectQuotaPolicy.properties.maxRetainedArtifactBytes.type = "integer"
   schemas.ProjectQuotaPolicyUpsert.properties.maxActiveSandboxes.type = "integer"
   schemas.ProjectQuotaPolicyUpsert.properties.maxRetainedArtifactBytes.type = "integer"
+  schemas.APIInfo.properties.authenticationRequired.type = "boolean"
   schemas.APIInfo.properties.runtimeController = jsonRef("RuntimeInfo")
   schemas.APIInfo.properties.runtimeAccess = jsonRef("RuntimeInfo")
   schemas.APIInfo.properties.artifactContent = jsonRef("ArtifactInfo")
   schemas.APIInfo.properties.trustedPrincipalHeaders = jsonRef("TrustedPrincipalHeaderInfo")
   schemas.APIInfo.properties.projectRbac = jsonRef("ProjectRBACInfo")
   schemas.APIInfo.properties.compatibility = jsonRef("Compatibility")
+  schemas.RuntimeInfo.properties.enabled.type = "boolean"
+  schemas.ArtifactInfo.properties.retainedContentEnabled.type = "boolean"
+  schemas.TrustedPrincipalHeaderInfo.properties.enabled.type = "boolean"
+  schemas.ProjectRBACInfo.properties.enforcementEnabled.type = "boolean"
   schemas.ProjectUsage.properties.sandboxes = jsonRef("ProjectSandboxUsage")
   schemas.ProjectUsage.properties.runtimeSessions = jsonRef("ProjectSessionUsage")
   schemas.ProjectUsage.properties.executionTasks = jsonRef("ProjectTaskUsage")
@@ -3058,7 +3079,12 @@ function schemaComponents() {
     "member.manage",
   ])
   schemas.ProjectAuthorizationDecision.properties.evaluation.enum = ["allowed", "denied", "not_enforceable"]
+  schemas.ProjectAuthorizationDecision.properties.allowed.type = "boolean"
+  schemas.ProjectAuthorizationDecision.properties.enforced.type = "boolean"
   schemas.ProjectAuthorizationDecision.properties.notes = arrayString()
+  for (const property of ["authenticated", "authenticationRequired", "rbacTrusted", "projectRolesEnforced"]) {
+    schemas.CallerInfo.properties[property].type = "boolean"
+  }
   schemas.CallerInfo.properties.notes = arrayString()
   schemas.ProjectRBACInfo.properties.enforcedActions = arrayEnum([
     "project.view",
@@ -3111,6 +3137,7 @@ function schemaComponents() {
   schemas.LogResult.properties.target = jsonRef("RuntimeTarget")
   schemas.PreviewPortsResult.properties.target = jsonRef("RuntimeTarget")
   schemas.PreviewPortsResult.properties.items = arrayRef("PreviewPort")
+  schemas.PreviewPort.properties.available.type = "boolean"
   schemas.ExecutionTaskEvent.properties.task = jsonRef("ExecutionTask")
   schemas.CallerInfo.properties.mode.enum = ["anonymous", "shared_token", "trusted_header"]
   schemas.CallerInfo.properties.principalType.enum = [
@@ -3183,6 +3210,7 @@ function schemaComponents() {
   schemas.ExecutionTask.properties.status.enum = ["queued", "running", "succeeded", "failed", "canceled", "timed_out"]
   schemas.ExecutionTask.properties.runtimeRef = jsonRef("RuntimeRef")
   schemas.ExecutionTask.properties.command = arrayString()
+  schemas.ExecutionTask.properties.outputTruncated.type = "boolean"
   schemas.ExecutionTaskCreate.properties.command = arrayString()
   schemas.ExecutionTaskEvent.properties.type.enum = ["snapshot", "status", "output", "done"]
   schemas.ExecutionTaskEvent.properties.stream.enum = ["stdout", "stderr"]
@@ -3256,10 +3284,13 @@ function schemaComponents() {
   schemas.RuntimeOrphan.properties.runtimeRef = jsonRef("RuntimeRef")
   schemas.RuntimeOrphan.properties.evidence = { type: "array", items: { type: "string" } }
   schemas.RuntimeOrphanAudit.properties.items = arrayRef("RuntimeOrphan")
+  schemas.RuntimeOrphanAudit.properties.expectedClean.type = "boolean"
   schemas.RuntimeOrphanCleanupRequest.properties.resource = jsonRef("ManagedResourceRef")
   schemas.RuntimeOrphanCleanupRequest.properties.reason = jsonRef("RuntimeOrphanReason")
   schemas.RuntimeOrphanCleanupResult.properties.resource = jsonRef("ManagedResourceRef")
   schemas.RuntimeOrphanCleanupResult.properties.reason = jsonRef("RuntimeOrphanReason")
+  schemas.RuntimeOrphanCleanupRequest.properties.deleteOrphan.type = "boolean"
+  schemas.RuntimeOrphanCleanupResult.properties.deleted.type = "boolean"
   schemas.RuntimeOrphanCleanupRequest.properties.confirm.enum = ["delete-orphan-runtime-resource"]
   schemas.RuntimeOrphan.properties.status.enum = ["pending", "running", "stopped", "failed", "deleted"]
   markDateTimeProperties(schemas, {
