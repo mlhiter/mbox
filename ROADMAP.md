@@ -458,6 +458,7 @@ First slice status:
 102. Done: CLI tasks usage alignment now lists the implemented `tasks run` subcommand in task-group usage errors, keeping one-shot execution discoverable outside the top-level help without changing task execution behavior.
 103. Done: CLI `tasks create` usage alignment now advertises repeated `--arg`, comma-split `--command`, and JSON-array `--command-json` input modes, keeping existing task creation ergonomics discoverable without changing task execution semantics.
 104. Done: CLI `templates validate-run` usage alignment now advertises repeated `--arg`, comma-split `--command`, JSON-array `--command-json`, and positional `-- COMMAND...` input modes, keeping template validation command entrypoints discoverable without changing task execution or validation decision semantics.
-105. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+105. Done: CLI `tasks run` usage alignment now advertises repeated `--arg`, comma-split `--command`, JSON-array `--command-json`, and positional `-- COMMAND...` input modes, keeping one-shot execution discoverable without changing task creation or wait semantics.
+106. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

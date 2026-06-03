@@ -230,6 +230,25 @@ func TestTasksCreateUsageListsCommandInputModes(t *testing.T) {
 	}
 }
 
+func TestTasksRunUsageListsCommandInputModes(t *testing.T) {
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{"tasks", "run"})
+	if err == nil {
+		t.Fatal("expected tasks run usage error")
+	}
+	for _, expected := range []string{
+		"usage: mbox tasks run <sandbox-id>",
+		"--arg ARG",
+		"--command CMD",
+		"--command-json JSON",
+		"-- COMMAND",
+	} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("expected tasks run usage to include %q, got %v", expected, err)
+		}
+	}
+}
+
 func TestTemplatesValidateRunUsageListsCommandInputModes(t *testing.T) {
 	for _, args := range [][]string{
 		{"templates", "validate-run"},

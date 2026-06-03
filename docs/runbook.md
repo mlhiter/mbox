@@ -412,9 +412,10 @@ For one-shot scripts, the CLI can create the task and wait for the terminal task
 ```sh
 go run ./cmd/mbox tasks run "$SANDBOX_ID" --require-success -- sh -lc 'pwd && echo task-ok'
 go run ./cmd/mbox tasks run "$SANDBOX_ID" --timeout 60 --wait-timeout 2m --interval 500ms -- sh -lc 'pwd && echo task-ok'
+go run ./cmd/mbox tasks run "$SANDBOX_ID" --timeout 60 --wait-timeout 2m --command-json '["sh","-lc","pwd && echo task-ok"]'
 ```
 
-For `tasks run`, `--timeout` is still the server-side task execution timeout in seconds, matching `tasks create`. `--wait-timeout` is only the CLI polling limit, matching the role of `tasks wait --timeout`.
+`tasks run` accepts the same repeated `--arg`, comma-split `--command`, JSON-array `--command-json`, and positional `-- COMMAND...` input modes as the task command parser. For `tasks run`, `--timeout` is still the server-side task execution timeout in seconds, matching `tasks create`. `--wait-timeout` is only the CLI polling limit, matching the role of `tasks wait --timeout`.
 
 3. Verify the task history:
 

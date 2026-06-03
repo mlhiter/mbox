@@ -198,7 +198,7 @@ Commands:
   sessions get|end <session-id>
   tasks list <sandbox-id>
   tasks create <sandbox-id> (--arg ARG...|--command CMD|--command-json JSON) [--timeout 60]
-  tasks run <sandbox-id> [--timeout 60] [--interval 1500ms] [--wait-timeout 5m] [--require-success] -- sh -lc 'echo ok'
+  tasks run <sandbox-id> [--timeout 60] [--interval 1500ms] [--wait-timeout 5m] [--require-success] (--arg ARG...|--command CMD|--command-json JSON|-- COMMAND...)
   tasks get|cancel|watch <task-id>
   tasks artifacts <task-id>
   tasks wait <task-id> [--interval 1500ms] [--timeout 5m] [--require-success]
@@ -3459,6 +3459,7 @@ func (a *App) runTask(ctx context.Context, client *Client, args []string) error 
 
 const tasksUsage = "usage: mbox tasks list|create|run|get|cancel|watch|wait|artifacts"
 const taskCreateUsage = "usage: mbox tasks create <sandbox-id> (--arg ARG...|--command CMD|--command-json JSON) [--timeout 60]"
+const taskRunUsage = "usage: mbox tasks run <sandbox-id> [--timeout 60] [--interval 1500ms] [--wait-timeout 5m] [--require-success] (--arg ARG...|--command CMD|--command-json JSON|-- COMMAND...)"
 
 func (a *App) parseTaskCreatePayload(args []string, commandName string) (string, map[string]any, error) {
 	if len(args) < 1 {
@@ -3606,7 +3607,7 @@ type taskWaitOptions struct {
 
 func (a *App) parseTaskRunPayload(args []string) (string, map[string]any, taskWaitOptions, error) {
 	if len(args) < 1 {
-		return "", nil, taskWaitOptions{}, usageError("usage: mbox tasks run <sandbox-id> [--timeout 60] [--interval 1500ms] [--wait-timeout 5m] [--require-success] -- sh -lc 'echo ok'")
+		return "", nil, taskWaitOptions{}, usageError(taskRunUsage)
 	}
 	sandboxID := args[0]
 	fs := flag.NewFlagSet("tasks run", flag.ContinueOnError)
