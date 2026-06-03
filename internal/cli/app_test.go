@@ -577,6 +577,79 @@ func TestRuntimeOrphansSummaryTablePrintsReadableAudit(t *testing.T) {
 	}
 }
 
+func TestRuntimeOrphansSummaryTableCanResolveProjectNames(t *testing.T) {
+	var requests []string
+	projectID := "11111111-1111-4111-8111-111111111111"
+	unknownProjectID := "22222222-2222-4222-8222-222222222222"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/runtime/orphans":
+			_, _ = w.Write([]byte(`{
+				"adapter":"agent-sandbox",
+				"checkedAt":"2026-06-02T08:00:00Z",
+				"namespace":"mbox-smoke",
+				"resourceCount":4,
+				"orphanCount":2,
+				"expectedClean":false,
+				"items":[
+					{
+						"reason":"missing-sandbox-record",
+						"resource":{"adapter":"agent-sandbox","kind":"SandboxClaim","namespace":"mbox-smoke","name":"claim-known"},
+						"projectId":"` + projectID + `",
+						"status":"deleted",
+						"message":"sandbox product record was not found"
+					},
+					{
+						"reason":"cleanup-pending",
+						"resource":{"adapter":"agent-sandbox","kind":"SandboxClaim","namespace":"mbox-smoke","name":"claim-unknown"},
+						"projectId":"` + unknownProjectID + `",
+						"status":"deleted",
+						"message":"sandbox cleanup is pending"
+					}
+				]
+			}`))
+		case "/v1/projects":
+			_, _ = w.Write([]byte(`{"items":[{"id":"` + projectID + `","name":"Runtime Alpha"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"runtime", "orphans",
+		"--summary-table",
+		"--resolve-project-names",
+		"--namespace", "mbox-smoke",
+		"--project-id", projectID,
+		"--kind", "SandboxClaim",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	expectedRequests := "GET /v1/runtime/orphans?kind=SandboxClaim&namespace=mbox-smoke&projectId=" + projectID + ",GET /v1/projects"
+	if strings.Join(requests, ",") != expectedRequests {
+		t.Fatalf("unexpected requests: %#v", requests)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"REASON\tRESOURCE\tPROJECT\tSTATUS\tMESSAGE",
+		"missing-sandbox-record\tSandboxClaim mbox-smoke/claim-known\tRuntime Alpha (11111111...1111)\tdeleted\tsandbox product record was not found",
+		"cleanup-pending\tSandboxClaim mbox-smoke/claim-unknown\t" + unknownProjectID + "\tdeleted\tsandbox cleanup is pending",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in orphan summary output, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"items"`) || strings.Contains(output, `"expectedClean"`) {
+		t.Fatalf("expected human-readable orphan summary without raw JSON, got %q", output)
+	}
+}
+
 func TestRuntimeResourcesUsesRuntimeResourcesRoute(t *testing.T) {
 	var method string
 	var uri string
@@ -786,6 +859,14 @@ func TestRuntimeResourcesSummaryFlagsAreMutuallyExclusive(t *testing.T) {
 func TestRuntimeResourcesResolveProjectNamesRequiresSummaryTable(t *testing.T) {
 	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
 	err := app.Run(context.Background(), []string{"--api-url", "http://127.0.0.1:18080", "runtime", "resources", "--resolve-project-names"})
+	if err == nil || !strings.Contains(err.Error(), "--resolve-project-names requires --summary-table") {
+		t.Fatalf("expected resolve-project-names summary-table error, got %v", err)
+	}
+}
+
+func TestRuntimeOrphansResolveProjectNamesRequiresSummaryTable(t *testing.T) {
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{"--api-url", "http://127.0.0.1:18080", "runtime", "orphans", "--resolve-project-names"})
 	if err == nil || !strings.Contains(err.Error(), "--resolve-project-names requires --summary-table") {
 		t.Fatalf("expected resolve-project-names summary-table error, got %v", err)
 	}

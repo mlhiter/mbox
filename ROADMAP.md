@@ -284,6 +284,7 @@ Current status:
 - Done: SDK/OpenAPI array item-ref guard now checks selected runtime nested arrays such as `RuntimeTarget.storage`, runtime inventory workload storage/issues, and preview-port result items, keeping runtime client schemas from drifting into loose object arrays.
 - Done: Web project inspector audit ergonomics now surfaces member-management denial metadata for requested member principal type, principal, and role as debugging context without treating audit metadata as trusted identity.
 - Done: Web project inspector member-management ergonomics now supports registering and removing project member records for starter RBAC, including refreshed authorization/audit visibility and a front-end guard against removing the last visible owner, without adding login, invites, or broader route-level RBAC.
+- Done: CLI runtime orphan attribution ergonomics add `runtime orphans --summary-table --resolve-project-names`, resolving known project IDs through `/v1/projects` only for human-readable output while preserving raw JSON, the orphan-audit API response, and the explicitly gated cleanup model.
 - Remaining: broader route-level user/project RBAC enforcement beyond the current disabled-by-default `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, `credential.manage`, and `member.manage` starters, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
 
 ## Phase 4: Upper-layer Workflow Integrations
@@ -473,6 +474,7 @@ First slice status:
 117. Done: SDK/OpenAPI preview-port result ref alignment guards `PreviewPortsResult.target` as `RuntimeTarget`, keeping preview clients generated-client ready without changing preview proxy behavior, runtime access gating, or port declaration semantics.
 118. Done: CLI audit summary request-correlation ergonomics adds request-id sets to generic and policy-denied audit summary tables from returned audit metadata, preserving JSON defaults and best-effort audit semantics without adding identity trust, idempotency, or a new audit model.
 119. Done: CLI audit summary project-attribution ergonomics adds project-id sets to generic and policy-denied audit summary tables from returned audit rows, improving global-feed triage without changing RBAC, audit identity trust, or the audit API model.
-120. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+120. Done: CLI runtime orphan attribution ergonomics add `runtime orphans --summary-table --resolve-project-names`, resolving known project IDs through `/v1/projects` only for human-readable output while preserving raw JSON, the orphan-audit API response, and the explicitly gated cleanup model.
+121. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.
