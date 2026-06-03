@@ -182,7 +182,7 @@ Commands:
   templates list [--project-id PROJECT]
   templates create --name NAME --image IMAGE [--project-id PROJECT] [--arg ARG]
   templates get <template-id>
-  templates boundary <template-id> [--project-id PROJECT]
+  templates boundary <template-id> [--project-id PROJECT] [--summary]
   templates validate <template-id> --project-id PROJECT [--name NAME]
   templates validate-run <template-id> --project-id PROJECT [--name NAME] [--wait-timeout 5m] [--task-timeout 60] [--require-success] -- sh -lc 'echo ok'
   templates delete <template-id>
@@ -190,7 +190,7 @@ Commands:
   sandboxes list [--project-id PROJECT]
   sandboxes create --project-id PROJECT --name NAME [--template-id TEMPLATE]
   sandboxes get <sandbox-id>
-  sandboxes boundary <sandbox-id>
+  sandboxes boundary <sandbox-id> [--summary]
   sandboxes start|stop|delete <sandbox-id>
   sandboxes wait <sandbox-id> [--status running] [--interval 1500ms] [--timeout 5m] [--require-runtime-ref]
   sessions list <sandbox-id>
@@ -902,6 +902,78 @@ type policyDeniedSummaryRow struct {
 	Resources map[string]bool
 }
 
+type boundarySummary struct {
+	Kind                         string                  `json:"kind"`
+	ProjectID                    string                  `json:"projectId"`
+	ProjectName                  string                  `json:"projectName"`
+	TemplateID                   string                  `json:"templateId"`
+	TemplateName                 string                  `json:"templateName"`
+	SandboxID                    string                  `json:"sandboxId"`
+	SandboxName                  string                  `json:"sandboxName"`
+	SandboxStatus                string                  `json:"sandboxStatus"`
+	Namespace                    string                  `json:"namespace"`
+	ServiceAccountName           string                  `json:"serviceAccountName"`
+	ServiceAccountTokenAutomount bool                    `json:"serviceAccountTokenAutomount"`
+	RuntimeRef                   *boundaryRuntimeRef     `json:"runtimeRef"`
+	Image                        string                  `json:"image"`
+	WorkingDir                   string                  `json:"workingDir"`
+	ResourceRequests             map[string]string       `json:"resourceRequests"`
+	StorageRequest               string                  `json:"storageRequest"`
+	PreviewPorts                 []boundaryPortSummary   `json:"previewPorts"`
+	EnvVarCount                  int                     `json:"envVarCount"`
+	SecretRefs                   []boundarySecretRef     `json:"secretRefs"`
+	SecretProjection             string                  `json:"secretProjection"`
+	NetworkPolicy                string                  `json:"networkPolicy"`
+	NetworkPolicyProjection      string                  `json:"networkPolicyProjection"`
+	LifecyclePolicyProjection    string                  `json:"lifecyclePolicyProjection"`
+	PolicyEnforcement            string                  `json:"policyEnforcement"`
+	AllowedImagePrefixes         []string                `json:"allowedImagePrefixes"`
+	AllowedServiceAccounts       []string                `json:"allowedServiceAccounts"`
+	AllowedSecretRefs            []string                `json:"allowedSecretRefs"`
+	CredentialRefs               []boundaryCredentialRef `json:"credentialRefs"`
+	CredentialProjection         string                  `json:"credentialProjection"`
+	ControllerPermissions        []string                `json:"controllerPermissions"`
+	RuntimeAccess                []string                `json:"runtimeAccess"`
+	Cleanup                      []string                `json:"cleanup"`
+	Checks                       []boundaryCheckSummary  `json:"checks"`
+}
+
+type boundaryRuntimeRef struct {
+	Adapter   string `json:"adapter"`
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
+type boundaryPortSummary struct {
+	Name     string `json:"name"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"`
+}
+
+type boundarySecretRef struct {
+	Name string `json:"name"`
+	Key  string `json:"key"`
+}
+
+type boundaryCredentialRef struct {
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Slug      string   `json:"slug"`
+	Type      string   `json:"type"`
+	Target    string   `json:"target"`
+	SecretRef string   `json:"secretRef"`
+	Usage     []string `json:"usage"`
+}
+
+type boundaryCheckSummary struct {
+	ID       string   `json:"id"`
+	Label    string   `json:"label"`
+	Status   string   `json:"status"`
+	Message  string   `json:"message"`
+	Evidence []string `json:"evidence"`
+}
+
 type projectPolicySummary struct {
 	ProjectID              string   `json:"projectId"`
 	Enforcement            string   `json:"enforcement"`
@@ -1093,6 +1165,236 @@ type projectAuthorizationSummaryMember struct {
 	PrincipalType string `json:"principalType"`
 	Principal     string `json:"principal"`
 	Role          string `json:"role"`
+}
+
+func writeBoundarySummary(w io.Writer, summary boundarySummary) error {
+	out := bufio.NewWriter(w)
+	if _, err := fmt.Fprintln(out, "BOUNDARY SUMMARY"); err != nil {
+		return err
+	}
+	rows := [][2]string{
+		{"Kind", tableValue(summary.Kind, "unknown")},
+		{"Project", boundaryNameIDLabel(summary.ProjectName, summary.ProjectID)},
+		{"Template", boundaryNameIDLabel(summary.TemplateName, summary.TemplateID)},
+	}
+	if strings.TrimSpace(summary.SandboxID) != "" || strings.TrimSpace(summary.SandboxName) != "" {
+		rows = append(rows,
+			[2]string{"Sandbox", boundaryNameIDLabel(summary.SandboxName, summary.SandboxID)},
+			[2]string{"Sandbox status", tableValue(summary.SandboxStatus, "unknown")},
+		)
+	}
+	for _, row := range rows {
+		if _, err := fmt.Fprintf(out, "%s\t%s\n", row[0], row[1]); err != nil {
+			return err
+		}
+	}
+
+	if _, err := fmt.Fprintln(out, "\nRUNTIME SHAPE"); err != nil {
+		return err
+	}
+	runtimeRows := [][2]string{
+		{"Namespace", tableValue(summary.Namespace, "not resolved")},
+		{"ServiceAccount", tableValue(summary.ServiceAccountName, "not resolved")},
+		{"Token automount", formatBool(summary.ServiceAccountTokenAutomount)},
+		{"Runtime ref", boundaryRuntimeRefLabel(summary.RuntimeRef)},
+		{"Image", tableValue(summary.Image, "-")},
+		{"Working dir", tableValue(summary.WorkingDir, "-")},
+		{"Resource requests", formatBoundaryResourceRequests(summary.ResourceRequests)},
+		{"Storage request", tableValue(summary.StorageRequest, "-")},
+		{"Preview ports", formatBoundaryPorts(summary.PreviewPorts)},
+		{"Env vars", strconv.Itoa(summary.EnvVarCount)},
+	}
+	for _, row := range runtimeRows {
+		if _, err := fmt.Fprintf(out, "%s\t%s\n", row[0], row[1]); err != nil {
+			return err
+		}
+	}
+
+	if _, err := fmt.Fprintln(out, "\nPOLICY AND CREDENTIALS"); err != nil {
+		return err
+	}
+	policyRows := [][2]string{
+		{"Launch policy", tableValue(summary.PolicyEnforcement, "disabled")},
+		{"Allowed image prefixes", formatStringList(cleanStringList(summary.AllowedImagePrefixes))},
+		{"Allowed service accounts", formatStringList(cleanStringList(summary.AllowedServiceAccounts))},
+		{"Allowed secret refs", formatStringList(cleanStringList(summary.AllowedSecretRefs))},
+		{"Template secret refs", formatBoundarySecretRefs(summary.SecretRefs)},
+		{"Secret projection", tableValue(summary.SecretProjection, "-")},
+		{"Credential refs", formatBoundaryCredentialRefs(summary.CredentialRefs)},
+		{"Credential projection", tableValue(summary.CredentialProjection, "-")},
+		{"Network policy", tableValue(summary.NetworkPolicy, "default")},
+		{"Network projection", tableValue(summary.NetworkPolicyProjection, "-")},
+		{"Lifecycle projection", tableValue(summary.LifecyclePolicyProjection, "-")},
+	}
+	for _, row := range policyRows {
+		if _, err := fmt.Fprintf(out, "%s\t%s\n", row[0], row[1]); err != nil {
+			return err
+		}
+	}
+
+	if _, err := fmt.Fprintln(out, "\nCHECKS"); err != nil {
+		return err
+	}
+	if len(summary.Checks) == 0 {
+		if _, err := fmt.Fprintln(out, "  (none)"); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fmt.Fprintln(out, "STATUS\tCHECK\tMESSAGE\tEVIDENCE"); err != nil {
+			return err
+		}
+		for _, check := range summary.Checks {
+			if _, err := fmt.Fprintf(out, "%s\t%s\t%s\t%s\n",
+				tableValue(check.Status, "unknown"),
+				tableValue(check.Label, tableValue(check.ID, "check")),
+				tableValue(check.Message, "-"),
+				formatStringList(cleanStringList(check.Evidence)),
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	if _, err := fmt.Fprintln(out, "\nBoundary\tread-only runtime safety view; not secret-value access, full RBAC, billing, capacity, or live utilization"); err != nil {
+		return err
+	}
+	return out.Flush()
+}
+
+func boundaryNameIDLabel(name string, id string) string {
+	name = strings.TrimSpace(name)
+	id = strings.TrimSpace(id)
+	switch {
+	case name != "" && id != "":
+		return fmt.Sprintf("%s (%s)", name, shortRuntimeResourceID(id))
+	case name != "":
+		return name
+	case id != "":
+		return id
+	default:
+		return "-"
+	}
+}
+
+func boundaryRuntimeRefLabel(ref *boundaryRuntimeRef) string {
+	if ref == nil {
+		return "-"
+	}
+	parts := []string{}
+	if strings.TrimSpace(ref.Adapter) != "" {
+		parts = append(parts, "adapter="+strings.TrimSpace(ref.Adapter))
+	}
+	if strings.TrimSpace(ref.Kind) != "" {
+		parts = append(parts, "kind="+strings.TrimSpace(ref.Kind))
+	}
+	if strings.TrimSpace(ref.Namespace) != "" || strings.TrimSpace(ref.Name) != "" {
+		parts = append(parts, "resource="+runtimeOrphanResourceLabel(runtimeOrphanSummaryTableResource{
+			Kind:      ref.Kind,
+			Namespace: ref.Namespace,
+			Name:      ref.Name,
+		}))
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, " ")
+}
+
+func formatBoundaryResourceRequests(values map[string]string) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		if strings.TrimSpace(key) != "" {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	items := make([]string, 0, len(keys))
+	for _, key := range keys {
+		value := strings.TrimSpace(values[key])
+		if value == "" {
+			continue
+		}
+		items = append(items, key+"="+value)
+	}
+	if len(items) == 0 {
+		return "-"
+	}
+	return strings.Join(items, ",")
+}
+
+func formatBoundaryPorts(ports []boundaryPortSummary) string {
+	items := make([]string, 0, len(ports))
+	for _, port := range ports {
+		if port.Port <= 0 {
+			continue
+		}
+		name := strings.TrimSpace(port.Name)
+		protocol := strings.TrimSpace(port.Protocol)
+		if protocol == "" {
+			protocol = "TCP"
+		}
+		label := strconv.Itoa(port.Port) + "/" + protocol
+		if name != "" {
+			label = name + ":" + label
+		}
+		items = append(items, label)
+	}
+	if len(items) == 0 {
+		return "-"
+	}
+	sort.Strings(items)
+	return strings.Join(items, ",")
+}
+
+func formatBoundarySecretRefs(refs []boundarySecretRef) string {
+	items := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		items = append(items, boundarySecretRefLabel(ref))
+	}
+	return formatStringList(cleanStringList(items))
+}
+
+func boundarySecretRefLabel(ref boundarySecretRef) string {
+	name := strings.TrimSpace(ref.Name)
+	key := strings.TrimSpace(ref.Key)
+	if name == "" && key == "" {
+		return "-"
+	}
+	if key == "" {
+		return name
+	}
+	if name == "" {
+		return "key:" + key
+	}
+	return name + "/" + key
+}
+
+func formatBoundaryCredentialRefs(refs []boundaryCredentialRef) string {
+	items := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		label := strings.TrimSpace(ref.Slug)
+		if label == "" {
+			label = strings.TrimSpace(ref.Name)
+		}
+		if label == "" {
+			label = strings.TrimSpace(ref.ID)
+		}
+		parts := []string{tableValue(label, "credential")}
+		if strings.TrimSpace(ref.Type) != "" {
+			parts = append(parts, "type="+strings.TrimSpace(ref.Type))
+		}
+		if strings.TrimSpace(ref.SecretRef) != "" {
+			parts = append(parts, "secret="+strings.TrimSpace(ref.SecretRef))
+		}
+		if len(ref.Usage) > 0 {
+			parts = append(parts, "usage="+formatStringList(cleanStringList(ref.Usage)))
+		}
+		items = append(items, strings.Join(parts, " "))
+	}
+	return formatStringList(cleanStringList(items))
 }
 
 func writeProjectPolicySummary(w io.Writer, policy projectPolicySummary) error {
@@ -2453,18 +2755,29 @@ func (a *App) runTemplate(ctx context.Context, client *Client, args []string) er
 		return a.delete(ctx, client, "/v1/templates/"+url.PathEscape(args[1]))
 	case "boundary":
 		if len(args) < 2 {
-			return usageError("usage: mbox templates boundary <template-id> [--project-id PROJECT]")
+			return usageError("usage: mbox templates boundary <template-id> [--project-id PROJECT] [--summary]")
 		}
 		templateID := args[1]
 		fs := flag.NewFlagSet("templates boundary", flag.ContinueOnError)
 		fs.SetOutput(a.streams.Stderr)
 		projectID := fs.String("project-id", "", "")
+		summary := fs.Bool("summary", false, "")
 		if err := fs.Parse(args[2:]); err != nil {
 			return err
+		}
+		if fs.NArg() != 0 {
+			return usageError("usage: mbox templates boundary <template-id> [--project-id PROJECT] [--summary]")
 		}
 		path := "/v1/templates/" + url.PathEscape(templateID) + "/boundary"
 		if *projectID != "" {
 			path += "?projectId=" + url.QueryEscape(*projectID)
+		}
+		if *summary {
+			var boundary boundarySummary
+			if err := client.JSON(ctx, http.MethodGet, path, nil, &boundary); err != nil {
+				return err
+			}
+			return writeBoundarySummary(a.streams.Stdout, boundary)
 		}
 		return a.get(ctx, client, path)
 	case "validate":
@@ -2753,10 +3066,27 @@ func (a *App) runSandbox(ctx context.Context, client *Client, args []string) err
 		}
 		return a.get(ctx, client, "/v1/sandboxes/"+url.PathEscape(args[1]))
 	case "boundary":
-		if len(args) != 2 {
-			return usageError("usage: mbox sandboxes boundary <sandbox-id>")
+		if len(args) < 2 {
+			return usageError("usage: mbox sandboxes boundary <sandbox-id> [--summary]")
 		}
-		return a.get(ctx, client, "/v1/sandboxes/"+url.PathEscape(args[1])+"/boundary")
+		fs := flag.NewFlagSet("sandboxes boundary", flag.ContinueOnError)
+		fs.SetOutput(a.streams.Stderr)
+		summary := fs.Bool("summary", false, "")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return usageError("usage: mbox sandboxes boundary <sandbox-id> [--summary]")
+		}
+		path := "/v1/sandboxes/" + url.PathEscape(args[1]) + "/boundary"
+		if *summary {
+			var boundary boundarySummary
+			if err := client.JSON(ctx, http.MethodGet, path, nil, &boundary); err != nil {
+				return err
+			}
+			return writeBoundarySummary(a.streams.Stdout, boundary)
+		}
+		return a.get(ctx, client, path)
 	case "delete":
 		if len(args) != 2 {
 			return usageError("usage: mbox sandboxes delete <sandbox-id>")

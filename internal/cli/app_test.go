@@ -2386,6 +2386,92 @@ func TestTemplatesBoundaryUsesProjectQuery(t *testing.T) {
 	}
 }
 
+func TestTemplatesBoundarySummaryPrintsReadableBoundary(t *testing.T) {
+	var method string
+	var rawQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		rawQuery = r.URL.RawQuery
+		if r.URL.Path != "/v1/templates/template-1/boundary" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"kind":"template",
+			"projectId":"project-1",
+			"projectName":"Demo Project",
+			"templateId":"template-1",
+			"templateName":"Node Workspace",
+			"namespace":"mbox-demo",
+			"serviceAccountName":"mbox-sandbox",
+			"serviceAccountTokenAutomount":false,
+			"image":"node:22-bookworm-slim",
+			"workingDir":"/workspace",
+			"resourceRequests":{"cpu":"250m","memory":"512Mi"},
+			"storageRequest":"2Gi",
+			"previewPorts":[{"name":"web","port":3000,"protocol":"TCP"}],
+			"envVarCount":2,
+			"secretRefs":[{"name":"git-token","key":"token"}],
+			"secretProjection":"references-recorded-not-mounted",
+			"networkPolicy":"default",
+			"networkPolicyProjection":"agent-sandbox-managed-baseline",
+			"lifecyclePolicyProjection":"ttl-enforced",
+			"policyEnforcement":"enforced",
+			"allowedImagePrefixes":["node:"],
+			"allowedServiceAccounts":["mbox-sandbox"],
+			"allowedSecretRefs":["git-token"],
+			"credentialRefs":[{"id":"cred-1","name":"Git Token","slug":"git-token","type":"git","secretRef":"git-secret/token","usage":["clone"]}],
+			"credentialProjection":"references-recorded-not-mounted",
+			"checks":[
+				{"id":"namespace","label":"Namespace","status":"pass","message":"Runtime namespace is resolved.","evidence":["mbox-demo"]},
+				{"id":"secret-refs","label":"Secret references","status":"warn","message":"Secret references are visible by name/key only and are not mounted by the current runtime adapter.","evidence":["secretProjection=references-recorded-not-mounted"]}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"templates", "boundary", "template-1",
+		"--project-id", "project-1",
+		"--summary",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || rawQuery != "projectId=project-1" {
+		t.Fatalf("unexpected request method=%s query=%s", method, rawQuery)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"BOUNDARY SUMMARY",
+		"Kind\ttemplate",
+		"Project\tDemo Project (project-1)",
+		"Template\tNode Workspace (template-1)",
+		"Namespace\tmbox-demo",
+		"ServiceAccount\tmbox-sandbox",
+		"Token automount\tfalse",
+		"Image\tnode:22-bookworm-slim",
+		"Resource requests\tcpu=250m,memory=512Mi",
+		"Preview ports\tweb:3000/TCP",
+		"Template secret refs\tgit-token/token",
+		"Credential refs\tgit-token type=git secret=git-secret/token usage=clone",
+		"Launch policy\tenforced",
+		"STATUS\tCHECK\tMESSAGE\tEVIDENCE",
+		"warn\tSecret references\tSecret references are visible by name/key only and are not mounted by the current runtime adapter.\tsecretProjection=references-recorded-not-mounted",
+		"Boundary\tread-only runtime safety view; not secret-value access, full RBAC, billing, capacity, or live utilization",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in template boundary summary output, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"templateId"`) || strings.Contains(output, `"checks"`) {
+		t.Fatalf("expected human-readable template boundary summary without raw JSON, got %q", output)
+	}
+}
+
 func TestSandboxesBoundaryUsesSandboxRoute(t *testing.T) {
 	var method string
 	var path string
@@ -2407,6 +2493,75 @@ func TestSandboxesBoundaryUsesSandboxRoute(t *testing.T) {
 	}
 	if method != http.MethodGet || path != "/v1/sandboxes/sandbox-1/boundary" {
 		t.Fatalf("unexpected request %s %s", method, path)
+	}
+}
+
+func TestSandboxesBoundarySummaryPrintsReadableBoundary(t *testing.T) {
+	var method string
+	var path string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"kind":"sandbox",
+			"projectId":"project-1",
+			"projectName":"Demo Project",
+			"templateId":"template-1",
+			"templateName":"Node Workspace",
+			"sandboxId":"sandbox-1",
+			"sandboxName":"demo-sandbox",
+			"sandboxStatus":"running",
+			"namespace":"mbox-demo",
+			"serviceAccountName":"mbox-sandbox",
+			"serviceAccountTokenAutomount":false,
+			"runtimeRef":{"adapter":"agent-sandbox","kind":"Sandbox","namespace":"mbox-demo","name":"demo-runtime"},
+			"image":"node:22-bookworm-slim",
+			"workingDir":"/workspace",
+			"policyEnforcement":"disabled",
+			"secretProjection":"none",
+			"credentialProjection":"none",
+			"networkPolicy":"default",
+			"networkPolicyProjection":"agent-sandbox-managed-baseline",
+			"lifecyclePolicyProjection":"not-configured",
+			"checks":[
+				{"id":"runtime-ref","label":"Runtime reference","status":"pass","message":"Sandbox has a runtime reference."},
+				{"id":"launch-policy","label":"Launch policy","status":"warn","message":"Project launch policy is disabled; sandbox launches use default platform checks only.","evidence":["policyEnforcement=disabled"]}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"sandboxes", "boundary", "sandbox-1",
+		"--summary",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodGet || path != "/v1/sandboxes/sandbox-1/boundary" {
+		t.Fatalf("unexpected request %s %s", method, path)
+	}
+	output := stdout.String()
+	for _, expected := range []string{
+		"BOUNDARY SUMMARY",
+		"Kind\tsandbox",
+		"Sandbox\tdemo-sandbox (sandbox-1)",
+		"Sandbox status\trunning",
+		"Runtime ref\tadapter=agent-sandbox kind=Sandbox resource=Sandbox mbox-demo/demo-runtime",
+		"Launch policy\tdisabled",
+		"pass\tRuntime reference\tSandbox has a runtime reference.\t-",
+		"warn\tLaunch policy\tProject launch policy is disabled; sandbox launches use default platform checks only.\tpolicyEnforcement=disabled",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %q in sandbox boundary summary output, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, `"sandboxId"`) || strings.Contains(output, `"runtimeRef"`) {
+		t.Fatalf("expected human-readable sandbox boundary summary without raw JSON, got %q", output)
 	}
 }
 

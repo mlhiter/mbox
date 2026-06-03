@@ -488,7 +488,9 @@ curl -fsS "http://127.0.0.1:18080/v1/templates/$TEMPLATE_ID/boundary?projectId=$
 curl -fsS "http://127.0.0.1:18080/v1/sandboxes/$SANDBOX_ID/boundary"
 
 go run ./cmd/mbox templates boundary "$TEMPLATE_ID" --project-id "$PROJECT_ID"
+go run ./cmd/mbox templates boundary "$TEMPLATE_ID" --project-id "$PROJECT_ID" --summary
 go run ./cmd/mbox sandboxes boundary "$SANDBOX_ID"
+go run ./cmd/mbox sandboxes boundary "$SANDBOX_ID" --summary
 go run ./cmd/mbox projects add-credential "$PROJECT_ID" --name "GitHub App" --type git --target "https://github.com/mlhiter/mbox" --secret-ref github-app-token --secret-key token --usage clone
 go run ./cmd/mbox projects credentials "$PROJECT_ID"
 go run ./cmd/mbox projects credentials "$PROJECT_ID" --summary
@@ -499,6 +501,7 @@ Expected result:
 - `serviceAccountTokenAutomount` is `false`.
 - The template boundary resolves the project namespace when `projectId` is provided.
 - The sandbox boundary includes the sandbox ID, namespace, ServiceAccount, and runtime reference when the sandbox has been projected.
+- Add `--summary` to template or sandbox boundary commands when a human operator wants the same read-only safety contract as compact text with checks, while keeping JSON as the script default.
 - Project launch policy state appears in template and sandbox boundary summaries. Enforced policy gates sandbox creation and template validation launches by image prefix, ServiceAccount, and declared secret reference names.
 - Project quota policy is visible through API/CLI/SDK/Web project surfaces. Enforced quota currently gates active sandbox creation and retained artifact-byte capture/upload from product records; it is not live Kubernetes capacity, billing, or reservation.
 - Project credential references appear in project inspectors and boundary summaries by type, target, usage, and Kubernetes Secret name/key only. Use `projects credentials <project-id> --summary` to render the existing references as type/usage/Secret-reference counts and rows for operator triage. They are not secret values and are not mounted into runtime Pods yet.
