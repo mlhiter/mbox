@@ -1619,6 +1619,38 @@ assert.throws(
         issue.schema === "ArtifactContent" &&
         issue.property === "storageProvider" &&
         issue.enumValue === "s3",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.AuditEvent.properties.metadata = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "AuditEvent" &&
+        issue.property === "metadata" &&
+        issue.expectedSchema === "AuditEventMetadata",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.AuditEvent.properties.action = { type: "string" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "AuditEvent" &&
+        issue.property === "action" &&
+        issue.expectedSchema === "AuditEventAction",
     ),
 )
 assert.throws(
@@ -2554,6 +2586,8 @@ function schemaComponents() {
     "source",
     "metadata",
   ])
+  schemas.AuditEvent.properties.action = jsonRef("AuditEventAction")
+  schemas.AuditEvent.properties.metadata = jsonRef("AuditEventMetadata")
   schemas.APIInfo.properties.runtimeController = jsonRef("RuntimeInfo")
   schemas.APIInfo.properties.runtimeAccess = jsonRef("RuntimeInfo")
   schemas.APIInfo.properties.artifactContent = jsonRef("ArtifactInfo")

@@ -1463,6 +1463,10 @@ export const SDK_SCHEMA_CONTRACT = [
       "metadata",
       "createdAt",
     ],
+    propertyRefs: [
+      { property: "action", ref: "AuditEventAction" },
+      { property: "metadata", ref: "AuditEventMetadata" },
+    ],
   },
   {
     schema: "PolicyDeniedAuditMetadata",

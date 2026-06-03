@@ -1156,6 +1156,18 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok || !anySliceContainsString(actionValues, "policy.denied") || !anySliceContainsString(actionValues, "sandbox.created") {
 		t.Fatalf("expected audit action enum to include known actions, got %#v", actionSchema["enum"])
 	}
+	auditEventSchema, ok := schemas["AuditEvent"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected AuditEvent schema in %#v", schemas["AuditEvent"])
+	}
+	for property, expectedRef := range map[string]string{
+		"action":   "#/components/schemas/AuditEventAction",
+		"metadata": "#/components/schemas/AuditEventMetadata",
+	} {
+		if ref := schemaPropertyRef(auditEventSchema, property); ref != expectedRef {
+			t.Fatalf("expected AuditEvent %s to reference %s, got %q", property, expectedRef, ref)
+		}
+	}
 	auditPath, ok := paths["/v1/audit-events"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected audit events path, got %#v", paths["/v1/audit-events"])
