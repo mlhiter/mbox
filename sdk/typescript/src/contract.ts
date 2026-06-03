@@ -1167,6 +1167,11 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "ProjectTemplateUsage",
     required: ["projectScoped", "globalVisible"],
     properties: ["projectScoped", "globalVisible", "cpuRequests", "memoryRequests", "storageRequests"],
+    arrayItemRefs: [
+      { property: "cpuRequests", ref: "ResourceUsageValue" },
+      { property: "memoryRequests", ref: "ResourceUsageValue" },
+      { property: "storageRequests", ref: "ResourceUsageValue" },
+    ],
   },
   {
     schema: "ProjectCredentialUsage",

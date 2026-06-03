@@ -852,6 +852,15 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 			t.Fatalf("expected SandboxResourceRequestUsage %s to reference ResourceQuantityUsage, got %q", property, ref)
 		}
 	}
+	templateUsage, ok := schemas["ProjectTemplateUsage"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ProjectTemplateUsage schema in %#v", schemas["ProjectTemplateUsage"])
+	}
+	for _, property := range []string{"cpuRequests", "memoryRequests", "storageRequests"} {
+		if ref := schemaArrayItemRef(templateUsage, property); ref != "#/components/schemas/ResourceUsageValue" {
+			t.Fatalf("expected ProjectTemplateUsage %s to reference ResourceUsageValue, got %q", property, ref)
+		}
+	}
 	quantityUsage, ok := schemas["ResourceQuantityUsage"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected ResourceQuantityUsage schema in %#v", schemas["ResourceQuantityUsage"])

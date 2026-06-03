@@ -1076,6 +1076,22 @@ assert.throws(
         issue.schema === "SandboxResourceRequestUsage" &&
         issue.property === "storage" &&
         issue.expectedSchema === "ResourceQuantityUsage",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectTemplateUsage.properties.cpuRequests.items = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-array-item-ref-mismatch" &&
+        issue.schema === "ProjectTemplateUsage" &&
+        issue.property === "cpuRequests" &&
+        issue.expectedSchema === "ResourceUsageValue",
     ),
 )
 assert.throws(
@@ -2373,6 +2389,9 @@ function schemaComponents() {
   schemas.SandboxResourceRequestUsage.properties.cpu = jsonRef("ResourceQuantityUsage")
   schemas.SandboxResourceRequestUsage.properties.memory = jsonRef("ResourceQuantityUsage")
   schemas.SandboxResourceRequestUsage.properties.storage = jsonRef("ResourceQuantityUsage")
+  schemas.ProjectTemplateUsage.properties.cpuRequests = arrayRef("ResourceUsageValue")
+  schemas.ProjectTemplateUsage.properties.memoryRequests = arrayRef("ResourceUsageValue")
+  schemas.ProjectTemplateUsage.properties.storageRequests = arrayRef("ResourceUsageValue")
   schemas.ProjectAuthorizationDecision.properties.action.enum = [
     "project.view",
     "project.manage",
