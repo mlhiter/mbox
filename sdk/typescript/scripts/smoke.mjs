@@ -1572,7 +1572,31 @@ assert.throws(
         issue.schema === "ProjectAuthorizationDecision" &&
         issue.property === "action" &&
         issue.enumValue === "member.manage",
-      ),
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ProjectAuthorizationDecision.properties.availableActions.items.enum = [
+      "project.view",
+      "project.manage",
+      "sandbox.launch",
+      "runtime.operate",
+      "artifact.write",
+      "policy.manage",
+      "credential.manage",
+    ]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-array-item-enum-value" &&
+        issue.schema === "ProjectAuthorizationDecision" &&
+        issue.property === "availableActions" &&
+        issue.enumValue === "member.manage",
+    ),
 )
 assert.throws(
   () => {
@@ -2963,6 +2987,7 @@ function schemaComponents() {
   schemas.ProjectTemplateUsage.properties.storageRequests = arrayRef("ResourceUsageValue")
   schemas.ProjectAuthorizationDecision.properties.caller = jsonRef("CallerInfo")
   schemas.ProjectAuthorizationDecision.properties.matchedMember = jsonRef("ProjectMember")
+  schemas.ProjectAuthorizationDecision.properties.requiredRoles = arrayEnum(["owner", "operator", "viewer"])
   schemas.ProjectAuthorizationDecision.properties.action.enum = [
     "project.view",
     "project.manage",
@@ -2973,7 +2998,29 @@ function schemaComponents() {
     "credential.manage",
     "member.manage",
   ]
+  schemas.ProjectAuthorizationDecision.properties.availableActions = arrayEnum([
+    "project.view",
+    "project.manage",
+    "sandbox.launch",
+    "runtime.operate",
+    "artifact.write",
+    "policy.manage",
+    "credential.manage",
+    "member.manage",
+  ])
   schemas.ProjectAuthorizationDecision.properties.evaluation.enum = ["allowed", "denied", "not_enforceable"]
+  schemas.ProjectAuthorizationDecision.properties.notes = arrayString()
+  schemas.CallerInfo.properties.notes = arrayString()
+  schemas.ProjectRBACInfo.properties.enforcedActions = arrayEnum([
+    "project.view",
+    "project.manage",
+    "sandbox.launch",
+    "runtime.operate",
+    "artifact.write",
+    "policy.manage",
+    "credential.manage",
+    "member.manage",
+  ])
   schemas.RuntimeResourceList.properties.summary = jsonRef("RuntimeResourceSummary")
   schemas.RuntimeResourceList.properties.items = arrayRef("RuntimeResource")
   schemas.RuntimeResourceSummary.properties.workload = jsonRef("RuntimeWorkloadSummary")
@@ -3178,4 +3225,8 @@ function arrayRef(name) {
 
 function arrayString() {
   return { type: "array", items: { type: "string" } }
+}
+
+function arrayEnum(values) {
+  return { type: "array", items: { type: "string", enum: values } }
 }
