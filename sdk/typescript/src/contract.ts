@@ -728,6 +728,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "updatedAt",
     ],
     enumProperties: [{ property: "status", values: executionTaskStatusValues }],
+    propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
   },
   {
     schema: "ExecutionTaskCreate",
@@ -1406,6 +1407,7 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "type", values: runtimeSessionTypeValues },
       { property: "status", values: runtimeSessionStatusValues },
     ],
+    propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
   },
   {
     schema: "RuntimeSessionCreate",

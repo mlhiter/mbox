@@ -1512,6 +1512,38 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeSession.properties.runtimeRef = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "RuntimeSession" &&
+        issue.property === "runtimeRef" &&
+        issue.expectedSchema === "RuntimeRef",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.ExecutionTask.properties.runtimeRef = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "ExecutionTask" &&
+        issue.property === "runtimeRef" &&
+        issue.expectedSchema === "RuntimeRef",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.ExecutionTask.properties.status.enum = ["queued", "running", "succeeded", "failed", "canceled"]
     assertOpenAPIAlignment(broken)
   },
@@ -2600,8 +2632,10 @@ function schemaComponents() {
   schemas.SandboxUpdate.properties.status.enum = ["pending", "running", "stopped", "failed", "deleted"]
   schemas.RuntimeSession.properties.type.enum = ["terminal", "ide", "notebook", "browser", "command", "custom"]
   schemas.RuntimeSession.properties.status.enum = ["active", "ended", "failed"]
+  schemas.RuntimeSession.properties.runtimeRef = jsonRef("RuntimeRef")
   schemas.RuntimeSessionCreate.properties.type.enum = ["terminal", "ide", "notebook", "browser", "command", "custom"]
   schemas.ExecutionTask.properties.status.enum = ["queued", "running", "succeeded", "failed", "canceled", "timed_out"]
+  schemas.ExecutionTask.properties.runtimeRef = jsonRef("RuntimeRef")
   schemas.ExecutionTaskEvent.properties.type.enum = ["snapshot", "status", "output", "done"]
   schemas.ExecutionTaskEvent.properties.stream.enum = ["stdout", "stderr"]
   schemas.Artifact.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]

@@ -648,6 +648,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		runtimeSessionProperties["endedAt"] == nil {
 		t.Fatalf("expected RuntimeSession client/runtime metadata properties, got %#v", runtimeSession["properties"])
 	}
+	if ref := schemaPropertyRef(runtimeSession, "runtimeRef"); ref != "#/components/schemas/RuntimeRef" {
+		t.Fatalf("expected RuntimeSession runtimeRef to reference RuntimeRef, got %q", ref)
+	}
 	runtimeSessionCreate, ok := schemas["RuntimeSessionCreate"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected RuntimeSessionCreate schema in %#v", schemas["RuntimeSessionCreate"])
@@ -689,6 +692,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		executionTaskProperties["startedAt"] == nil ||
 		executionTaskProperties["finishedAt"] == nil {
 		t.Fatalf("expected ExecutionTask result/runtime metadata properties, got %#v", executionTask["properties"])
+	}
+	if ref := schemaPropertyRef(executionTask, "runtimeRef"); ref != "#/components/schemas/RuntimeRef" {
+		t.Fatalf("expected ExecutionTask runtimeRef to reference RuntimeRef, got %q", ref)
 	}
 	executionTaskCreate, ok := schemas["ExecutionTaskCreate"].(map[string]any)
 	if !ok {
