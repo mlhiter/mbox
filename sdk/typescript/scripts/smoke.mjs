@@ -1593,6 +1593,23 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.ProjectPolicy.properties.allowedImagePrefixes.items = { type: "number" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-array-item-type-mismatch" &&
+        issue.schema === "ProjectPolicy" &&
+        issue.property === "allowedImagePrefixes" &&
+        issue.expectedType === "string" &&
+        issue.actualType === "number",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.ProjectPolicy.properties.enforcement.enum = ["disabled"]
     assertOpenAPIAlignment(broken)
   },
@@ -2898,6 +2915,7 @@ function schemaComponents() {
   schemas.ProjectUsage.properties.artifacts = jsonRef("ProjectArtifactUsage")
   schemas.ProjectUsage.properties.templates = jsonRef("ProjectTemplateUsage")
   schemas.ProjectUsage.properties.credentials = jsonRef("ProjectCredentialUsage")
+  schemas.ProjectUsage.properties.notes = arrayString()
   schemas.ProjectSandboxUsage.properties.activeRequests = jsonRef("SandboxResourceRequestUsage")
   schemas.ProjectSandboxUsage.properties.runningRequests = jsonRef("SandboxResourceRequestUsage")
   schemas.SandboxResourceRequestUsage.properties.cpu = jsonRef("ResourceQuantityUsage")
@@ -3007,6 +3025,11 @@ function schemaComponents() {
   ]
   schemas.ProjectPolicy.properties.enforcement.enum = ["disabled", "enforced"]
   schemas.ProjectPolicyUpsert.properties.enforcement.enum = ["disabled", "enforced"]
+  for (const schemaName of ["ProjectPolicy", "ProjectPolicyUpsert"]) {
+    schemas[schemaName].properties.allowedImagePrefixes = arrayString()
+    schemas[schemaName].properties.allowedServiceAccounts = arrayString()
+    schemas[schemaName].properties.allowedSecretRefs = arrayString()
+  }
   schemas.ProjectQuotaPolicy.properties.enforcement.enum = ["disabled", "enforced"]
   schemas.ProjectQuotaPolicyUpsert.properties.enforcement.enum = ["disabled", "enforced"]
   schemas.ProjectMember.properties.principalType.enum = ["user", "service_account", "automation"]
@@ -3017,6 +3040,8 @@ function schemaComponents() {
   schemas.ProjectCredentialCreate.properties.secretRef = jsonRef("SecretRef")
   schemas.ProjectCredential.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
   schemas.ProjectCredentialCreate.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
+  schemas.ProjectCredential.properties.usage = arrayString()
+  schemas.ProjectCredentialCreate.properties.usage = arrayString()
   for (const schemaName of ["EnvironmentTemplate", "TemplateCreate", "TemplateUpdate"]) {
     schemas[schemaName].properties.exposedPorts = arrayRef("TemplatePort")
     schemas[schemaName].properties.secretRefs = arrayRef("SecretRef")
@@ -3035,8 +3060,20 @@ function schemaComponents() {
   schemas.BoundarySummary.properties.secretRefs = arrayRef("SecretRef")
   schemas.BoundarySummary.properties.credentialRefs = arrayRef("BoundaryCredentialRef")
   schemas.BoundarySummary.properties.checks = arrayRef("BoundaryCheck")
+  for (const property of [
+    "allowedImagePrefixes",
+    "allowedServiceAccounts",
+    "allowedSecretRefs",
+    "controllerPermissions",
+    "runtimeAccess",
+    "cleanup",
+  ]) {
+    schemas.BoundarySummary.properties[property] = arrayString()
+  }
   schemas.BoundaryCheck.properties.status.enum = ["pass", "warn", "fail"]
+  schemas.BoundaryCheck.properties.evidence = arrayString()
   schemas.BoundaryCredentialRef.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
+  schemas.BoundaryCredentialRef.properties.usage = arrayString()
   schemas.TemplateValidationRunDecision.properties.status.enum = ["passed", "failed"]
   schemas.Sandbox.properties.status.enum = ["pending", "running", "stopped", "failed", "deleted"]
   schemas.SandboxUpdate.properties.status.enum = ["pending", "running", "stopped", "failed", "deleted"]
@@ -3137,4 +3174,8 @@ function objectSchema(required, optional = []) {
 
 function arrayRef(name) {
   return { type: "array", items: jsonRef(name) }
+}
+
+function arrayString() {
+  return { type: "array", items: { type: "string" } }
 }

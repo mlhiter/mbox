@@ -41,6 +41,7 @@ export type SDKSchemaContractEntry = {
   enumProperties?: readonly SDKSchemaEnumPropertyContract[]
   propertyRefs?: readonly SDKSchemaPropertyRefContract[]
   arrayItemRefs?: readonly SDKSchemaArrayItemRefContract[]
+  arrayItemTypes?: readonly SDKSchemaArrayItemTypeContract[]
 }
 
 export type SDKSchemaPrimitiveType = "string" | "integer" | "number" | "boolean" | "object" | "array"
@@ -63,6 +64,11 @@ export type SDKSchemaPropertyRefContract = {
 export type SDKSchemaArrayItemRefContract = {
   property: string
   ref: string
+}
+
+export type SDKSchemaArrayItemTypeContract = {
+  property: string
+  type: SDKSchemaPrimitiveType
 }
 
 export type SDKOpenAPIAlignmentIssue = {
@@ -94,6 +100,7 @@ export type SDKOpenAPIAlignmentIssue = {
     | "missing-schema-enum-value"
     | "schema-property-ref-mismatch"
     | "schema-array-item-ref-mismatch"
+    | "schema-array-item-type-mismatch"
   sdk?: keyof MboxClient
   method?: SDKRouteMethod
   path?: string
@@ -131,6 +138,7 @@ export type SDKOpenAPIAlignmentResult = {
   checkedSchemaEnumValues: number
   checkedSchemaPropertyRefs: number
   checkedSchemaArrayItemRefs: number
+  checkedSchemaArrayItemTypes: number
   missing: SDKOpenAPIAlignmentIssue[]
 }
 
@@ -895,6 +903,7 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "templates", ref: "ProjectTemplateUsage" },
       { property: "credentials", ref: "ProjectCredentialUsage" },
     ],
+    arrayItemTypes: [{ property: "notes", type: "string" }],
   },
   {
     schema: "BoundarySummary",
@@ -965,12 +974,21 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "credentialRefs", ref: "BoundaryCredentialRef" },
       { property: "checks", ref: "BoundaryCheck" },
     ],
+    arrayItemTypes: [
+      { property: "allowedImagePrefixes", type: "string" },
+      { property: "allowedServiceAccounts", type: "string" },
+      { property: "allowedSecretRefs", type: "string" },
+      { property: "controllerPermissions", type: "string" },
+      { property: "runtimeAccess", type: "string" },
+      { property: "cleanup", type: "string" },
+    ],
   },
   {
     schema: "BoundaryCheck",
     required: ["id", "label", "status", "message"],
     properties: ["id", "label", "status", "message", "evidence"],
     enumProperties: [{ property: "status", values: boundaryCheckStatusValues }],
+    arrayItemTypes: [{ property: "evidence", type: "string" }],
   },
   {
     schema: "BoundaryPort",
@@ -982,6 +1000,7 @@ export const SDK_SCHEMA_CONTRACT = [
     required: ["id", "name", "slug", "type", "secretRef"],
     properties: ["id", "name", "slug", "type", "target", "secretRef", "usage"],
     enumProperties: [{ property: "type", values: projectCredentialTypeValues }],
+    arrayItemTypes: [{ property: "usage", type: "string" }],
   },
   {
     schema: "Project",
@@ -1021,12 +1040,22 @@ export const SDK_SCHEMA_CONTRACT = [
       "updatedAt",
     ],
     enumProperties: [{ property: "enforcement", values: projectPolicyEnforcementValues }],
+    arrayItemTypes: [
+      { property: "allowedImagePrefixes", type: "string" },
+      { property: "allowedServiceAccounts", type: "string" },
+      { property: "allowedSecretRefs", type: "string" },
+    ],
   },
   {
     schema: "ProjectPolicyUpsert",
     required: ["enforcement"],
     properties: ["enforcement", "allowedImagePrefixes", "allowedServiceAccounts", "allowedSecretRefs"],
     enumProperties: [{ property: "enforcement", values: projectPolicyEnforcementValues }],
+    arrayItemTypes: [
+      { property: "allowedImagePrefixes", type: "string" },
+      { property: "allowedServiceAccounts", type: "string" },
+      { property: "allowedSecretRefs", type: "string" },
+    ],
   },
   {
     schema: "ProjectQuotaPolicy",
@@ -1385,6 +1414,7 @@ export const SDK_SCHEMA_CONTRACT = [
     ],
     enumProperties: [{ property: "type", values: projectCredentialTypeValues }],
     propertyRefs: [{ property: "secretRef", ref: "SecretRef" }],
+    arrayItemTypes: [{ property: "usage", type: "string" }],
   },
   {
     schema: "ProjectCredentialCreate",
@@ -1392,6 +1422,7 @@ export const SDK_SCHEMA_CONTRACT = [
     properties: ["name", "slug", "type", "target", "secretRef", "usage", "metadata"],
     enumProperties: [{ property: "type", values: projectCredentialTypeValues }],
     propertyRefs: [{ property: "secretRef", ref: "SecretRef" }],
+    arrayItemTypes: [{ property: "usage", type: "string" }],
   },
   {
     schema: "TemplatePort",
@@ -1715,6 +1746,7 @@ export function checkOpenAPIAlignment(
   let checkedSchemaEnumValues = 0
   let checkedSchemaPropertyRefs = 0
   let checkedSchemaArrayItemRefs = 0
+  let checkedSchemaArrayItemTypes = 0
   const routeCoverage = sdkRouteCoverage(routes)
 
   for (const operation of openAPIOperations(paths)) {
@@ -1840,6 +1872,19 @@ export function checkOpenAPIAlignment(
         })
       }
     }
+    for (const itemType of schemaContract.arrayItemTypes ?? []) {
+      checkedSchemaArrayItemTypes += 1
+      const actualType = schemaArrayItemType(schema, itemType.property)
+      if (actualType !== itemType.type) {
+        missing.push({
+          ...schemaContract,
+          reason: "schema-array-item-type-mismatch",
+          property: itemType.property,
+          expectedType: itemType.type,
+          actualType,
+        })
+      }
+    }
   }
 
   return {
@@ -1859,6 +1904,7 @@ export function checkOpenAPIAlignment(
     checkedSchemaEnumValues,
     checkedSchemaPropertyRefs,
     checkedSchemaArrayItemRefs,
+    checkedSchemaArrayItemTypes,
     missing,
   }
 }
@@ -1885,7 +1931,7 @@ export async function fetchAndAssertOpenAPIAlignment(
 
 function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
   if (result.ok) {
-    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaPropertyTypes} SDK schema property types, ${result.checkedSchemaEnumValues} SDK schema enum values, ${result.checkedSchemaPropertyRefs} SDK schema property refs, and ${result.checkedSchemaArrayItemRefs} SDK schema array item refs`
+    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaPropertyTypes} SDK schema property types, ${result.checkedSchemaEnumValues} SDK schema enum values, ${result.checkedSchemaPropertyRefs} SDK schema property refs, ${result.checkedSchemaArrayItemRefs} SDK schema array item refs, and ${result.checkedSchemaArrayItemTypes} SDK schema array item types`
   }
   const preview = result.missing
     .slice(0, 10)
@@ -2201,6 +2247,18 @@ function schemaArrayItemRefName(schema: Record<string, unknown>, property: strin
     return undefined
   }
   return schemaRefName(propertySchema.items)
+}
+
+function schemaArrayItemType(schema: Record<string, unknown>, property: string) {
+  if (!isRecord(schema.properties)) {
+    return undefined
+  }
+  const propertySchema = schema.properties[property]
+  if (!isRecord(propertySchema) || propertySchema.type !== "array" || !isRecord(propertySchema.items)) {
+    return undefined
+  }
+  const itemType = propertySchema.items.type
+  return typeof itemType === "string" ? itemType : undefined
 }
 
 function stringSet(value: unknown) {
