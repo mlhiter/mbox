@@ -1400,6 +1400,22 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.TemplateCreate.properties.exposedPorts.items = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-array-item-ref-mismatch" &&
+        issue.schema === "TemplateCreate" &&
+        issue.property === "exposedPorts" &&
+        issue.expectedSchema === "TemplatePort",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.TemplateValidationRun.properties.template = { type: "object" }
     assertOpenAPIAlignment(broken)
   },
@@ -2527,6 +2543,10 @@ function schemaComponents() {
   schemas.ProjectCredentialCreate.properties.secretRef = jsonRef("SecretRef")
   schemas.ProjectCredential.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
   schemas.ProjectCredentialCreate.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
+  for (const schemaName of ["EnvironmentTemplate", "TemplateCreate", "TemplateUpdate"]) {
+    schemas[schemaName].properties.exposedPorts = arrayRef("TemplatePort")
+    schemas[schemaName].properties.secretRefs = arrayRef("SecretRef")
+  }
   schemas.TemplateValidationRun.properties.template = jsonRef("EnvironmentTemplate")
   schemas.TemplateValidationRun.properties.sandbox = jsonRef("Sandbox")
   schemas.BoundarySummary.properties.kind.enum = ["template", "sandbox"]

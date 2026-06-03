@@ -1255,6 +1255,10 @@ export const SDK_SCHEMA_CONTRACT = [
       "createdAt",
       "updatedAt",
     ],
+    arrayItemRefs: [
+      { property: "exposedPorts", ref: "TemplatePort" },
+      { property: "secretRefs", ref: "SecretRef" },
+    ],
   },
   {
     schema: "TemplateCreate",
@@ -1276,6 +1280,10 @@ export const SDK_SCHEMA_CONTRACT = [
       "lifecyclePolicy",
       "metadata",
     ],
+    arrayItemRefs: [
+      { property: "exposedPorts", ref: "TemplatePort" },
+      { property: "secretRefs", ref: "SecretRef" },
+    ],
   },
   {
     schema: "TemplateUpdate",
@@ -1295,6 +1303,10 @@ export const SDK_SCHEMA_CONTRACT = [
       "metadata",
     ],
     absentProperties: ["projectId", "slug"],
+    arrayItemRefs: [
+      { property: "exposedPorts", ref: "TemplatePort" },
+      { property: "secretRefs", ref: "SecretRef" },
+    ],
   },
   {
     schema: "TemplateValidationRunCreate",
