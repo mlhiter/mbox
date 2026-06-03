@@ -939,6 +939,92 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.PolicyDeniedAuditMetadata.properties.authorizationAction.enum =
+      broken.components.schemas.PolicyDeniedAuditMetadata.properties.authorizationAction.enum.filter((value) => value !== "member.manage")
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "PolicyDeniedAuditMetadata" &&
+        issue.property === "authorizationAction" &&
+        issue.enumValue === "member.manage",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.PolicyDeniedAuditMetadata.properties.callerMode.enum = ["anonymous", "shared_token"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "PolicyDeniedAuditMetadata" &&
+        issue.property === "callerMode" &&
+        issue.enumValue === "trusted_header",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.PolicyDeniedAuditMetadata.properties.callerPrincipalType.enum = [
+      "anonymous",
+      "shared_token",
+      "user",
+      "service_account",
+    ]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "PolicyDeniedAuditMetadata" &&
+        issue.property === "callerPrincipalType" &&
+        issue.enumValue === "automation",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.PolicyDeniedAuditMetadata.properties.principalType.enum = ["user", "service_account"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "PolicyDeniedAuditMetadata" &&
+        issue.property === "principalType" &&
+        issue.enumValue === "automation",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.PolicyDeniedAuditMetadata.properties.role.enum = ["owner", "operator"]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "PolicyDeniedAuditMetadata" &&
+        issue.property === "role" &&
+        issue.enumValue === "viewer",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.Sandbox.required = broken.components.schemas.Sandbox.required.filter((name) => name !== "status")
     assertOpenAPIAlignment(broken)
   },
@@ -2751,6 +2837,26 @@ function schemaComponents() {
     "project.member.create",
     "project.member.delete",
   ]
+  schemas.PolicyDeniedAuditMetadata.properties.authorizationAction.enum = [
+    "project.view",
+    "project.manage",
+    "sandbox.launch",
+    "runtime.operate",
+    "artifact.write",
+    "policy.manage",
+    "credential.manage",
+    "member.manage",
+  ]
+  schemas.PolicyDeniedAuditMetadata.properties.callerMode.enum = ["anonymous", "shared_token", "trusted_header"]
+  schemas.PolicyDeniedAuditMetadata.properties.callerPrincipalType.enum = [
+    "anonymous",
+    "shared_token",
+    "user",
+    "service_account",
+    "automation",
+  ]
+  schemas.PolicyDeniedAuditMetadata.properties.principalType.enum = ["user", "service_account", "automation"]
+  schemas.PolicyDeniedAuditMetadata.properties.role.enum = ["owner", "operator", "viewer"]
   schemas.RuntimeResourceOwner.properties.kind.enum = ["sandbox", "template"]
   schemas.RuntimeOrphanReason = {
     type: "string",

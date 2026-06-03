@@ -142,6 +142,18 @@ const noContentResponse = { status: "204", noContent: true } as const satisfies 
 const projectPolicyEnforcementValues = ["disabled", "enforced"] as const
 const projectMemberPrincipalTypeValues = ["user", "service_account", "automation"] as const
 const projectMemberRoleValues = ["owner", "operator", "viewer"] as const
+const callerAuthModeValues = ["anonymous", "shared_token", "trusted_header"] as const
+const callerPrincipalTypeValues = ["anonymous", "shared_token", "user", "service_account", "automation"] as const
+const projectAuthorizationActionValues = [
+  "project.view",
+  "project.manage",
+  "sandbox.launch",
+  "runtime.operate",
+  "artifact.write",
+  "policy.manage",
+  "credential.manage",
+  "member.manage",
+] as const
 const projectCredentialTypeValues = ["git", "registry", "kubernetes", "ssh", "generic"] as const
 const sandboxStatusValues = ["pending", "running", "stopped", "failed", "deleted"] as const
 const executionTaskStatusValues = ["queued", "running", "succeeded", "failed", "canceled", "timed_out"] as const
@@ -1103,19 +1115,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "notes",
     ],
     enumProperties: [
-      {
-        property: "action",
-        values: [
-          "project.view",
-          "project.manage",
-          "sandbox.launch",
-          "runtime.operate",
-          "artifact.write",
-          "policy.manage",
-          "credential.manage",
-          "member.manage",
-        ],
-      },
+      { property: "action", values: projectAuthorizationActionValues },
       { property: "evaluation", values: ["allowed", "denied", "not_enforceable"] },
     ],
     propertyRefs: [
@@ -1146,8 +1146,8 @@ export const SDK_SCHEMA_CONTRACT = [
       "notes",
     ],
     enumProperties: [
-      { property: "mode", values: ["anonymous", "shared_token", "trusted_header"] },
-      { property: "principalType", values: ["anonymous", "shared_token", "user", "service_account", "automation"] },
+      { property: "mode", values: callerAuthModeValues },
+      { property: "principalType", values: callerPrincipalTypeValues },
     ],
   },
   {
@@ -1523,7 +1523,14 @@ export const SDK_SCHEMA_CONTRACT = [
       "principal",
       "role",
     ],
-    enumProperties: [{ property: "operation", values: policyDeniedOperationValues }],
+    enumProperties: [
+      { property: "operation", values: policyDeniedOperationValues },
+      { property: "authorizationAction", values: projectAuthorizationActionValues },
+      { property: "callerMode", values: callerAuthModeValues },
+      { property: "callerPrincipalType", values: callerPrincipalTypeValues },
+      { property: "principalType", values: projectMemberPrincipalTypeValues },
+      { property: "role", values: projectMemberRoleValues },
+    ],
   },
 ] as const satisfies readonly SDKSchemaContractEntry[]
 
