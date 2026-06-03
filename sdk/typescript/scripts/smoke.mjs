@@ -1012,6 +1012,59 @@ assert.throws(
         issue.schema === "RuntimeTarget" &&
         issue.property === "storage" &&
         issue.expectedSchema === "RuntimeStorage",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeOrphan.properties.resource = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "RuntimeOrphan" &&
+        issue.property === "resource" &&
+        issue.expectedSchema === "RuntimeResource",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeResourceSummary.properties.byProject.items = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-array-item-ref-mismatch" &&
+        issue.schema === "RuntimeResourceSummary" &&
+        issue.property === "byProject" &&
+        issue.expectedSchema === "RuntimeResourceCount",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeOrphanReason.enum = [
+      "missing-sandbox-record",
+      "cleanup-pending",
+      "missing-template-record",
+      "unlabeled-owner",
+    ]
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "missing-schema-enum-value" &&
+        issue.schema === "RuntimeOrphan" &&
+        issue.property === "reason" &&
+        issue.enumValue === "runtime-ref-mismatch",
     ),
 )
 assert.throws(
@@ -1331,7 +1384,7 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
-    broken.components.schemas.RuntimeOrphan.properties.reason.enum = [
+    broken.components.schemas.RuntimeOrphanReason.enum = [
       "missing-sandbox-record",
       "cleanup-pending",
       "missing-template-record",
@@ -1724,7 +1777,19 @@ function schemaComponents() {
     "ProjectRBACInfo",
     "CallerInfo",
     "RuntimeResourceList",
+    "RuntimeResourceSummary",
+    "RuntimeResourceCount",
+    "RuntimeWorkloadSummary",
+    "RuntimeQuantityIssue",
+    "RuntimeStorageSummary",
+    "RuntimeResource",
+    "RuntimeResourceOwner",
+    "RuntimeResourceObservation",
+    "RuntimeStorage",
     "RuntimeOrphanAudit",
+    "RuntimeOrphan",
+    "RuntimeOrphanReason",
+    "ManagedResourceRef",
     "RuntimeOrphanCleanupRequest",
     "RuntimeOrphanCleanupResult",
     "AuditEvent",
@@ -2260,11 +2325,22 @@ function schemaComponents() {
     "member.manage",
   ]
   schemas.ProjectAuthorizationDecision.properties.evaluation.enum = ["allowed", "denied", "not_enforceable"]
+  schemas.RuntimeResourceList.properties.summary = jsonRef("RuntimeResourceSummary")
+  schemas.RuntimeResourceList.properties.items = arrayRef("RuntimeResource")
+  schemas.RuntimeResourceSummary.properties.workload = jsonRef("RuntimeWorkloadSummary")
+  schemas.RuntimeResourceSummary.properties.byKind = arrayRef("RuntimeResourceCount")
+  schemas.RuntimeResourceSummary.properties.byNamespace = arrayRef("RuntimeResourceCount")
+  schemas.RuntimeResourceSummary.properties.byOwner = arrayRef("RuntimeResourceCount")
+  schemas.RuntimeResourceSummary.properties.byProject = arrayRef("RuntimeResourceCount")
   schemas.RuntimeWorkloadSummary.properties.quantityIssues = arrayRef("RuntimeQuantityIssue")
   schemas.RuntimeWorkloadSummary.properties.storage = arrayRef("RuntimeStorageSummary")
+  schemas.RuntimeResource.properties.owner = jsonRef("RuntimeResourceOwner")
+  schemas.RuntimeResource.properties.observation = jsonRef("RuntimeResourceObservation")
   schemas.RuntimeResourceObservation.properties.storage = arrayRef("RuntimeStorage")
   schemas.RuntimeTarget.properties.storage = arrayRef("RuntimeStorage")
+  schemas.LogResult.properties.target = jsonRef("RuntimeTarget")
   schemas.PreviewPortsResult.properties.items = arrayRef("PreviewPort")
+  schemas.ExecutionTaskEvent.properties.task = jsonRef("ExecutionTask")
   schemas.CallerInfo.properties.mode.enum = ["anonymous", "shared_token", "trusted_header"]
   schemas.CallerInfo.properties.principalType.enum = [
     "anonymous",
@@ -2301,29 +2377,27 @@ function schemaComponents() {
   schemas.ArtifactCreate.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]
   schemas.ArtifactContent.properties.storageProvider.enum = ["postgres", "filesystem", "s3"]
   schemas.RuntimeResourceOwner.properties.kind.enum = ["sandbox", "template"]
-  schemas.RuntimeOrphan.properties.reason.enum = [
-    "missing-sandbox-record",
-    "cleanup-pending",
-    "runtime-ref-mismatch",
-    "missing-template-record",
-    "unlabeled-owner",
-  ]
-  schemas.RuntimeOrphan.properties.status.enum = ["pending", "running", "stopped", "failed", "deleted"]
-  schemas.RuntimeOrphanCleanupRequest.properties.reason.enum = [
-    "missing-sandbox-record",
-    "cleanup-pending",
-    "runtime-ref-mismatch",
-    "missing-template-record",
-    "unlabeled-owner",
-  ]
+  schemas.RuntimeOrphanReason = {
+    type: "string",
+    enum: [
+      "missing-sandbox-record",
+      "cleanup-pending",
+      "runtime-ref-mismatch",
+      "missing-template-record",
+      "unlabeled-owner",
+    ],
+  }
+  schemas.RuntimeOrphan.properties.reason = jsonRef("RuntimeOrphanReason")
+  schemas.RuntimeOrphan.properties.resource = jsonRef("RuntimeResource")
+  schemas.RuntimeOrphan.properties.runtimeRef = jsonRef("RuntimeRef")
+  schemas.RuntimeOrphan.properties.evidence = { type: "array", items: { type: "string" } }
+  schemas.RuntimeOrphanAudit.properties.items = arrayRef("RuntimeOrphan")
+  schemas.RuntimeOrphanCleanupRequest.properties.resource = jsonRef("ManagedResourceRef")
+  schemas.RuntimeOrphanCleanupRequest.properties.reason = jsonRef("RuntimeOrphanReason")
+  schemas.RuntimeOrphanCleanupResult.properties.resource = jsonRef("ManagedResourceRef")
+  schemas.RuntimeOrphanCleanupResult.properties.reason = jsonRef("RuntimeOrphanReason")
   schemas.RuntimeOrphanCleanupRequest.properties.confirm.enum = ["delete-orphan-runtime-resource"]
-  schemas.RuntimeOrphanCleanupResult.properties.reason.enum = [
-    "missing-sandbox-record",
-    "cleanup-pending",
-    "runtime-ref-mismatch",
-    "missing-template-record",
-    "unlabeled-owner",
-  ]
+  schemas.RuntimeOrphan.properties.status.enum = ["pending", "running", "stopped", "failed", "deleted"]
   return schemas
 }
 

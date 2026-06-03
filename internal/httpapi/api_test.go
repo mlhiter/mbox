@@ -849,6 +849,12 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(runtimeResourceRequired, "items") {
 		t.Fatalf("expected runtime resource list required fields, got %#v", runtimeResourceList["required"])
 	}
+	if ref := schemaPropertyRef(runtimeResourceList, "summary"); ref != "#/components/schemas/RuntimeResourceSummary" {
+		t.Fatalf("expected runtime resource list summary to reference RuntimeResourceSummary, got %q", ref)
+	}
+	if ref := schemaArrayItemRef(runtimeResourceList, "items"); ref != "#/components/schemas/RuntimeResource" {
+		t.Fatalf("expected runtime resource list items to reference RuntimeResource, got %q", ref)
+	}
 	runtimeResourceSummary, ok := schemas["RuntimeResourceSummary"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected RuntimeResourceSummary schema in %#v", schemas["RuntimeResourceSummary"])
@@ -862,6 +868,14 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(runtimeResourceSummaryRequired, "byProject") ||
 		!anySliceContainsString(runtimeResourceSummaryRequired, "workload") {
 		t.Fatalf("expected runtime resource summary required fields, got %#v", runtimeResourceSummary["required"])
+	}
+	if ref := schemaPropertyRef(runtimeResourceSummary, "workload"); ref != "#/components/schemas/RuntimeWorkloadSummary" {
+		t.Fatalf("expected runtime resource summary workload to reference RuntimeWorkloadSummary, got %q", ref)
+	}
+	for _, property := range []string{"byKind", "byNamespace", "byOwner", "byProject"} {
+		if ref := schemaArrayItemRef(runtimeResourceSummary, property); ref != "#/components/schemas/RuntimeResourceCount" {
+			t.Fatalf("expected runtime resource summary %s to reference RuntimeResourceCount, got %q", property, ref)
+		}
 	}
 	runtimeWorkloadSummary, ok := schemas["RuntimeWorkloadSummary"].(map[string]any)
 	if !ok {
@@ -901,6 +915,12 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	runtimeResourceProperties, ok := runtimeResource["properties"].(map[string]any)
 	if !ok || runtimeResourceProperties["owner"] == nil || runtimeResourceProperties["observation"] == nil {
 		t.Fatalf("expected runtime resource owner and observation properties, got %#v", runtimeResource["properties"])
+	}
+	if ref := schemaPropertyRef(runtimeResource, "owner"); ref != "#/components/schemas/RuntimeResourceOwner" {
+		t.Fatalf("expected runtime resource owner to reference RuntimeResourceOwner, got %q", ref)
+	}
+	if ref := schemaPropertyRef(runtimeResource, "observation"); ref != "#/components/schemas/RuntimeResourceObservation" {
+		t.Fatalf("expected runtime resource observation to reference RuntimeResourceObservation, got %q", ref)
 	}
 	runtimeResourceOwner, ok := schemas["RuntimeResourceOwner"].(map[string]any)
 	if !ok {
@@ -948,6 +968,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(runtimeOrphanAuditRequired, "items") {
 		t.Fatalf("expected runtime orphan audit required fields, got %#v", runtimeOrphanAudit["required"])
 	}
+	if ref := schemaArrayItemRef(runtimeOrphanAudit, "items"); ref != "#/components/schemas/RuntimeOrphan" {
+		t.Fatalf("expected runtime orphan audit items to reference RuntimeOrphan, got %q", ref)
+	}
 	runtimeOrphan, ok := schemas["RuntimeOrphan"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected RuntimeOrphan schema in %#v", schemas["RuntimeOrphan"])
@@ -958,6 +981,15 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(runtimeOrphanRequired, "resource") ||
 		!anySliceContainsString(runtimeOrphanRequired, "message") {
 		t.Fatalf("expected runtime orphan required fields, got %#v", runtimeOrphan["required"])
+	}
+	if ref := schemaPropertyRef(runtimeOrphan, "reason"); ref != "#/components/schemas/RuntimeOrphanReason" {
+		t.Fatalf("expected runtime orphan reason to reference RuntimeOrphanReason, got %q", ref)
+	}
+	if ref := schemaPropertyRef(runtimeOrphan, "resource"); ref != "#/components/schemas/RuntimeResource" {
+		t.Fatalf("expected runtime orphan resource to reference RuntimeResource, got %q", ref)
+	}
+	if ref := schemaPropertyRef(runtimeOrphan, "runtimeRef"); ref != "#/components/schemas/RuntimeRef" {
+		t.Fatalf("expected runtime orphan runtimeRef to reference RuntimeRef, got %q", ref)
 	}
 	managedResourceRef, ok := schemas["ManagedResourceRef"].(map[string]any)
 	if !ok {
@@ -970,6 +1002,26 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(managedResourceRefRequired, "namespace") ||
 		!anySliceContainsString(managedResourceRefRequired, "name") {
 		t.Fatalf("expected managed resource ref required fields, got %#v", managedResourceRef["required"])
+	}
+	runtimeOrphanCleanupRequest, ok := schemas["RuntimeOrphanCleanupRequest"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected RuntimeOrphanCleanupRequest schema in %#v", schemas["RuntimeOrphanCleanupRequest"])
+	}
+	if ref := schemaPropertyRef(runtimeOrphanCleanupRequest, "resource"); ref != "#/components/schemas/ManagedResourceRef" {
+		t.Fatalf("expected cleanup request resource to reference ManagedResourceRef, got %q", ref)
+	}
+	if ref := schemaPropertyRef(runtimeOrphanCleanupRequest, "reason"); ref != "#/components/schemas/RuntimeOrphanReason" {
+		t.Fatalf("expected cleanup request reason to reference RuntimeOrphanReason, got %q", ref)
+	}
+	runtimeOrphanCleanupResult, ok := schemas["RuntimeOrphanCleanupResult"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected RuntimeOrphanCleanupResult schema in %#v", schemas["RuntimeOrphanCleanupResult"])
+	}
+	if ref := schemaPropertyRef(runtimeOrphanCleanupResult, "resource"); ref != "#/components/schemas/ManagedResourceRef" {
+		t.Fatalf("expected cleanup result resource to reference ManagedResourceRef, got %q", ref)
+	}
+	if ref := schemaPropertyRef(runtimeOrphanCleanupResult, "reason"); ref != "#/components/schemas/RuntimeOrphanReason" {
+		t.Fatalf("expected cleanup result reason to reference RuntimeOrphanReason, got %q", ref)
 	}
 	actionSchema, ok := schemas["AuditEventAction"].(map[string]any)
 	if !ok {
@@ -1610,6 +1662,19 @@ func anySliceContainsString(values []any, value string) bool {
 		}
 	}
 	return false
+}
+
+func schemaPropertyRef(schema map[string]any, property string) string {
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	propertySchema, ok := properties[property].(map[string]any)
+	if !ok {
+		return ""
+	}
+	ref, _ := propertySchema["$ref"].(string)
+	return ref
 }
 
 func schemaArrayItemRef(schema map[string]any, property string) string {

@@ -38,12 +38,18 @@ export type SDKSchemaContractEntry = {
   properties?: readonly string[]
   absentProperties?: readonly string[]
   enumProperties?: readonly SDKSchemaEnumPropertyContract[]
+  propertyRefs?: readonly SDKSchemaPropertyRefContract[]
   arrayItemRefs?: readonly SDKSchemaArrayItemRefContract[]
 }
 
 export type SDKSchemaEnumPropertyContract = {
   property: string
   values: readonly string[]
+}
+
+export type SDKSchemaPropertyRefContract = {
+  property: string
+  ref: string
 }
 
 export type SDKSchemaArrayItemRefContract = {
@@ -77,6 +83,7 @@ export type SDKOpenAPIAlignmentIssue = {
     | "missing-schema-property"
     | "unexpected-schema-property"
     | "missing-schema-enum-value"
+    | "schema-property-ref-mismatch"
     | "schema-array-item-ref-mismatch"
   sdk?: keyof MboxClient
   method?: SDKRouteMethod
@@ -110,6 +117,7 @@ export type SDKOpenAPIAlignmentResult = {
   checkedSchemaProperties: number
   checkedSchemaAbsentProperties: number
   checkedSchemaEnumValues: number
+  checkedSchemaPropertyRefs: number
   checkedSchemaArrayItemRefs: number
   missing: SDKOpenAPIAlignmentIssue[]
 }
@@ -558,11 +566,20 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeResourceList",
     required: ["adapter", "checkedAt", "summary", "items"],
     properties: ["adapter", "checkedAt", "summary", "items"],
+    propertyRefs: [{ property: "summary", ref: "RuntimeResourceSummary" }],
+    arrayItemRefs: [{ property: "items", ref: "RuntimeResource" }],
   },
   {
     schema: "RuntimeResourceSummary",
     required: ["total", "byKind", "byNamespace", "byOwner", "byProject", "workload"],
     properties: ["total", "byKind", "byNamespace", "byOwner", "byProject", "workload"],
+    propertyRefs: [{ property: "workload", ref: "RuntimeWorkloadSummary" }],
+    arrayItemRefs: [
+      { property: "byKind", ref: "RuntimeResourceCount" },
+      { property: "byNamespace", ref: "RuntimeResourceCount" },
+      { property: "byOwner", ref: "RuntimeResourceCount" },
+      { property: "byProject", ref: "RuntimeResourceCount" },
+    ],
   },
   {
     schema: "RuntimeResourceCount",
@@ -613,6 +630,10 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeResource",
     required: ["adapter", "kind", "name"],
     properties: ["adapter", "kind", "namespace", "name", "owner", "observation", "labels", "createdAt"],
+    propertyRefs: [
+      { property: "owner", ref: "RuntimeResourceOwner" },
+      { property: "observation", ref: "RuntimeResourceObservation" },
+    ],
   },
   {
     schema: "RuntimeResourceOwner",
@@ -656,6 +677,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "LogResult",
     required: ["target", "logs"],
     properties: ["target", "logs"],
+    propertyRefs: [{ property: "target", ref: "RuntimeTarget" }],
   },
   {
     schema: "RuntimeEvent",
@@ -665,6 +687,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "ExecutionTaskEvent",
     required: ["type", "createdAt"],
     properties: ["type", "task", "stream", "data", "offset", "createdAt"],
+    propertyRefs: [{ property: "task", ref: "ExecutionTask" }],
     enumProperties: [
       { property: "type", values: executionTaskEventTypeValues },
       { property: "stream", values: executionTaskEventStreamValues },
@@ -715,6 +738,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeOrphanAudit",
     required: ["adapter", "checkedAt", "resourceCount", "orphanCount", "expectedClean", "items"],
     properties: ["adapter", "checkedAt", "namespace", "resourceCount", "orphanCount", "expectedClean", "items"],
+    arrayItemRefs: [{ property: "items", ref: "RuntimeOrphan" }],
   },
   {
     schema: "RuntimeOrphan",
@@ -731,6 +755,11 @@ export const SDK_SCHEMA_CONTRACT = [
       "message",
       "evidence",
     ],
+    propertyRefs: [
+      { property: "reason", ref: "RuntimeOrphanReason" },
+      { property: "resource", ref: "RuntimeResource" },
+      { property: "runtimeRef", ref: "RuntimeRef" },
+    ],
     enumProperties: [
       { property: "reason", values: runtimeOrphanReasonValues },
       { property: "status", values: sandboxStatusValues },
@@ -745,6 +774,10 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeOrphanCleanupRequest",
     required: ["resource", "reason", "confirm", "deleteOrphan"],
     properties: ["resource", "reason", "confirm", "deleteOrphan"],
+    propertyRefs: [
+      { property: "resource", ref: "ManagedResourceRef" },
+      { property: "reason", ref: "RuntimeOrphanReason" },
+    ],
     enumProperties: [
       { property: "reason", values: runtimeOrphanReasonValues },
       { property: "confirm", values: runtimeOrphanCleanupConfirmValues },
@@ -754,6 +787,10 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeOrphanCleanupResult",
     required: ["deleted", "resource", "reason", "message"],
     properties: ["deleted", "resource", "reason", "message"],
+    propertyRefs: [
+      { property: "resource", ref: "ManagedResourceRef" },
+      { property: "reason", ref: "RuntimeOrphanReason" },
+    ],
     enumProperties: [{ property: "reason", values: runtimeOrphanReasonValues }],
   },
   {
@@ -1421,6 +1458,7 @@ export function checkOpenAPIAlignment(
   let checkedSchemaProperties = 0
   let checkedSchemaAbsentProperties = 0
   let checkedSchemaEnumValues = 0
+  let checkedSchemaPropertyRefs = 0
   let checkedSchemaArrayItemRefs = 0
   const routeCoverage = sdkRouteCoverage(routes)
 
@@ -1495,7 +1533,7 @@ export function checkOpenAPIAlignment(
       }
     }
     for (const enumProperty of schemaContract.enumProperties ?? []) {
-      const values = schemaPropertyEnumValues(schema, enumProperty.property)
+      const values = schemaPropertyEnumValues(schema, enumProperty.property, componentSchemas)
       for (const value of enumProperty.values) {
         checkedSchemaEnumValues += 1
         if (!values.has(value)) {
@@ -1506,6 +1544,19 @@ export function checkOpenAPIAlignment(
             enumValue: value,
           })
         }
+      }
+    }
+    for (const propertyRef of schemaContract.propertyRefs ?? []) {
+      checkedSchemaPropertyRefs += 1
+      const actualRef = schemaPropertyRefName(schema, propertyRef.property)
+      if (actualRef !== propertyRef.ref) {
+        missing.push({
+          ...schemaContract,
+          reason: "schema-property-ref-mismatch",
+          property: propertyRef.property,
+          expectedSchema: propertyRef.ref,
+          actualSchema: actualRef,
+        })
       }
     }
     for (const itemRef of schemaContract.arrayItemRefs ?? []) {
@@ -1537,6 +1588,7 @@ export function checkOpenAPIAlignment(
     checkedSchemaProperties,
     checkedSchemaAbsentProperties,
     checkedSchemaEnumValues,
+    checkedSchemaPropertyRefs,
     checkedSchemaArrayItemRefs,
     missing,
   }
@@ -1564,7 +1616,7 @@ export async function fetchAndAssertOpenAPIAlignment(
 
 function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
   if (result.ok) {
-    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaEnumValues} SDK schema enum values, and ${result.checkedSchemaArrayItemRefs} SDK schema array item refs`
+    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaEnumValues} SDK schema enum values, ${result.checkedSchemaPropertyRefs} SDK schema property refs, and ${result.checkedSchemaArrayItemRefs} SDK schema array item refs`
   }
   const preview = result.missing
     .slice(0, 10)
@@ -1830,7 +1882,11 @@ function propertyNames(schema: Record<string, unknown>) {
   return names
 }
 
-function schemaPropertyEnumValues(schema: Record<string, unknown>, property: string) {
+function schemaPropertyEnumValues(
+  schema: Record<string, unknown>,
+  property: string,
+  componentSchemas?: Record<string, unknown>,
+) {
   if (!isRecord(schema.properties)) {
     return new Set<string>()
   }
@@ -1838,7 +1894,21 @@ function schemaPropertyEnumValues(schema: Record<string, unknown>, property: str
   if (!isRecord(propertySchema)) {
     return new Set<string>()
   }
-  return stringSet(propertySchema.enum)
+  const refName = schemaRefName(propertySchema)
+  const resolvedSchema =
+    refName && componentSchemas && isRecord(componentSchemas[refName]) ? componentSchemas[refName] : propertySchema
+  return stringSet(resolvedSchema.enum)
+}
+
+function schemaPropertyRefName(schema: Record<string, unknown>, property: string) {
+  if (!isRecord(schema.properties)) {
+    return undefined
+  }
+  const propertySchema = schema.properties[property]
+  if (!isRecord(propertySchema)) {
+    return undefined
+  }
+  return schemaRefName(propertySchema)
 }
 
 function schemaArrayItemRefName(schema: Record<string, unknown>, property: string) {
