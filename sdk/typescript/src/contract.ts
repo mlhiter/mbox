@@ -887,6 +887,13 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "sandboxStatus", values: sandboxStatusValues },
       { property: "policyEnforcement", values: projectPolicyEnforcementValues },
     ],
+    propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
+    arrayItemRefs: [
+      { property: "previewPorts", ref: "BoundaryPort" },
+      { property: "secretRefs", ref: "SecretRef" },
+      { property: "credentialRefs", ref: "BoundaryCredentialRef" },
+      { property: "checks", ref: "BoundaryCheck" },
+    ],
   },
   {
     schema: "BoundaryCheck",

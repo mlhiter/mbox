@@ -1288,6 +1288,22 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.BoundarySummary.properties.checks.items = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-array-item-ref-mismatch" &&
+        issue.schema === "BoundarySummary" &&
+        issue.property === "checks" &&
+        issue.expectedSchema === "BoundaryCheck",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.ProjectPolicy.properties.enforcement.enum = ["disabled"]
     assertOpenAPIAlignment(broken)
   },
@@ -2462,6 +2478,11 @@ function schemaComponents() {
   schemas.BoundarySummary.properties.kind.enum = ["template", "sandbox"]
   schemas.BoundarySummary.properties.sandboxStatus.enum = ["pending", "running", "stopped", "failed", "deleted"]
   schemas.BoundarySummary.properties.policyEnforcement.enum = ["disabled", "enforced"]
+  schemas.BoundarySummary.properties.runtimeRef = jsonRef("RuntimeRef")
+  schemas.BoundarySummary.properties.previewPorts = arrayRef("BoundaryPort")
+  schemas.BoundarySummary.properties.secretRefs = arrayRef("SecretRef")
+  schemas.BoundarySummary.properties.credentialRefs = arrayRef("BoundaryCredentialRef")
+  schemas.BoundarySummary.properties.checks = arrayRef("BoundaryCheck")
   schemas.BoundaryCheck.properties.status.enum = ["pass", "warn", "fail"]
   schemas.BoundaryCredentialRef.properties.type.enum = ["git", "registry", "kubernetes", "ssh", "generic"]
   schemas.TemplateValidationRunDecision.properties.status.enum = ["passed", "failed"]

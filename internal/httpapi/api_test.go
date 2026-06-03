@@ -395,6 +395,19 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(boundaryRequired, "checks") {
 		t.Fatalf("expected BoundarySummary kind/templateId/checks required fields, got %#v", boundarySchema["required"])
 	}
+	if ref := schemaPropertyRef(boundarySchema, "runtimeRef"); ref != "#/components/schemas/RuntimeRef" {
+		t.Fatalf("expected BoundarySummary runtimeRef to reference RuntimeRef, got %q", ref)
+	}
+	for property, expectedRef := range map[string]string{
+		"previewPorts":   "#/components/schemas/BoundaryPort",
+		"secretRefs":     "#/components/schemas/SecretRef",
+		"credentialRefs": "#/components/schemas/BoundaryCredentialRef",
+		"checks":         "#/components/schemas/BoundaryCheck",
+	} {
+		if ref := schemaArrayItemRef(boundarySchema, property); ref != expectedRef {
+			t.Fatalf("expected BoundarySummary %s to reference %s, got %q", property, expectedRef, ref)
+		}
+	}
 	for _, name := range []string{"ProjectPolicy", "ProjectQuotaPolicy"} {
 		schema, ok := schemas[name].(map[string]any)
 		if !ok {
