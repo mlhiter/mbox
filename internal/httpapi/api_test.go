@@ -829,6 +829,14 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		authorizationProperties["caller"] == nil {
 		t.Fatalf("expected ProjectAuthorizationDecision properties, got %#v", authorizationProperties)
 	}
+	for property, expectedRef := range map[string]string{
+		"caller":        "#/components/schemas/CallerInfo",
+		"matchedMember": "#/components/schemas/ProjectMember",
+	} {
+		if ref := schemaPropertyRef(projectAuthorization, property); ref != expectedRef {
+			t.Fatalf("expected ProjectAuthorizationDecision %s to reference %s, got %q", property, expectedRef, ref)
+		}
+	}
 	projectUsage, ok := schemas["ProjectUsage"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected ProjectUsage schema in %#v", schemas["ProjectUsage"])

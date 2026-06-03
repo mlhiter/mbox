@@ -1264,6 +1264,22 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.ProjectAuthorizationDecision.properties.caller = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "ProjectAuthorizationDecision" &&
+        issue.property === "caller" &&
+        issue.expectedSchema === "CallerInfo",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.ProjectAuthorizationDecision.properties.action.enum = [
       "project.view",
       "project.manage",
@@ -2430,6 +2446,8 @@ function schemaComponents() {
   schemas.ProjectTemplateUsage.properties.cpuRequests = arrayRef("ResourceUsageValue")
   schemas.ProjectTemplateUsage.properties.memoryRequests = arrayRef("ResourceUsageValue")
   schemas.ProjectTemplateUsage.properties.storageRequests = arrayRef("ResourceUsageValue")
+  schemas.ProjectAuthorizationDecision.properties.caller = jsonRef("CallerInfo")
+  schemas.ProjectAuthorizationDecision.properties.matchedMember = jsonRef("ProjectMember")
   schemas.ProjectAuthorizationDecision.properties.action.enum = [
     "project.view",
     "project.manage",

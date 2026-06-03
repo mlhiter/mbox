@@ -1092,6 +1092,10 @@ export const SDK_SCHEMA_CONTRACT = [
       },
       { property: "evaluation", values: ["allowed", "denied", "not_enforceable"] },
     ],
+    propertyRefs: [
+      { property: "caller", ref: "CallerInfo" },
+      { property: "matchedMember", ref: "ProjectMember" },
+    ],
   },
   {
     schema: "CallerInfo",
