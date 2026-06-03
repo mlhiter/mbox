@@ -554,6 +554,12 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		sandboxRecordProperties["metadata"] == nil {
 		t.Fatalf("expected Sandbox runtime and metadata properties, got %#v", sandboxSchema["properties"])
 	}
+	if ref := schemaPropertyRef(sandboxSchema, "runtimeRef"); ref != "#/components/schemas/RuntimeRef" {
+		t.Fatalf("expected Sandbox runtimeRef to reference RuntimeRef, got %q", ref)
+	}
+	if ref := schemaArrayItemRef(sandboxSchema, "ports"); ref != "#/components/schemas/SandboxPort" {
+		t.Fatalf("expected Sandbox ports to reference SandboxPort, got %q", ref)
+	}
 	sandboxCreateSchema, ok := schemas["SandboxCreate"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected SandboxCreate schema in %#v", schemas["SandboxCreate"])
@@ -576,6 +582,12 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		sandboxUpdateProperties["templateId"] != nil ||
 		sandboxUpdateProperties["slug"] != nil {
 		t.Fatalf("expected SandboxUpdate mutable runtime fields and immutable-field omissions, got %#v", sandboxUpdateSchema["properties"])
+	}
+	if ref := schemaPropertyRef(sandboxUpdateSchema, "runtimeRef"); ref != "#/components/schemas/RuntimeRef" {
+		t.Fatalf("expected SandboxUpdate runtimeRef to reference RuntimeRef, got %q", ref)
+	}
+	if ref := schemaArrayItemRef(sandboxUpdateSchema, "ports"); ref != "#/components/schemas/SandboxPort" {
+		t.Fatalf("expected SandboxUpdate ports to reference SandboxPort, got %q", ref)
 	}
 	runtimeRefSchema, ok := schemas["RuntimeRef"].(map[string]any)
 	if !ok {

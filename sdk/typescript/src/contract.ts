@@ -1357,6 +1357,8 @@ export const SDK_SCHEMA_CONTRACT = [
       "deletedAt",
     ],
     enumProperties: [{ property: "status", values: sandboxStatusValues }],
+    propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
+    arrayItemRefs: [{ property: "ports", ref: "SandboxPort" }],
   },
   {
     schema: "SandboxCreate",
@@ -1368,6 +1370,8 @@ export const SDK_SCHEMA_CONTRACT = [
     properties: ["name", "status", "namespace", "serviceAccountName", "runtimeRef", "ports", "metadata"],
     absentProperties: ["projectId", "templateId", "slug"],
     enumProperties: [{ property: "status", values: sandboxStatusValues }],
+    propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
+    arrayItemRefs: [{ property: "ports", ref: "SandboxPort" }],
   },
   {
     schema: "PreviewPort",

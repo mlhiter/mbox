@@ -1448,6 +1448,38 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.Sandbox.properties.runtimeRef = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "Sandbox" &&
+        issue.property === "runtimeRef" &&
+        issue.expectedSchema === "RuntimeRef",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.SandboxUpdate.properties.ports.items = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-array-item-ref-mismatch" &&
+        issue.schema === "SandboxUpdate" &&
+        issue.property === "ports" &&
+        issue.expectedSchema === "SandboxPort",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.Sandbox.properties.status.enum = ["pending", "running", "failed", "deleted"]
     assertOpenAPIAlignment(broken)
   },
@@ -2547,6 +2579,10 @@ function schemaComponents() {
     schemas[schemaName].properties.exposedPorts = arrayRef("TemplatePort")
     schemas[schemaName].properties.secretRefs = arrayRef("SecretRef")
   }
+  schemas.Sandbox.properties.runtimeRef = jsonRef("RuntimeRef")
+  schemas.Sandbox.properties.ports = arrayRef("SandboxPort")
+  schemas.SandboxUpdate.properties.runtimeRef = jsonRef("RuntimeRef")
+  schemas.SandboxUpdate.properties.ports = arrayRef("SandboxPort")
   schemas.TemplateValidationRun.properties.template = jsonRef("EnvironmentTemplate")
   schemas.TemplateValidationRun.properties.sandbox = jsonRef("Sandbox")
   schemas.BoundarySummary.properties.kind.enum = ["template", "sandbox"]
