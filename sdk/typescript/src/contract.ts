@@ -1008,6 +1008,14 @@ export const SDK_SCHEMA_CONTRACT = [
       "compatibility",
       "authenticationRequired",
     ],
+    propertyRefs: [
+      { property: "runtimeController", ref: "RuntimeInfo" },
+      { property: "runtimeAccess", ref: "RuntimeInfo" },
+      { property: "artifactContent", ref: "ArtifactInfo" },
+      { property: "trustedPrincipalHeaders", ref: "TrustedPrincipalHeaderInfo" },
+      { property: "projectRbac", ref: "ProjectRBACInfo" },
+      { property: "compatibility", ref: "Compatibility" },
+    ],
   },
   {
     schema: "RuntimeInfo",

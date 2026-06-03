@@ -1227,6 +1227,22 @@ assert.throws(
         issue.reason === "missing-schema-required" &&
         issue.schema === "Compatibility" &&
         issue.property === "minimumSdkApiVersion",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.APIInfo.properties.runtimeAccess = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "APIInfo" &&
+        issue.property === "runtimeAccess" &&
+        issue.expectedSchema === "RuntimeInfo",
     ),
 )
 assert.throws(
@@ -2378,6 +2394,12 @@ function schemaComponents() {
     "source",
     "metadata",
   ])
+  schemas.APIInfo.properties.runtimeController = jsonRef("RuntimeInfo")
+  schemas.APIInfo.properties.runtimeAccess = jsonRef("RuntimeInfo")
+  schemas.APIInfo.properties.artifactContent = jsonRef("ArtifactInfo")
+  schemas.APIInfo.properties.trustedPrincipalHeaders = jsonRef("TrustedPrincipalHeaderInfo")
+  schemas.APIInfo.properties.projectRbac = jsonRef("ProjectRBACInfo")
+  schemas.APIInfo.properties.compatibility = jsonRef("Compatibility")
   schemas.ProjectUsage.properties.sandboxes = jsonRef("ProjectSandboxUsage")
   schemas.ProjectUsage.properties.runtimeSessions = jsonRef("ProjectSessionUsage")
   schemas.ProjectUsage.properties.executionTasks = jsonRef("ProjectTaskUsage")

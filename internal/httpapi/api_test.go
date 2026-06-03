@@ -733,6 +733,18 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if !ok || apiInfoProperties["trustedPrincipalHeaders"] == nil || apiInfoProperties["projectRbac"] == nil {
 		t.Fatalf("expected APIInfo trusted principal/project RBAC properties, got %#v", apiInfoProperties)
 	}
+	for property, expectedRef := range map[string]string{
+		"runtimeController":       "#/components/schemas/RuntimeInfo",
+		"runtimeAccess":           "#/components/schemas/RuntimeInfo",
+		"artifactContent":         "#/components/schemas/ArtifactInfo",
+		"trustedPrincipalHeaders": "#/components/schemas/TrustedPrincipalHeaderInfo",
+		"projectRbac":             "#/components/schemas/ProjectRBACInfo",
+		"compatibility":           "#/components/schemas/Compatibility",
+	} {
+		if ref := schemaPropertyRef(apiInfo, property); ref != expectedRef {
+			t.Fatalf("expected APIInfo %s to reference %s, got %q", property, expectedRef, ref)
+		}
+	}
 	projectRBAC, ok := schemas["ProjectRBACInfo"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected ProjectRBACInfo schema in %#v", schemas["ProjectRBACInfo"])
