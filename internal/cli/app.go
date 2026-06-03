@@ -895,6 +895,7 @@ type auditEventListResponse struct {
 
 type auditEventSummaryItem struct {
 	Action       string          `json:"action"`
+	ProjectID    string          `json:"projectId"`
 	ResourceType string          `json:"resourceType"`
 	ResourceName string          `json:"resourceName"`
 	Actor        string          `json:"actor"`
@@ -912,6 +913,7 @@ type policyDeniedSummaryRow struct {
 	Sources    map[string]bool
 	Resources  map[string]bool
 	RequestIDs map[string]bool
+	ProjectIDs map[string]bool
 }
 
 type auditSummaryRow struct {
@@ -922,6 +924,7 @@ type auditSummaryRow struct {
 	Actors        map[string]bool
 	Sources       map[string]bool
 	RequestIDs    map[string]bool
+	ProjectIDs    map[string]bool
 }
 
 type boundarySummary struct {
@@ -2077,17 +2080,18 @@ func writeAuditSummaryTable(w io.Writer, events []auditEventSummaryItem) error {
 		}
 		return out.Flush()
 	}
-	if _, err := fmt.Fprintln(out, "ACTION\tCOUNT\tLATEST\tRESOURCE TYPES\tACTORS\tSOURCES\tREQUEST IDS"); err != nil {
+	if _, err := fmt.Fprintln(out, "ACTION\tCOUNT\tLATEST\tRESOURCE TYPES\tPROJECTS\tACTORS\tSOURCES\tREQUEST IDS"); err != nil {
 		return err
 	}
 	for _, row := range rows {
 		if _, err := fmt.Fprintf(
 			out,
-			"%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			tableValue(row.Action, "unknown"),
 			row.Count,
 			formatAuditSummaryTime(row.Latest),
 			formatAuditSummarySet(row.ResourceTypes),
+			formatAuditSummarySet(row.ProjectIDs),
 			formatAuditSummarySet(row.Actors),
 			formatAuditSummarySet(row.Sources),
 			formatAuditSummarySet(row.RequestIDs),
@@ -2114,6 +2118,7 @@ func auditSummaryRows(events []auditEventSummaryItem) []auditSummaryRow {
 				Actors:        map[string]bool{},
 				Sources:       map[string]bool{},
 				RequestIDs:    map[string]bool{},
+				ProjectIDs:    map[string]bool{},
 			}
 			groups[key] = row
 		}
@@ -2125,6 +2130,7 @@ func auditSummaryRows(events []auditEventSummaryItem) []auditSummaryRow {
 		addAuditSummaryValue(row.Actors, event.Actor)
 		addAuditSummaryValue(row.Sources, event.Source)
 		addAuditSummaryValue(row.RequestIDs, auditSummaryRequestID(event.Metadata))
+		addAuditSummaryValue(row.ProjectIDs, event.ProjectID)
 	}
 	rows := make([]auditSummaryRow, 0, len(groups))
 	for _, row := range groups {
@@ -2154,17 +2160,18 @@ func writePolicyDeniedSummaryTable(w io.Writer, events []auditEventSummaryItem) 
 		}
 		return out.Flush()
 	}
-	if _, err := fmt.Fprintln(out, "OPERATION\tREASON\tCOUNT\tLATEST\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS"); err != nil {
+	if _, err := fmt.Fprintln(out, "OPERATION\tREASON\tCOUNT\tLATEST\tPROJECTS\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS"); err != nil {
 		return err
 	}
 	for _, row := range rows {
 		if _, err := fmt.Fprintf(
 			out,
-			"%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			tableValue(row.Operation, "unknown"),
 			tableValue(row.Reason, "unspecified"),
 			row.Count,
 			formatAuditSummaryTime(row.Latest),
+			formatAuditSummarySet(row.ProjectIDs),
 			formatAuditSummarySet(row.Actors),
 			formatAuditSummarySet(row.Sources),
 			formatAuditSummarySet(row.Resources),
@@ -2193,6 +2200,7 @@ func policyDeniedSummaryRows(events []auditEventSummaryItem) []policyDeniedSumma
 				Sources:    map[string]bool{},
 				Resources:  map[string]bool{},
 				RequestIDs: map[string]bool{},
+				ProjectIDs: map[string]bool{},
 			}
 			groups[key] = row
 		}
@@ -2208,6 +2216,7 @@ func policyDeniedSummaryRows(events []auditEventSummaryItem) []policyDeniedSumma
 		}
 		addAuditSummaryValue(row.Resources, resource)
 		addAuditSummaryValue(row.RequestIDs, auditSummaryRequestID(event.Metadata))
+		addAuditSummaryValue(row.ProjectIDs, event.ProjectID)
 	}
 	rows := make([]policyDeniedSummaryRow, 0, len(groups))
 	for _, row := range groups {

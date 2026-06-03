@@ -1296,6 +1296,7 @@ func TestAuditEventsSummaryUsesExistingFilters(t *testing.T) {
 			"items": [
 				{
 					"action": "sandbox.created",
+					"projectId": "project-1",
 					"resourceType": "sandbox",
 					"resourceName": "smoke sandbox",
 					"actor": "alice",
@@ -1305,6 +1306,7 @@ func TestAuditEventsSummaryUsesExistingFilters(t *testing.T) {
 				},
 				{
 					"action": "sandbox.created",
+					"projectId": "project-2",
 					"resourceType": "sandbox",
 					"resourceName": "retry sandbox",
 					"actor": "bob",
@@ -1314,6 +1316,7 @@ func TestAuditEventsSummaryUsesExistingFilters(t *testing.T) {
 				},
 				{
 					"action": "artifact.content.uploaded",
+					"projectId": "project-1",
 					"resourceType": "artifact",
 					"resourceName": "report",
 					"actor": "alice",
@@ -1345,9 +1348,9 @@ func TestAuditEventsSummaryUsesExistingFilters(t *testing.T) {
 	output := stdout.String()
 	for _, expected := range []string{
 		"AUDIT SUMMARY",
-		"ACTION\tCOUNT\tLATEST\tRESOURCE TYPES\tACTORS\tSOURCES\tREQUEST IDS",
-		"sandbox.created\t2\t2026-06-02T03:00:00Z\tsandbox\talice,bob\tmbox-cli,sdk\treq-create-1,req-create-2",
-		"artifact.content.uploaded\t1\t2026-06-02T04:00:00Z\tartifact\talice\tmbox-cli\t-",
+		"ACTION\tCOUNT\tLATEST\tRESOURCE TYPES\tPROJECTS\tACTORS\tSOURCES\tREQUEST IDS",
+		"sandbox.created\t2\t2026-06-02T03:00:00Z\tsandbox\tproject-1,project-2\talice,bob\tmbox-cli,sdk\treq-create-1,req-create-2",
+		"artifact.content.uploaded\t1\t2026-06-02T04:00:00Z\tartifact\tproject-1\talice\tmbox-cli\t-",
 		"Summary\tread-only over returned best-effort audit events; not a transactional audit log or trusted identity source",
 	} {
 		if !strings.Contains(output, expected) {
@@ -1400,6 +1403,7 @@ func TestAuditEventsPolicyDeniedSummaryUsesExistingFilters(t *testing.T) {
 			"items": [
 				{
 					"action": "policy.denied",
+					"projectId": "project-1",
 					"resourceType": "sandbox",
 					"resourceName": "smoke sandbox",
 					"actor": "cli-smoke",
@@ -1409,6 +1413,7 @@ func TestAuditEventsPolicyDeniedSummaryUsesExistingFilters(t *testing.T) {
 				},
 				{
 					"action": "policy.denied",
+					"projectId": "project-2",
 					"resourceType": "sandbox",
 					"resourceName": "quota retry",
 					"actor": "cli-smoke",
@@ -1454,8 +1459,8 @@ func TestAuditEventsPolicyDeniedSummaryUsesExistingFilters(t *testing.T) {
 	}
 	output := stdout.String()
 	if !strings.Contains(output, "POLICY DENIED SUMMARY") ||
-		!strings.Contains(output, "OPERATION\tREASON\tCOUNT\tLATEST\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS") ||
-		!strings.Contains(output, "sandbox.launch\tactive sandbox quota exceeded\t2\t2026-06-02T03:00:00Z\tcli-smoke\tmbox-cli\tquota retry,smoke sandbox\tcli-retry-request,cli-smoke-request") {
+		!strings.Contains(output, "OPERATION\tREASON\tCOUNT\tLATEST\tPROJECTS\tACTORS\tSOURCES\tRESOURCES\tREQUEST IDS") ||
+		!strings.Contains(output, "sandbox.launch\tactive sandbox quota exceeded\t2\t2026-06-02T03:00:00Z\tproject-1,project-2\tcli-smoke\tmbox-cli\tquota retry,smoke sandbox\tcli-retry-request,cli-smoke-request") {
 		t.Fatalf("expected grouped policy denial summary, got %q", output)
 	}
 	if strings.Contains(output, `"items"`) || strings.Contains(output, "sandbox.created") || strings.Contains(output, "ignored sandbox") {

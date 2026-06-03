@@ -472,6 +472,7 @@ First slice status:
 116. Done: SDK/OpenAPI audit event ref alignment guards `AuditEvent.action` and `AuditEvent.metadata` as `AuditEventAction` and `AuditEventMetadata`, keeping audit clients generated-client ready without changing best-effort audit semantics, identity trust, or failure-event coverage.
 117. Done: SDK/OpenAPI preview-port result ref alignment guards `PreviewPortsResult.target` as `RuntimeTarget`, keeping preview clients generated-client ready without changing preview proxy behavior, runtime access gating, or port declaration semantics.
 118. Done: CLI audit summary request-correlation ergonomics adds request-id sets to generic and policy-denied audit summary tables from returned audit metadata, preserving JSON defaults and best-effort audit semantics without adding identity trust, idempotency, or a new audit model.
-119. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+119. Done: CLI audit summary project-attribution ergonomics adds project-id sets to generic and policy-denied audit summary tables from returned audit rows, improving global-feed triage without changing RBAC, audit identity trust, or the audit API model.
+120. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.
