@@ -1454,6 +1454,22 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.ExecutionTaskCreate.properties.command.items = { type: "integer" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-array-item-type-mismatch" &&
+        issue.schema === "ExecutionTaskCreate" &&
+        issue.property === "command" &&
+        issue.expectedType === "string",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.Artifact.required = broken.components.schemas.Artifact.required.filter((name) => name !== "uri")
     assertOpenAPIAlignment(broken)
   },
@@ -3091,6 +3107,7 @@ function schemaComponents() {
   schemas.RuntimeResource.properties.observation = jsonRef("RuntimeResourceObservation")
   schemas.RuntimeResourceObservation.properties.storage = arrayRef("RuntimeStorage")
   schemas.RuntimeTarget.properties.storage = arrayRef("RuntimeStorage")
+  schemas.RuntimeTarget.properties.commands = arrayString()
   schemas.LogResult.properties.target = jsonRef("RuntimeTarget")
   schemas.PreviewPortsResult.properties.target = jsonRef("RuntimeTarget")
   schemas.PreviewPortsResult.properties.items = arrayRef("PreviewPort")
@@ -3123,6 +3140,7 @@ function schemaComponents() {
   schemas.ProjectCredential.properties.usage = arrayString()
   schemas.ProjectCredentialCreate.properties.usage = arrayString()
   for (const schemaName of ["EnvironmentTemplate", "TemplateCreate", "TemplateUpdate"]) {
+    schemas[schemaName].properties.startupCommand = arrayString()
     schemas[schemaName].properties.exposedPorts = arrayRef("TemplatePort")
     schemas[schemaName].properties.secretRefs = arrayRef("SecretRef")
   }
@@ -3164,6 +3182,8 @@ function schemaComponents() {
   schemas.RuntimeSessionCreate.properties.type.enum = ["terminal", "ide", "notebook", "browser", "command", "custom"]
   schemas.ExecutionTask.properties.status.enum = ["queued", "running", "succeeded", "failed", "canceled", "timed_out"]
   schemas.ExecutionTask.properties.runtimeRef = jsonRef("RuntimeRef")
+  schemas.ExecutionTask.properties.command = arrayString()
+  schemas.ExecutionTaskCreate.properties.command = arrayString()
   schemas.ExecutionTaskEvent.properties.type.enum = ["snapshot", "status", "output", "done"]
   schemas.ExecutionTaskEvent.properties.stream.enum = ["stdout", "stderr"]
   schemas.Artifact.properties.retainedContent = jsonRef("ArtifactContent")

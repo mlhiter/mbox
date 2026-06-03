@@ -779,6 +779,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeTarget",
     required: ["namespace", "podName", "container", "phase", "selector"],
     properties: ["namespace", "podName", "container", "phase", "selector", "commands", "storage"],
+    arrayItemTypes: [{ property: "commands", type: "string" }],
     arrayItemRefs: [{ property: "storage", ref: "RuntimeStorage" }],
   },
   {
@@ -840,11 +841,13 @@ export const SDK_SCHEMA_CONTRACT = [
     enumProperties: [{ property: "status", values: executionTaskStatusValues }],
     propertyFormats: dateTimeFormats("startedAt", "finishedAt", "createdAt", "updatedAt"),
     propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
+    arrayItemTypes: [{ property: "command", type: "string" }],
   },
   {
     schema: "ExecutionTaskCreate",
     required: ["command"],
     properties: ["command", "timeoutSeconds", "metadata"],
+    arrayItemTypes: [{ property: "command", type: "string" }],
   },
   {
     schema: "RuntimeOrphanAudit",
@@ -1502,6 +1505,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "updatedAt",
     ],
     propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
+    arrayItemTypes: [{ property: "startupCommand", type: "string" }],
     arrayItemRefs: [
       { property: "exposedPorts", ref: "TemplatePort" },
       { property: "secretRefs", ref: "SecretRef" },
@@ -1527,6 +1531,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "lifecyclePolicy",
       "metadata",
     ],
+    arrayItemTypes: [{ property: "startupCommand", type: "string" }],
     arrayItemRefs: [
       { property: "exposedPorts", ref: "TemplatePort" },
       { property: "secretRefs", ref: "SecretRef" },
@@ -1550,6 +1555,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "metadata",
     ],
     absentProperties: ["projectId", "slug"],
+    arrayItemTypes: [{ property: "startupCommand", type: "string" }],
     arrayItemRefs: [
       { property: "exposedPorts", ref: "TemplatePort" },
       { property: "secretRefs", ref: "SecretRef" },
