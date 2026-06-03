@@ -549,6 +549,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		!anySliceContainsString(previewPortsRequired, "items") {
 		t.Fatalf("expected PreviewPortsResult target/items required fields, got %#v", previewPortsResult["required"])
 	}
+	if ref := schemaArrayItemRef(previewPortsResult, "items"); ref != "#/components/schemas/PreviewPort" {
+		t.Fatalf("expected PreviewPortsResult items to reference PreviewPort, got %q", ref)
+	}
 	previewPort, ok := schemas["PreviewPort"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected PreviewPort schema in %#v", schemas["PreviewPort"])
@@ -879,6 +882,12 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		runtimeWorkloadProperties["quantityIssues"] == nil {
 		t.Fatalf("expected runtime workload summary properties, got %#v", runtimeWorkloadSummary["properties"])
 	}
+	if ref := schemaArrayItemRef(runtimeWorkloadSummary, "quantityIssues"); ref != "#/components/schemas/RuntimeQuantityIssue" {
+		t.Fatalf("expected runtime workload quantityIssues to reference RuntimeQuantityIssue, got %q", ref)
+	}
+	if ref := schemaArrayItemRef(runtimeWorkloadSummary, "storage"); ref != "#/components/schemas/RuntimeStorageSummary" {
+		t.Fatalf("expected runtime workload storage to reference RuntimeStorageSummary, got %q", ref)
+	}
 	if _, ok := schemas["RuntimeQuantityIssue"].(map[string]any); !ok {
 		t.Fatalf("expected RuntimeQuantityIssue schema in %#v", schemas["RuntimeQuantityIssue"])
 	}
@@ -911,6 +920,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		runtimeResourceObservationProperties["requests"] == nil ||
 		runtimeResourceObservationProperties["storage"] == nil {
 		t.Fatalf("expected runtime observation properties, got %#v", runtimeResourceObservation["properties"])
+	}
+	if ref := schemaArrayItemRef(runtimeResourceObservation, "storage"); ref != "#/components/schemas/RuntimeStorage" {
+		t.Fatalf("expected runtime observation storage to reference RuntimeStorage, got %q", ref)
 	}
 	runtimeStorage, ok := schemas["RuntimeStorage"].(map[string]any)
 	if !ok {
@@ -1598,6 +1610,23 @@ func anySliceContainsString(values []any, value string) bool {
 		}
 	}
 	return false
+}
+
+func schemaArrayItemRef(schema map[string]any, property string) string {
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	propertySchema, ok := properties[property].(map[string]any)
+	if !ok {
+		return ""
+	}
+	items, ok := propertySchema["items"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	ref, _ := items["$ref"].(string)
+	return ref
 }
 
 func managedResourceCountsContain(values []mboxruntime.ManagedResourceCount, name string, count int) bool {

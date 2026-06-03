@@ -996,6 +996,22 @@ assert.throws(
         issue.reason === "missing-schema-required" &&
         issue.schema === "LogResult" &&
         issue.property === "logs",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    broken.components.schemas.RuntimeTarget.properties.storage.items = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-array-item-ref-mismatch" &&
+        issue.schema === "RuntimeTarget" &&
+        issue.property === "storage" &&
+        issue.expectedSchema === "RuntimeStorage",
     ),
 )
 assert.throws(
@@ -2244,6 +2260,11 @@ function schemaComponents() {
     "member.manage",
   ]
   schemas.ProjectAuthorizationDecision.properties.evaluation.enum = ["allowed", "denied", "not_enforceable"]
+  schemas.RuntimeWorkloadSummary.properties.quantityIssues = arrayRef("RuntimeQuantityIssue")
+  schemas.RuntimeWorkloadSummary.properties.storage = arrayRef("RuntimeStorageSummary")
+  schemas.RuntimeResourceObservation.properties.storage = arrayRef("RuntimeStorage")
+  schemas.RuntimeTarget.properties.storage = arrayRef("RuntimeStorage")
+  schemas.PreviewPortsResult.properties.items = arrayRef("PreviewPort")
   schemas.CallerInfo.properties.mode.enum = ["anonymous", "shared_token", "trusted_header"]
   schemas.CallerInfo.properties.principalType.enum = [
     "anonymous",
@@ -2312,4 +2333,8 @@ function objectSchema(required, optional = []) {
     properties[name] = { type: "string" }
   }
   return { type: "object", required, properties }
+}
+
+function arrayRef(name) {
+  return { type: "array", items: jsonRef(name) }
 }

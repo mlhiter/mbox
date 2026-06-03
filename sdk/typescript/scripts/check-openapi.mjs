@@ -14,7 +14,7 @@ try {
   const result = assertOpenAPIAlignment(document)
   const pathCount = Object.keys(document.paths ?? {}).length
   console.log(
-    `OpenAPI alignment passed: ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published operations, ${result.ignoredPublishedOperations} intentional non-helper operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaRequired} required fields, ${result.checkedSchemaProperties} schema properties, and ${result.checkedSchemaAbsentProperties} forbidden schema properties covered by ${pathCount} paths.`,
+    `OpenAPI alignment passed: ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published operations, ${result.ignoredPublishedOperations} intentional non-helper operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaRequired} required fields, ${result.checkedSchemaProperties} schema properties, ${result.checkedSchemaAbsentProperties} forbidden schema properties, and ${result.checkedSchemaArrayItemRefs} schema array item refs covered by ${pathCount} paths.`,
   )
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))

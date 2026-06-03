@@ -38,11 +38,17 @@ export type SDKSchemaContractEntry = {
   properties?: readonly string[]
   absentProperties?: readonly string[]
   enumProperties?: readonly SDKSchemaEnumPropertyContract[]
+  arrayItemRefs?: readonly SDKSchemaArrayItemRefContract[]
 }
 
 export type SDKSchemaEnumPropertyContract = {
   property: string
   values: readonly string[]
+}
+
+export type SDKSchemaArrayItemRefContract = {
+  property: string
+  ref: string
 }
 
 export type SDKOpenAPIAlignmentIssue = {
@@ -71,6 +77,7 @@ export type SDKOpenAPIAlignmentIssue = {
     | "missing-schema-property"
     | "unexpected-schema-property"
     | "missing-schema-enum-value"
+    | "schema-array-item-ref-mismatch"
   sdk?: keyof MboxClient
   method?: SDKRouteMethod
   path?: string
@@ -103,6 +110,7 @@ export type SDKOpenAPIAlignmentResult = {
   checkedSchemaProperties: number
   checkedSchemaAbsentProperties: number
   checkedSchemaEnumValues: number
+  checkedSchemaArrayItemRefs: number
   missing: SDKOpenAPIAlignmentIssue[]
 }
 
@@ -586,6 +594,10 @@ export const SDK_SCHEMA_CONTRACT = [
       "quantityIssues",
       "storage",
     ],
+    arrayItemRefs: [
+      { property: "quantityIssues", ref: "RuntimeQuantityIssue" },
+      { property: "storage", ref: "RuntimeStorageSummary" },
+    ],
   },
   {
     schema: "RuntimeQuantityIssue",
@@ -627,6 +639,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "readyCondition",
       "message",
     ],
+    arrayItemRefs: [{ property: "storage", ref: "RuntimeStorage" }],
   },
   {
     schema: "RuntimeStorage",
@@ -637,6 +650,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeTarget",
     required: ["namespace", "podName", "container", "phase", "selector"],
     properties: ["namespace", "podName", "container", "phase", "selector", "commands", "storage"],
+    arrayItemRefs: [{ property: "storage", ref: "RuntimeStorage" }],
   },
   {
     schema: "LogResult",
@@ -1268,6 +1282,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "PreviewPortsResult",
     required: ["target", "items"],
     properties: ["target", "items"],
+    arrayItemRefs: [{ property: "items", ref: "PreviewPort" }],
   },
   {
     schema: "RuntimeSession",
@@ -1406,6 +1421,7 @@ export function checkOpenAPIAlignment(
   let checkedSchemaProperties = 0
   let checkedSchemaAbsentProperties = 0
   let checkedSchemaEnumValues = 0
+  let checkedSchemaArrayItemRefs = 0
   const routeCoverage = sdkRouteCoverage(routes)
 
   for (const operation of openAPIOperations(paths)) {
@@ -1492,6 +1508,19 @@ export function checkOpenAPIAlignment(
         }
       }
     }
+    for (const itemRef of schemaContract.arrayItemRefs ?? []) {
+      checkedSchemaArrayItemRefs += 1
+      const actualRef = schemaArrayItemRefName(schema, itemRef.property)
+      if (actualRef !== itemRef.ref) {
+        missing.push({
+          ...schemaContract,
+          reason: "schema-array-item-ref-mismatch",
+          property: itemRef.property,
+          expectedSchema: itemRef.ref,
+          actualSchema: actualRef,
+        })
+      }
+    }
   }
 
   return {
@@ -1508,6 +1537,7 @@ export function checkOpenAPIAlignment(
     checkedSchemaProperties,
     checkedSchemaAbsentProperties,
     checkedSchemaEnumValues,
+    checkedSchemaArrayItemRefs,
     missing,
   }
 }
@@ -1534,7 +1564,7 @@ export async function fetchAndAssertOpenAPIAlignment(
 
 function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
   if (result.ok) {
-    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, and ${result.checkedSchemaEnumValues} SDK schema enum values`
+    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaEnumValues} SDK schema enum values, and ${result.checkedSchemaArrayItemRefs} SDK schema array item refs`
   }
   const preview = result.missing
     .slice(0, 10)
@@ -1809,6 +1839,17 @@ function schemaPropertyEnumValues(schema: Record<string, unknown>, property: str
     return new Set<string>()
   }
   return stringSet(propertySchema.enum)
+}
+
+function schemaArrayItemRefName(schema: Record<string, unknown>, property: string) {
+  if (!isRecord(schema.properties)) {
+    return undefined
+  }
+  const propertySchema = schema.properties[property]
+  if (!isRecord(propertySchema) || propertySchema.type !== "array" || !isRecord(propertySchema.items)) {
+    return undefined
+  }
+  return schemaRefName(propertySchema.items)
 }
 
 function stringSet(value: unknown) {

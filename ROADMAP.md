@@ -280,6 +280,7 @@ Current status:
 - Done: SDK/OpenAPI API info schema guard now covers runtime/artifact capability and compatibility sub-schemas used by CLI/SDK preflight.
 - Done: SDK/OpenAPI base response schema guard now covers public health and shared error response fields used by clients.
 - Done: SDK/OpenAPI list response guard now checks SDK list helpers publish required `items` arrays, matching the SDK `ListResponse<T>` contract.
+- Done: SDK/OpenAPI array item-ref guard now checks selected runtime nested arrays such as `RuntimeTarget.storage`, runtime inventory workload storage/issues, and preview-port result items, keeping runtime client schemas from drifting into loose object arrays.
 - Done: Web project inspector audit ergonomics now surfaces member-management denial metadata for requested member principal type, principal, and role as debugging context without treating audit metadata as trusted identity.
 - Done: Web project inspector member-management ergonomics now supports registering and removing project member records for starter RBAC, including refreshed authorization/audit visibility and a front-end guard against removing the last visible owner, without adding login, invites, or broader route-level RBAC.
 - Remaining: broader route-level user/project RBAC enforcement beyond the current disabled-by-default `sandbox.launch`, `runtime.operate`, `artifact.write`, `policy.manage`, `credential.manage`, and `member.manage` starters, real package publication/release workflow, generated client and full schema alignment, broader CLI ergonomics, and future versioning decisions beyond the current starter policy.
@@ -449,6 +450,7 @@ First slice status:
 95. Done: SDK/OpenAPI base response schema alignment guards `/healthz` status and shared `Error.error` fields used by SDK health and API error handling.
 96. Done: SDK/OpenAPI list response alignment requires route-backed list helpers to publish an `items` array, matching the SDK `ListResponse<T>` type for project, audit, template, sandbox, runtime event, session, task, and artifact lists.
 97. Done: CLI audit ergonomics add `audit-events --summary` and `projects audit-events --summary`, grouping returned rows by action with resource-type, actor, source, count, and latest-time columns over the existing read-only audit feed.
-98. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+98. Done: SDK/OpenAPI array item-ref alignment guards selected runtime nested arrays, including runtime target storage, runtime inventory workload storage/issues, and preview port result items, so SDK runtime clients fail fast on published nested-array schema drift.
+99. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.
