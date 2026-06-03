@@ -167,7 +167,7 @@ Commands:
   projects list
   projects create --name NAME --namespace NAMESPACE [--slug SLUG]
   projects get <project-id>
-  projects usage <project-id> [--summary] [--runtime-attribution]
+  projects usage <project-id> [--summary] [--runtime-attribution] [--resolve-project-names]
   projects authorization <project-id> [--action ACTION] [--summary]
   projects members <project-id> [--summary]
   projects add-member <project-id> --principal PRINCIPAL --role owner|operator|viewer [--principal-type user|service_account|automation]
@@ -1554,7 +1554,7 @@ func projectRuntimeAttributionSummary(ctx context.Context, client *Client, proje
 	return summary, nil
 }
 
-func writeProjectUsageSummary(w io.Writer, usage projectUsageSummary, runtimeSummary *runtimeResourceSummaryTable) error {
+func writeProjectUsageSummary(w io.Writer, usage projectUsageSummary, runtimeSummary *runtimeResourceSummaryTable, projectNames map[string]string) error {
 	out := bufio.NewWriter(w)
 	if _, err := fmt.Fprintln(out, "PROJECT USAGE SUMMARY"); err != nil {
 		return err
@@ -1666,14 +1666,14 @@ func writeProjectUsageSummary(w io.Writer, usage projectUsageSummary, runtimeSum
 		}
 	}
 	if runtimeSummary != nil {
-		if err := writeProjectRuntimeAttribution(out, *runtimeSummary); err != nil {
+		if err := writeProjectRuntimeAttribution(out, *runtimeSummary, projectNames); err != nil {
 			return err
 		}
 	}
 	return out.Flush()
 }
 
-func writeProjectRuntimeAttribution(w io.Writer, summary runtimeResourceSummaryTable) error {
+func writeProjectRuntimeAttribution(w io.Writer, summary runtimeResourceSummaryTable, projectNames map[string]string) error {
 	if _, err := fmt.Fprintln(w, "\nRUNTIME ATTRIBUTION"); err != nil {
 		return err
 	}
@@ -1684,6 +1684,7 @@ func writeProjectRuntimeAttribution(w io.Writer, summary runtimeResourceSummaryT
 		{"resources", summary.Total},
 		{"byKind", formatNamedCounts(summary.ByKind)},
 		{"byNamespace", formatNamedCounts(summary.ByNamespace)},
+		{"byProject", formatNamedCounts(displayRuntimeProjectCounts(summary.ByProject, projectNames))},
 		{"ownerLabels", formatNamedCounts(summary.ByOwner)},
 		{"observedResources", summary.Workload.ObservedResources},
 		{"desiredPods", summary.Workload.DesiredPods},
@@ -2779,20 +2780,24 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 		return a.get(ctx, client, "/v1/projects/"+url.PathEscape(args[1]))
 	case "usage":
 		if len(args) < 2 {
-			return usageError("usage: mbox projects usage <project-id> [--summary] [--runtime-attribution]")
+			return usageError("usage: mbox projects usage <project-id> [--summary] [--runtime-attribution] [--resolve-project-names]")
 		}
 		fs := flag.NewFlagSet("projects usage", flag.ContinueOnError)
 		fs.SetOutput(a.streams.Stderr)
 		summary := fs.Bool("summary", false, "")
 		runtimeAttribution := fs.Bool("runtime-attribution", false, "")
+		resolveProjectNames := fs.Bool("resolve-project-names", false, "")
 		if err := fs.Parse(args[2:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 0 {
-			return usageError("usage: mbox projects usage <project-id> [--summary] [--runtime-attribution]")
+			return usageError("usage: mbox projects usage <project-id> [--summary] [--runtime-attribution] [--resolve-project-names]")
 		}
 		if *runtimeAttribution && !*summary {
 			return usageError("mbox projects usage --runtime-attribution requires --summary")
+		}
+		if *resolveProjectNames && (!*summary || !*runtimeAttribution) {
+			return usageError("mbox projects usage --resolve-project-names requires --summary --runtime-attribution")
 		}
 		path := "/v1/projects/" + url.PathEscape(args[1]) + "/usage"
 		if *summary {
@@ -2801,14 +2806,21 @@ func (a *App) runProject(ctx context.Context, client *Client, args []string) err
 				return err
 			}
 			var runtimeSummary *runtimeResourceSummaryTable
+			var projectNames map[string]string
 			if *runtimeAttribution {
 				summary, err := projectRuntimeAttributionSummary(ctx, client, args[1])
 				if err != nil {
 					return err
 				}
 				runtimeSummary = &summary
+				if *resolveProjectNames {
+					projectNames, err = runtimeProjectNames(ctx, client)
+					if err != nil {
+						return err
+					}
+				}
 			}
-			return writeProjectUsageSummary(a.streams.Stdout, usage, runtimeSummary)
+			return writeProjectUsageSummary(a.streams.Stdout, usage, runtimeSummary, projectNames)
 		}
 		return a.get(ctx, client, path)
 	case "authorization", "authz":

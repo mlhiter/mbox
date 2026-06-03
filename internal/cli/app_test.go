@@ -1363,6 +1363,7 @@ func TestProjectsUsageSummaryCanIncludeRuntimeAttribution(t *testing.T) {
 		"resources\t2",
 		"byKind\tSandboxClaim=1 SandboxTemplate=1",
 		"byNamespace\tmbox-runtime=2",
+		"byProject\tproject-1=2",
 		"ownerLabels\tproject/project-1/sandbox/sandbox-1=1",
 		"observedResources\t1",
 		"desiredPods\t1",
@@ -1381,6 +1382,66 @@ func TestProjectsUsageSummaryCanIncludeRuntimeAttribution(t *testing.T) {
 	}
 }
 
+func TestProjectsUsageRuntimeAttributionCanResolveProjectNames(t *testing.T) {
+	var requests []string
+	projectID := "11111111-1111-4111-8111-111111111111"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/projects/" + projectID + "/usage":
+			_, _ = w.Write([]byte(`{
+				"projectId":"` + projectID + `",
+				"generatedAt":"2026-06-03T09:00:00Z",
+				"sandboxes":{"total":1,"active":1,"running":1,"activeRequests":{"cpu":{},"memory":{},"storage":{}},"runningRequests":{"cpu":{},"memory":{},"storage":{}}},
+				"runtimeSessions":{},
+				"executionTasks":{},
+				"artifacts":{},
+				"templates":{},
+				"credentials":{}
+			}`))
+		case "/v1/runtime/resources":
+			if r.URL.Query().Get("projectId") != projectID {
+				t.Fatalf("expected runtime project filter, got %q", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{
+				"summary":{
+					"total":1,
+					"byProject":[{"name":"` + projectID + `","count":1}],
+					"workload":{}
+				}
+			}`))
+		case "/v1/projects":
+			_, _ = w.Write([]byte(`{"items":[{"id":"` + projectID + `","name":"Runtime Alpha"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	app := NewApp(Streams{Stdout: stdout, Stderr: &bytes.Buffer{}})
+	if err := app.Run(context.Background(), []string{
+		"--api-url", server.URL,
+		"projects", "usage", projectID,
+		"--summary",
+		"--runtime-attribution",
+		"--resolve-project-names",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	expectedRequests := "GET /v1/projects/" + projectID + "/usage,GET /v1/runtime/resources?projectId=" + projectID + ",GET /v1/projects"
+	if strings.Join(requests, ",") != expectedRequests {
+		t.Fatalf("unexpected requests: %#v", requests)
+	}
+	if !strings.Contains(stdout.String(), "byProject\tRuntime Alpha (11111111...1111)=1") {
+		t.Fatalf("expected resolved runtime attribution project name, got %q", stdout.String())
+	}
+	if strings.Contains(stdout.String(), `"items"`) || strings.Contains(stdout.String(), `"summary"`) {
+		t.Fatalf("expected human-readable usage summary without raw JSON, got %q", stdout.String())
+	}
+}
+
 func TestProjectsUsageRuntimeAttributionRequiresSummary(t *testing.T) {
 	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
 	err := app.Run(context.Background(), []string{
@@ -1390,6 +1451,19 @@ func TestProjectsUsageRuntimeAttributionRequiresSummary(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "--runtime-attribution requires --summary") {
 		t.Fatalf("expected runtime attribution summary error, got %v", err)
+	}
+}
+
+func TestProjectsUsageResolveProjectNamesRequiresRuntimeAttribution(t *testing.T) {
+	app := NewApp(Streams{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}})
+	err := app.Run(context.Background(), []string{
+		"--api-url", "http://127.0.0.1:18080",
+		"projects", "usage", "project-1",
+		"--summary",
+		"--resolve-project-names",
+	})
+	if err == nil || !strings.Contains(err.Error(), "--resolve-project-names requires --summary --runtime-attribution") {
+		t.Fatalf("expected resolve project names runtime attribution error, got %v", err)
 	}
 }
 
