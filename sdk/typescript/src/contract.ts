@@ -1434,6 +1434,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "updatedAt",
     ],
     enumProperties: [{ property: "kind", values: artifactKindValues }],
+    propertyRefs: [{ property: "retainedContent", ref: "ArtifactContent" }],
   },
   {
     schema: "ArtifactCreate",

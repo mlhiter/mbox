@@ -753,6 +753,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		artifactProperties["updatedAt"] == nil {
 		t.Fatalf("expected Artifact metadata/retained content properties, got %#v", artifactSchema["properties"])
 	}
+	if ref := schemaPropertyRef(artifactSchema, "retainedContent"); ref != "#/components/schemas/ArtifactContent" {
+		t.Fatalf("expected Artifact retainedContent to reference ArtifactContent, got %q", ref)
+	}
 	artifactCreate, ok := schemas["ArtifactCreate"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected ArtifactCreate schema in %#v", schemas["ArtifactCreate"])

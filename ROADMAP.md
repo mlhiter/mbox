@@ -468,6 +468,7 @@ First slice status:
 112. Done: SDK/OpenAPI template library array item-ref alignment guards `EnvironmentTemplate`, `TemplateCreate`, and `TemplateUpdate` `exposedPorts[]` and `secretRefs[]` schema refs, keeping template clients generated-client ready without changing runtime projection, secret mounting, or policy enforcement behavior.
 113. Done: SDK/OpenAPI sandbox ref alignment guards `Sandbox` and `SandboxUpdate` `runtimeRef` plus `ports[]` schema refs, keeping sandbox clients generated-client ready without changing lifecycle, runtime reconciliation, or preview-port behavior.
 114. Done: SDK/OpenAPI runtime session/task ref alignment guards `RuntimeSession.runtimeRef` and `ExecutionTask.runtimeRef` schema refs, keeping runtime clients generated-client ready without changing session creation, task execution, cancellation, or watch behavior.
-115. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
+115. Done: SDK/OpenAPI artifact retained-content ref alignment guards `Artifact.retainedContent` as `ArtifactContent`, keeping artifact clients generated-client ready without changing retained-content storage providers, download behavior, upload/capture limits, or quota enforcement.
+116. Next: deeper generated-client/schema alignment, broader CLI ergonomics, or the next narrow RBAC/audit ergonomics slice that does not add login, invite flows, an agent brain, CI/CD platform, or deployment release manager primitives.
 
 This slice proves the core runtime loop before upper-layer CI or deployment integrations expand the surface area.

@@ -1576,6 +1576,22 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.Artifact.properties.retainedContent = { type: "object" }
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-ref-mismatch" &&
+        issue.schema === "Artifact" &&
+        issue.property === "retainedContent" &&
+        issue.expectedSchema === "ArtifactContent",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.ArtifactCreate.properties.kind.enum = ["file", "directory", "log", "report", "image", "link", "other"]
     assertOpenAPIAlignment(broken)
   },
@@ -2638,6 +2654,7 @@ function schemaComponents() {
   schemas.ExecutionTask.properties.runtimeRef = jsonRef("RuntimeRef")
   schemas.ExecutionTaskEvent.properties.type.enum = ["snapshot", "status", "output", "done"]
   schemas.ExecutionTaskEvent.properties.stream.enum = ["stdout", "stderr"]
+  schemas.Artifact.properties.retainedContent = jsonRef("ArtifactContent")
   schemas.Artifact.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]
   schemas.ArtifactCreate.properties.kind.enum = ["file", "directory", "log", "report", "screenshot", "image", "link", "other"]
   schemas.ArtifactContent.properties.storageProvider.enum = ["postgres", "filesystem", "s3"]
