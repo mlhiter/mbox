@@ -1135,6 +1135,22 @@ assert.throws(
         issue.reason === "missing-schema-required" &&
         issue.schema === "RuntimeSession" &&
         issue.property === "startedAt",
+      ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
+    delete broken.components.schemas.RuntimeSession.properties.startedAt.format
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-property-format-mismatch" &&
+        issue.schema === "RuntimeSession" &&
+        issue.property === "startedAt" &&
+        issue.expectedFormat === "date-time",
     ),
 )
 assert.throws(
@@ -3208,7 +3224,39 @@ function schemaComponents() {
   schemas.RuntimeOrphanCleanupResult.properties.reason = jsonRef("RuntimeOrphanReason")
   schemas.RuntimeOrphanCleanupRequest.properties.confirm.enum = ["delete-orphan-runtime-resource"]
   schemas.RuntimeOrphan.properties.status.enum = ["pending", "running", "stopped", "failed", "deleted"]
+  markDateTimeProperties(schemas, {
+    RuntimeResourceList: ["checkedAt"],
+    RuntimeResource: ["createdAt"],
+    RuntimeEvent: ["firstTimestamp", "lastTimestamp"],
+    ExecutionTaskEvent: ["createdAt"],
+    ExecutionTask: ["startedAt", "finishedAt", "createdAt", "updatedAt"],
+    RuntimeOrphanAudit: ["checkedAt"],
+    RuntimeOrphan: ["deletedAt"],
+    ProjectUsage: ["generatedAt"],
+    Project: ["createdAt", "updatedAt"],
+    ProjectPolicy: ["createdAt", "updatedAt"],
+    ProjectQuotaPolicy: ["createdAt", "updatedAt"],
+    ProjectMember: ["createdAt", "updatedAt"],
+    ProjectCredential: ["createdAt", "updatedAt"],
+    EnvironmentTemplate: ["createdAt", "updatedAt"],
+    Sandbox: ["createdAt", "updatedAt", "deletedAt"],
+    RuntimeSession: ["startedAt", "endedAt", "createdAt", "updatedAt"],
+    Artifact: ["createdAt", "updatedAt"],
+    ArtifactContent: ["capturedAt"],
+    AuditEvent: ["createdAt"],
+  })
   return schemas
+}
+
+function markDateTimeProperties(schemas, contracts) {
+  for (const [schemaName, properties] of Object.entries(contracts)) {
+    const schema = schemas[schemaName]
+    assert(schema, `missing smoke schema ${schemaName}`)
+    for (const property of properties) {
+      assert(schema.properties[property], `missing smoke schema property ${schemaName}.${property}`)
+      schema.properties[property].format = "date-time"
+    }
+  }
 }
 
 function objectSchema(required, optional = []) {

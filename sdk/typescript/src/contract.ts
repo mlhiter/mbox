@@ -38,6 +38,7 @@ export type SDKSchemaContractEntry = {
   properties?: readonly string[]
   absentProperties?: readonly string[]
   propertyTypes?: readonly SDKSchemaPropertyTypeContract[]
+  propertyFormats?: readonly SDKSchemaPropertyFormatContract[]
   enumProperties?: readonly SDKSchemaEnumPropertyContract[]
   propertyRefs?: readonly SDKSchemaPropertyRefContract[]
   arrayItemRefs?: readonly SDKSchemaArrayItemRefContract[]
@@ -46,10 +47,16 @@ export type SDKSchemaContractEntry = {
 }
 
 export type SDKSchemaPrimitiveType = "string" | "integer" | "number" | "boolean" | "object" | "array"
+export type SDKSchemaStringFormat = "date-time"
 
 export type SDKSchemaPropertyTypeContract = {
   property: string
   type: SDKSchemaPrimitiveType
+}
+
+export type SDKSchemaPropertyFormatContract = {
+  property: string
+  format: SDKSchemaStringFormat
 }
 
 export type SDKSchemaEnumPropertyContract = {
@@ -103,6 +110,7 @@ export type SDKOpenAPIAlignmentIssue = {
     | "missing-schema-property"
     | "unexpected-schema-property"
     | "schema-property-type-mismatch"
+    | "schema-property-format-mismatch"
     | "missing-schema-enum-value"
     | "schema-property-ref-mismatch"
     | "schema-array-item-ref-mismatch"
@@ -125,6 +133,8 @@ export type SDKOpenAPIAlignmentIssue = {
   property?: string
   expectedType?: SDKSchemaPrimitiveType
   actualType?: string
+  expectedFormat?: SDKSchemaStringFormat
+  actualFormat?: string
   enumValue?: string
 }
 
@@ -142,6 +152,7 @@ export type SDKOpenAPIAlignmentResult = {
   checkedSchemaProperties: number
   checkedSchemaAbsentProperties: number
   checkedSchemaPropertyTypes: number
+  checkedSchemaPropertyFormats: number
   checkedSchemaEnumValues: number
   checkedSchemaPropertyRefs: number
   checkedSchemaArrayItemRefs: number
@@ -256,6 +267,10 @@ function jsonRequest(schema: string): SDKRouteRequestContract {
 
 function binaryRequest(): SDKRouteRequestContract {
   return { mediaTypes: ["application/octet-stream", "text/plain"], binary: true }
+}
+
+function dateTimeFormats(...properties: string[]): SDKSchemaPropertyFormatContract[] {
+  return properties.map((property) => ({ property, format: "date-time" }))
 }
 
 export const SDK_ROUTE_CONTRACT = [
@@ -632,6 +647,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeResourceList",
     required: ["adapter", "checkedAt", "summary", "items"],
     properties: ["adapter", "checkedAt", "summary", "items"],
+    propertyFormats: dateTimeFormats("checkedAt"),
     propertyRefs: [{ property: "summary", ref: "RuntimeResourceSummary" }],
     arrayItemRefs: [{ property: "items", ref: "RuntimeResource" }],
   },
@@ -708,6 +724,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeResource",
     required: ["adapter", "kind", "name"],
     properties: ["adapter", "kind", "namespace", "name", "owner", "observation", "labels", "createdAt"],
+    propertyFormats: dateTimeFormats("createdAt"),
     propertyRefs: [
       { property: "owner", ref: "RuntimeResourceOwner" },
       { property: "observation", ref: "RuntimeResourceObservation" },
@@ -768,11 +785,13 @@ export const SDK_SCHEMA_CONTRACT = [
   {
     schema: "RuntimeEvent",
     properties: ["type", "reason", "message", "count", "firstTimestamp", "lastTimestamp"],
+    propertyFormats: dateTimeFormats("firstTimestamp", "lastTimestamp"),
   },
   {
     schema: "ExecutionTaskEvent",
     required: ["type", "createdAt"],
     properties: ["type", "task", "stream", "data", "offset", "createdAt"],
+    propertyFormats: dateTimeFormats("createdAt"),
     propertyRefs: [{ property: "task", ref: "ExecutionTask" }],
     enumProperties: [
       { property: "type", values: executionTaskEventTypeValues },
@@ -814,6 +833,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "updatedAt",
     ],
     enumProperties: [{ property: "status", values: executionTaskStatusValues }],
+    propertyFormats: dateTimeFormats("startedAt", "finishedAt", "createdAt", "updatedAt"),
     propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
   },
   {
@@ -825,6 +845,7 @@ export const SDK_SCHEMA_CONTRACT = [
     schema: "RuntimeOrphanAudit",
     required: ["adapter", "checkedAt", "resourceCount", "orphanCount", "expectedClean", "items"],
     properties: ["adapter", "checkedAt", "namespace", "resourceCount", "orphanCount", "expectedClean", "items"],
+    propertyFormats: dateTimeFormats("checkedAt"),
     arrayItemRefs: [{ property: "items", ref: "RuntimeOrphan" }],
   },
   {
@@ -842,6 +863,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "message",
       "evidence",
     ],
+    propertyFormats: dateTimeFormats("deletedAt"),
     propertyRefs: [
       { property: "reason", ref: "RuntimeOrphanReason" },
       { property: "resource", ref: "RuntimeResource" },
@@ -903,6 +925,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "credentials",
       "notes",
     ],
+    propertyFormats: dateTimeFormats("generatedAt"),
     propertyRefs: [
       { property: "sandboxes", ref: "ProjectSandboxUsage" },
       { property: "runtimeSessions", ref: "ProjectSessionUsage" },
@@ -1024,6 +1047,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "createdAt",
       "updatedAt",
     ],
+    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
   },
   {
     schema: "ProjectCreate",
@@ -1048,6 +1072,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "updatedAt",
     ],
     enumProperties: [{ property: "enforcement", values: projectPolicyEnforcementValues }],
+    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
     arrayItemTypes: [
       { property: "allowedImagePrefixes", type: "string" },
       { property: "allowedServiceAccounts", type: "string" },
@@ -1074,6 +1099,7 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "maxRetainedArtifactBytes", type: "integer" },
     ],
     enumProperties: [{ property: "enforcement", values: projectPolicyEnforcementValues }],
+    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
   },
   {
     schema: "ProjectQuotaPolicyUpsert",
@@ -1093,6 +1119,7 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "principalType", values: projectMemberPrincipalTypeValues },
       { property: "role", values: projectMemberRoleValues },
     ],
+    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
   },
   {
     schema: "ProjectMemberCreate",
@@ -1428,6 +1455,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "updatedAt",
     ],
     enumProperties: [{ property: "type", values: projectCredentialTypeValues }],
+    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
     propertyRefs: [{ property: "secretRef", ref: "SecretRef" }],
     arrayItemTypes: [{ property: "usage", type: "string" }],
   },
@@ -1467,6 +1495,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "createdAt",
       "updatedAt",
     ],
+    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
     arrayItemRefs: [
       { property: "exposedPorts", ref: "TemplatePort" },
       { property: "secretRefs", ref: "SecretRef" },
@@ -1569,6 +1598,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "deletedAt",
     ],
     enumProperties: [{ property: "status", values: sandboxStatusValues }],
+    propertyFormats: dateTimeFormats("createdAt", "updatedAt", "deletedAt"),
     propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
     arrayItemRefs: [{ property: "ports", ref: "SandboxPort" }],
   },
@@ -1615,6 +1645,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "createdAt",
       "updatedAt",
     ],
+    propertyFormats: dateTimeFormats("startedAt", "endedAt", "createdAt", "updatedAt"),
     enumProperties: [
       { property: "type", values: runtimeSessionTypeValues },
       { property: "status", values: runtimeSessionStatusValues },
@@ -1647,6 +1678,7 @@ export const SDK_SCHEMA_CONTRACT = [
     ],
     propertyTypes: [{ property: "sizeBytes", type: "number" }],
     enumProperties: [{ property: "kind", values: artifactKindValues }],
+    propertyFormats: dateTimeFormats("createdAt", "updatedAt"),
     propertyRefs: [{ property: "retainedContent", ref: "ArtifactContent" }],
   },
   {
@@ -1662,6 +1694,7 @@ export const SDK_SCHEMA_CONTRACT = [
     properties: ["artifactId", "contentType", "sizeBytes", "sha256", "sourceUri", "storageProvider", "storageKey", "capturedAt"],
     propertyTypes: [{ property: "sizeBytes", type: "number" }],
     enumProperties: [{ property: "storageProvider", values: artifactStorageProviderValues }],
+    propertyFormats: dateTimeFormats("capturedAt"),
   },
   {
     schema: "AuditEvent",
@@ -1678,6 +1711,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "metadata",
       "createdAt",
     ],
+    propertyFormats: dateTimeFormats("createdAt"),
     propertyRefs: [
       { property: "action", ref: "AuditEventAction" },
       { property: "metadata", ref: "AuditEventMetadata" },
@@ -1758,6 +1792,7 @@ export function checkOpenAPIAlignment(
   let checkedSchemaProperties = 0
   let checkedSchemaAbsentProperties = 0
   let checkedSchemaPropertyTypes = 0
+  let checkedSchemaPropertyFormats = 0
   let checkedSchemaEnumValues = 0
   let checkedSchemaPropertyRefs = 0
   let checkedSchemaArrayItemRefs = 0
@@ -1848,6 +1883,19 @@ export function checkOpenAPIAlignment(
         })
       }
     }
+    for (const propertyFormat of schemaContract.propertyFormats ?? []) {
+      checkedSchemaPropertyFormats += 1
+      const actualFormat = schemaPropertyFormat(schema, propertyFormat.property)
+      if (actualFormat !== propertyFormat.format) {
+        missing.push({
+          ...schemaContract,
+          reason: "schema-property-format-mismatch",
+          property: propertyFormat.property,
+          expectedFormat: propertyFormat.format,
+          actualFormat,
+        })
+      }
+    }
     for (const enumProperty of schemaContract.enumProperties ?? []) {
       const values = schemaPropertyEnumValues(schema, enumProperty.property, componentSchemas)
       for (const value of enumProperty.values) {
@@ -1931,6 +1979,7 @@ export function checkOpenAPIAlignment(
     checkedSchemaProperties,
     checkedSchemaAbsentProperties,
     checkedSchemaPropertyTypes,
+    checkedSchemaPropertyFormats,
     checkedSchemaEnumValues,
     checkedSchemaPropertyRefs,
     checkedSchemaArrayItemRefs,
@@ -1962,7 +2011,7 @@ export async function fetchAndAssertOpenAPIAlignment(
 
 function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
   if (result.ok) {
-    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaPropertyTypes} SDK schema property types, ${result.checkedSchemaEnumValues} SDK schema enum values, ${result.checkedSchemaPropertyRefs} SDK schema property refs, ${result.checkedSchemaArrayItemRefs} SDK schema array item refs, ${result.checkedSchemaArrayItemTypes} SDK schema array item types, and ${result.checkedSchemaArrayItemEnumValues} SDK schema array item enum values`
+    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaPropertyTypes} SDK schema property types, ${result.checkedSchemaPropertyFormats} SDK schema property formats, ${result.checkedSchemaEnumValues} SDK schema enum values, ${result.checkedSchemaPropertyRefs} SDK schema property refs, ${result.checkedSchemaArrayItemRefs} SDK schema array item refs, ${result.checkedSchemaArrayItemTypes} SDK schema array item types, and ${result.checkedSchemaArrayItemEnumValues} SDK schema array item enum values`
   }
   const preview = result.missing
     .slice(0, 10)
@@ -1971,7 +2020,10 @@ function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
         const property = issue.property ? `:${issue.property}` : ""
         const enumValue = issue.enumValue ? `=${issue.enumValue}` : ""
         const typeValue = issue.expectedType ? ` expected=${issue.expectedType} actual=${issue.actualType ?? "unknown"}` : ""
-        return `${issue.schema} (${issue.reason}${property}${enumValue}${typeValue})`
+        const formatValue = issue.expectedFormat
+          ? ` expectedFormat=${issue.expectedFormat} actualFormat=${issue.actualFormat ?? "unknown"}`
+          : ""
+        return `${issue.schema} (${issue.reason}${property}${enumValue}${typeValue}${formatValue})`
       }
       if (issue.reason === "missing-sdk-route-coverage") {
         return `OpenAPI operation ${issue.method} ${issue.path} (${issue.reason})`
@@ -2256,6 +2308,17 @@ function schemaPropertyType(schema: Record<string, unknown>, property: string) {
     return undefined
   }
   return propertySchema.type
+}
+
+function schemaPropertyFormat(schema: Record<string, unknown>, property: string) {
+  if (!isRecord(schema.properties)) {
+    return undefined
+  }
+  const propertySchema = schema.properties[property]
+  if (!isRecord(propertySchema) || propertySchema.type !== "string" || typeof propertySchema.format !== "string") {
+    return undefined
+  }
+  return propertySchema.format
 }
 
 function schemaPropertyRefName(schema: Record<string, unknown>, property: string) {
