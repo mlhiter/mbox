@@ -649,6 +649,13 @@ func objectAnySchema() map[string]any {
 	}
 }
 
+func stringMapSchema() map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": stringSchema(),
+	}
+}
+
 func requiredProps(names ...string) []string {
 	return names
 }
@@ -1006,7 +1013,7 @@ func boundarySummarySchema() map[string]any {
 		prop("runtimeRef", schemaRef("RuntimeRef")),
 		prop("image", stringSchema()),
 		prop("workingDir", stringSchema()),
-		prop("resourceRequests", objectAnySchema()),
+		prop("resourceRequests", stringMapSchema()),
 		prop("storageRequest", stringSchema()),
 		prop("previewPorts", arraySchema(schemaRef("BoundaryPort"))),
 		prop("envVarCount", integerSchema()),
@@ -1084,8 +1091,8 @@ func runtimeWorkloadSummarySchema() map[string]any {
 		prop("containersReady", integerSchema()),
 		prop("containersTotal", integerSchema()),
 		prop("restartCount", integerSchema()),
-		prop("requests", objectAnySchema()),
-		prop("limits", objectAnySchema()),
+		prop("requests", stringMapSchema()),
+		prop("limits", stringMapSchema()),
 		prop("storageCapacity", stringSchema()),
 		prop("quantityIssues", arraySchema(schemaRef("RuntimeQuantityIssue"))),
 		prop("storage", arraySchema(schemaRef("RuntimeStorageSummary"))),
@@ -1119,7 +1126,7 @@ func runtimeResourceSchema() map[string]any {
 		prop("name", stringSchema()),
 		prop("owner", schemaRef("RuntimeResourceOwner")),
 		prop("observation", schemaRef("RuntimeResourceObservation")),
-		prop("labels", objectAnySchema()),
+		prop("labels", stringMapSchema()),
 		prop("createdAt", dateTimeSchema()),
 	)
 }
@@ -1145,8 +1152,8 @@ func runtimeResourceObservationSchema() map[string]any {
 		prop("containersReady", integerSchema()),
 		prop("containersTotal", integerSchema()),
 		prop("restartCount", integerSchema()),
-		prop("requests", objectAnySchema()),
-		prop("limits", objectAnySchema()),
+		prop("requests", stringMapSchema()),
+		prop("limits", stringMapSchema()),
 		prop("storage", arraySchema(schemaRef("RuntimeStorage"))),
 		prop("readyCondition", stringSchema()),
 		prop("message", stringSchema()),
@@ -1346,7 +1353,7 @@ func templateSchema(create bool, update bool) map[string]any {
 		prop("memoryRequest", stringSchema()),
 		prop("storageRequest", stringSchema()),
 		prop("exposedPorts", arraySchema(schemaRef("TemplatePort"))),
-		prop("env", objectAnySchema()),
+		prop("env", stringMapSchema()),
 		prop("secretRefs", arraySchema(schemaRef("SecretRef"))),
 		prop("networkPolicy", stringSchema()),
 		prop("lifecyclePolicy", objectAnySchema()),

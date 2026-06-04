@@ -398,6 +398,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if ref := schemaPropertyRef(boundarySchema, "runtimeRef"); ref != "#/components/schemas/RuntimeRef" {
 		t.Fatalf("expected BoundarySummary runtimeRef to reference RuntimeRef, got %q", ref)
 	}
+	if valueType := schemaMapValueType(boundarySchema, "resourceRequests"); valueType != "string" {
+		t.Fatalf("expected BoundarySummary resourceRequests to be a string map, got value type %q", valueType)
+	}
 	for property, expectedRef := range map[string]string{
 		"previewPorts":   "#/components/schemas/BoundaryPort",
 		"secretRefs":     "#/components/schemas/SecretRef",
@@ -460,6 +463,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 		"TemplateCreate":      templateCreateSchema,
 		"TemplateUpdate":      templateUpdateSchema,
 	} {
+		if valueType := schemaMapValueType(schema, "env"); valueType != "string" {
+			t.Fatalf("expected %s env to be a string map, got value type %q", schemaName, valueType)
+		}
 		for property, expectedRef := range map[string]string{
 			"exposedPorts": "#/components/schemas/TemplatePort",
 			"secretRefs":   "#/components/schemas/SecretRef",
@@ -1048,6 +1054,11 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	if ref := schemaArrayItemRef(runtimeWorkloadSummary, "storage"); ref != "#/components/schemas/RuntimeStorageSummary" {
 		t.Fatalf("expected runtime workload storage to reference RuntimeStorageSummary, got %q", ref)
 	}
+	for _, property := range []string{"requests", "limits"} {
+		if valueType := schemaMapValueType(runtimeWorkloadSummary, property); valueType != "string" {
+			t.Fatalf("expected RuntimeWorkloadSummary %s to be a string map, got value type %q", property, valueType)
+		}
+	}
 	if _, ok := schemas["RuntimeQuantityIssue"].(map[string]any); !ok {
 		t.Fatalf("expected RuntimeQuantityIssue schema in %#v", schemas["RuntimeQuantityIssue"])
 	}
@@ -1067,6 +1078,9 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	}
 	if ref := schemaPropertyRef(runtimeResource, "observation"); ref != "#/components/schemas/RuntimeResourceObservation" {
 		t.Fatalf("expected runtime resource observation to reference RuntimeResourceObservation, got %q", ref)
+	}
+	if valueType := schemaMapValueType(runtimeResource, "labels"); valueType != "string" {
+		t.Fatalf("expected RuntimeResource labels to be a string map, got value type %q", valueType)
 	}
 	runtimeResourceOwner, ok := schemas["RuntimeResourceOwner"].(map[string]any)
 	if !ok {
@@ -1089,6 +1103,11 @@ func TestOpenAPIRoutePublishesCurrentContract(t *testing.T) {
 	}
 	if ref := schemaArrayItemRef(runtimeResourceObservation, "storage"); ref != "#/components/schemas/RuntimeStorage" {
 		t.Fatalf("expected runtime observation storage to reference RuntimeStorage, got %q", ref)
+	}
+	for _, property := range []string{"requests", "limits"} {
+		if valueType := schemaMapValueType(runtimeResourceObservation, property); valueType != "string" {
+			t.Fatalf("expected RuntimeResourceObservation %s to be a string map, got value type %q", property, valueType)
+		}
 	}
 	runtimeStorage, ok := schemas["RuntimeStorage"].(map[string]any)
 	if !ok {
@@ -1885,6 +1904,23 @@ func schemaPropertyFormat(schema map[string]any, property string) string {
 	}
 	format, _ := propertySchema["format"].(string)
 	return format
+}
+
+func schemaMapValueType(schema map[string]any, property string) string {
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	propertySchema, ok := properties[property].(map[string]any)
+	if !ok {
+		return ""
+	}
+	additional, ok := propertySchema["additionalProperties"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	valueType, _ := additional["type"].(string)
+	return valueType
 }
 
 func schemaArrayItemRef(schema map[string]any, property string) string {

@@ -40,6 +40,7 @@ export type SDKSchemaContractEntry = {
   nullableProperties?: readonly string[]
   propertyTypes?: readonly SDKSchemaPropertyTypeContract[]
   propertyFormats?: readonly SDKSchemaPropertyFormatContract[]
+  mapValueTypes?: readonly SDKSchemaMapValueTypeContract[]
   enumProperties?: readonly SDKSchemaEnumPropertyContract[]
   propertyRefs?: readonly SDKSchemaPropertyRefContract[]
   arrayItemRefs?: readonly SDKSchemaArrayItemRefContract[]
@@ -58,6 +59,11 @@ export type SDKSchemaPropertyTypeContract = {
 export type SDKSchemaPropertyFormatContract = {
   property: string
   format: SDKSchemaStringFormat
+}
+
+export type SDKSchemaMapValueTypeContract = {
+  property: string
+  type: SDKSchemaPrimitiveType
 }
 
 export type SDKSchemaEnumPropertyContract = {
@@ -113,6 +119,7 @@ export type SDKOpenAPIAlignmentIssue = {
     | "schema-property-nullable-mismatch"
     | "schema-property-type-mismatch"
     | "schema-property-format-mismatch"
+    | "schema-map-value-type-mismatch"
     | "missing-schema-enum-value"
     | "schema-property-ref-mismatch"
     | "schema-array-item-ref-mismatch"
@@ -139,6 +146,8 @@ export type SDKOpenAPIAlignmentIssue = {
   actualType?: string
   expectedFormat?: SDKSchemaStringFormat
   actualFormat?: string
+  expectedValueType?: SDKSchemaPrimitiveType
+  actualValueType?: string
   enumValue?: string
 }
 
@@ -158,6 +167,7 @@ export type SDKOpenAPIAlignmentResult = {
   checkedSchemaNullableProperties: number
   checkedSchemaPropertyTypes: number
   checkedSchemaPropertyFormats: number
+  checkedSchemaMapValueTypes: number
   checkedSchemaEnumValues: number
   checkedSchemaPropertyRefs: number
   checkedSchemaArrayItemRefs: number
@@ -713,6 +723,10 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "containersTotal", type: "integer" },
       { property: "restartCount", type: "integer" },
     ],
+    mapValueTypes: [
+      { property: "requests", type: "string" },
+      { property: "limits", type: "string" },
+    ],
     arrayItemRefs: [
       { property: "quantityIssues", ref: "RuntimeQuantityIssue" },
       { property: "storage", ref: "RuntimeStorageSummary" },
@@ -738,6 +752,7 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "owner", ref: "RuntimeResourceOwner" },
       { property: "observation", ref: "RuntimeResourceObservation" },
     ],
+    mapValueTypes: [{ property: "labels", type: "string" }],
   },
   {
     schema: "RuntimeResourceOwner",
@@ -772,6 +787,10 @@ export const SDK_SCHEMA_CONTRACT = [
       { property: "containersReady", type: "integer" },
       { property: "containersTotal", type: "integer" },
       { property: "restartCount", type: "integer" },
+    ],
+    mapValueTypes: [
+      { property: "requests", type: "string" },
+      { property: "limits", type: "string" },
     ],
     arrayItemRefs: [{ property: "storage", ref: "RuntimeStorage" }],
   },
@@ -1017,6 +1036,7 @@ export const SDK_SCHEMA_CONTRACT = [
     ],
     propertyFormats: uuidFormats("projectId", "templateId", "sandboxId"),
     propertyRefs: [{ property: "runtimeRef", ref: "RuntimeRef" }],
+    mapValueTypes: [{ property: "resourceRequests", type: "string" }],
     arrayItemRefs: [
       { property: "previewPorts", ref: "BoundaryPort" },
       { property: "secretRefs", ref: "SecretRef" },
@@ -1534,6 +1554,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "updatedAt",
     ],
     propertyFormats: [...uuidFormats("id", "projectId"), ...dateTimeFormats("createdAt", "updatedAt")],
+    mapValueTypes: [{ property: "env", type: "string" }],
     arrayItemTypes: [{ property: "startupCommand", type: "string" }],
     arrayItemRefs: [
       { property: "exposedPorts", ref: "TemplatePort" },
@@ -1561,6 +1582,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "metadata",
     ],
     propertyFormats: uuidFormats("projectId"),
+    mapValueTypes: [{ property: "env", type: "string" }],
     arrayItemTypes: [{ property: "startupCommand", type: "string" }],
     arrayItemRefs: [
       { property: "exposedPorts", ref: "TemplatePort" },
@@ -1585,6 +1607,7 @@ export const SDK_SCHEMA_CONTRACT = [
       "metadata",
     ],
     absentProperties: ["projectId", "slug"],
+    mapValueTypes: [{ property: "env", type: "string" }],
     arrayItemTypes: [{ property: "startupCommand", type: "string" }],
     arrayItemRefs: [
       { property: "exposedPorts", ref: "TemplatePort" },
@@ -1848,6 +1871,7 @@ export function checkOpenAPIAlignment(
   let checkedSchemaNullableProperties = 0
   let checkedSchemaPropertyTypes = 0
   let checkedSchemaPropertyFormats = 0
+  let checkedSchemaMapValueTypes = 0
   let checkedSchemaEnumValues = 0
   let checkedSchemaPropertyRefs = 0
   let checkedSchemaArrayItemRefs = 0
@@ -1964,6 +1988,19 @@ export function checkOpenAPIAlignment(
         })
       }
     }
+    for (const mapValueType of schemaContract.mapValueTypes ?? []) {
+      checkedSchemaMapValueTypes += 1
+      const actualValueType = schemaMapValueType(schema, mapValueType.property)
+      if (actualValueType !== mapValueType.type) {
+        missing.push({
+          ...schemaContract,
+          reason: "schema-map-value-type-mismatch",
+          property: mapValueType.property,
+          expectedValueType: mapValueType.type,
+          actualValueType,
+        })
+      }
+    }
     for (const enumProperty of schemaContract.enumProperties ?? []) {
       const values = schemaPropertyEnumValues(schema, enumProperty.property, componentSchemas)
       for (const value of enumProperty.values) {
@@ -2049,6 +2086,7 @@ export function checkOpenAPIAlignment(
     checkedSchemaNullableProperties,
     checkedSchemaPropertyTypes,
     checkedSchemaPropertyFormats,
+    checkedSchemaMapValueTypes,
     checkedSchemaEnumValues,
     checkedSchemaPropertyRefs,
     checkedSchemaArrayItemRefs,
@@ -2080,7 +2118,7 @@ export async function fetchAndAssertOpenAPIAlignment(
 
 function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
   if (result.ok) {
-    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaNullableProperties} SDK schema nullable properties, ${result.checkedSchemaPropertyTypes} SDK schema property types, ${result.checkedSchemaPropertyFormats} SDK schema property formats, ${result.checkedSchemaEnumValues} SDK schema enum values, ${result.checkedSchemaPropertyRefs} SDK schema property refs, ${result.checkedSchemaArrayItemRefs} SDK schema array item refs, ${result.checkedSchemaArrayItemTypes} SDK schema array item types, and ${result.checkedSchemaArrayItemEnumValues} SDK schema array item enum values`
+    return `OpenAPI covers ${result.checked} SDK route entries, ${result.checkedPublishedOperations} published route operations, ${result.checkedQueryParams} SDK-used query parameters, ${result.checkedAuth} SDK route auth contracts, ${result.checkedRequests} SDK helper request contracts, ${result.checkedResponses} SDK helper response contracts, ${result.checkedSchemas} SDK schema contracts, ${result.checkedSchemaNullableProperties} SDK schema nullable properties, ${result.checkedSchemaPropertyTypes} SDK schema property types, ${result.checkedSchemaPropertyFormats} SDK schema property formats, ${result.checkedSchemaMapValueTypes} SDK schema map value types, ${result.checkedSchemaEnumValues} SDK schema enum values, ${result.checkedSchemaPropertyRefs} SDK schema property refs, ${result.checkedSchemaArrayItemRefs} SDK schema array item refs, ${result.checkedSchemaArrayItemTypes} SDK schema array item types, and ${result.checkedSchemaArrayItemEnumValues} SDK schema array item enum values`
   }
   const preview = result.missing
     .slice(0, 10)
@@ -2096,7 +2134,10 @@ function openAPIAlignmentMessage(result: SDKOpenAPIAlignmentResult) {
         const formatValue = issue.expectedFormat
           ? ` expectedFormat=${issue.expectedFormat} actualFormat=${issue.actualFormat ?? "unknown"}`
           : ""
-        return `${issue.schema} (${issue.reason}${property}${enumValue}${nullableValue}${typeValue}${formatValue})`
+        const mapValueType = issue.expectedValueType
+          ? ` expectedValueType=${issue.expectedValueType} actualValueType=${issue.actualValueType ?? "unknown"}`
+          : ""
+        return `${issue.schema} (${issue.reason}${property}${enumValue}${nullableValue}${typeValue}${formatValue}${mapValueType})`
       }
       if (issue.reason === "missing-sdk-route-coverage") {
         return `OpenAPI operation ${issue.method} ${issue.path} (${issue.reason})`
@@ -2400,6 +2441,18 @@ function schemaPropertyFormat(schema: Record<string, unknown>, property: string)
     return undefined
   }
   return propertySchema.format
+}
+
+function schemaMapValueType(schema: Record<string, unknown>, property: string) {
+  if (!isRecord(schema.properties)) {
+    return undefined
+  }
+  const propertySchema = schema.properties[property]
+  if (!isRecord(propertySchema) || propertySchema.type !== "object" || !isRecord(propertySchema.additionalProperties)) {
+    return undefined
+  }
+  const valueType = propertySchema.additionalProperties.type
+  return typeof valueType === "string" ? valueType : undefined
 }
 
 function schemaPropertyRefName(schema: Record<string, unknown>, property: string) {

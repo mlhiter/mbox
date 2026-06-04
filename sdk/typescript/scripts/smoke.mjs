@@ -1204,6 +1204,23 @@ assert.throws(
 assert.throws(
   () => {
     const broken = buildOpenAPI()
+    broken.components.schemas.EnvironmentTemplate.properties.env.additionalProperties.type = "number"
+    assertOpenAPIAlignment(broken)
+  },
+  (error) =>
+    error instanceof OpenAPIAlignmentError &&
+    error.result.missing.some(
+      (issue) =>
+        issue.reason === "schema-map-value-type-mismatch" &&
+        issue.schema === "EnvironmentTemplate" &&
+        issue.property === "env" &&
+        issue.expectedValueType === "string" &&
+        issue.actualValueType === "number",
+    ),
+)
+assert.throws(
+  () => {
+    const broken = buildOpenAPI()
     broken.components.schemas.RuntimeSessionCreate.required = []
     assertOpenAPIAlignment(broken)
   },
@@ -3382,6 +3399,15 @@ function schemaComponents() {
     AuditEvent: ["id", "projectId", "resourceId"],
     PolicyDeniedAuditMetadata: ["templateId", "sandboxId", "matchedMemberId"],
   })
+  markStringMapProperties(schemas, {
+    RuntimeWorkloadSummary: ["requests", "limits"],
+    RuntimeResource: ["labels"],
+    RuntimeResourceObservation: ["requests", "limits"],
+    BoundarySummary: ["resourceRequests"],
+    EnvironmentTemplate: ["env"],
+    TemplateCreate: ["env"],
+    TemplateUpdate: ["env"],
+  })
   return schemas
 }
 
@@ -3403,6 +3429,17 @@ function markUUIDProperties(schemas, contracts) {
     for (const property of properties) {
       assert(schema.properties[property], `missing smoke schema property ${schemaName}.${property}`)
       schema.properties[property].format = "uuid"
+    }
+  }
+}
+
+function markStringMapProperties(schemas, contracts) {
+  for (const [schemaName, properties] of Object.entries(contracts)) {
+    const schema = schemas[schemaName]
+    assert(schema, `missing smoke schema ${schemaName}`)
+    for (const property of properties) {
+      assert(schema.properties[property], `missing smoke schema property ${schemaName}.${property}`)
+      schema.properties[property] = { type: "object", additionalProperties: { type: "string" } }
     }
   }
 }
